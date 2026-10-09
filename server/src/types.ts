@@ -104,7 +104,11 @@ export interface PacketEvent {
   dropped: boolean;
 }
 /** H.264 reference bitrates (Baseline A): measured when runs/baseline_a.json exists, else configured. */
-export interface BaselineAEntry { id: string; label: string; bps: number; measured: boolean; source: string }
+export interface BaselineAEntry {
+  id: string; label: string; bps: number; measured: boolean; source: string;
+  /** Frame rate of the encode (from runs/baseline_a.json when given); absent means 30. */
+  fps?: number;
+}
 export interface ShaperConfig {
   bps: number; delayMs: number; loss: number; enabled: boolean;
   /** Token bucket depth in seconds of `bps` (added in M5, default 0.5). */

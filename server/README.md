@@ -200,7 +200,8 @@ Baseline A (H.264 720p/480p/360p) as served in `Snapshot.baselineA`:
 `{ "baselineA": [{ "id": "h264_720p", "label": "H.264 720p", "bps": 1500000, "measured": false, "source": "configured, ..." }, ...], "file": "/.../runs/baseline_a.json", "error": null }`.
 Configured numbers until `runs/baseline_a.json` exists (`MINBAND_BASELINE_A`); same format and
 merge rule as `tools/eval` (`loadBaselineA`): `{"entries": [{"id": "h264_720p", "bps": 1234567,
-"label"?, "source"?}]}`, entries replace the configured one with the same id (`measured: true`),
+"label"?, "source"?, "fps"?}]}` (`fps`, the encode's frame rate, is passed through; absent means
+30, which the viewer uses for the frame size), entries replace the configured one with the same id (`measured: true`),
 new ids are appended. The file is re-read when it changes (checked at most every 2 s; this
 endpoint checks at once); a malformed file falls back to the configured table and reports
 `error`. `Snapshot.baselines.h264_720p_bps / h264_480p_bps` (legacy, read by the current viewer)

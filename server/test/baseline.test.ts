@@ -32,9 +32,12 @@ test('Baseline A: configured until runs/baseline_a.json exists, then merged by i
     writeFileSync(file, '{"entries":[{"id":"h264_480p"}]}'); // no bps: rejected like tools/eval
     assert.ok(world.baselineA.get(true).every(b => !b.measured));
     assert.match(world.baselineA.error!, /positive bps/);
-    writeFileSync(file, '{"entries":[{"id":"h264_480p","bps":480000,"source":"VideoToolbox, 60 s"}]}');
+    writeFileSync(file, '{"entries":[{"id":"h264_480p","bps":480000,"source":"VideoToolbox, 60 s","fps":24}]}');
     const t = world.baselineA.get(true);
-    assert.deepEqual([t[1].bps, t[1].measured, t[1].source, world.baselineA.error], [480_000, true, 'VideoToolbox, 60 s', null]);
+    assert.deepEqual([t[1].bps, t[1].measured, t[1].source, t[1].fps, world.baselineA.error], [480_000, true, 'VideoToolbox, 60 s', 24, null]);
+    assert.equal(t[0].fps, undefined, 'no fps given: absent (30)');
+    writeFileSync(file, '{"entries":[{"id":"h264_480p","bps":480000,"fps":0}]}');
+    assert.match((world.baselineA.get(true), world.baselineA.error!), /fps must be a positive number/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

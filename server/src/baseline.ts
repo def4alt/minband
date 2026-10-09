@@ -32,6 +32,10 @@ export function mergeBaselineA(json: string, file: string): BaselineAEntry[] {
   for (const e of data.entries ?? []) {
     if (!e.id || !(typeof e.bps === 'number' && e.bps > 0)) throw new Error(`${file}: each entry needs an id and a positive bps`);
     const m: BaselineAEntry = { id: e.id, label: e.label ?? e.id, bps: e.bps, measured: true, source: e.source ?? `measured (${file})` };
+    if (e.fps !== undefined) {
+      if (!(typeof e.fps === 'number' && e.fps > 0 && Number.isFinite(e.fps))) throw new Error(`${file}: fps must be a positive number`);
+      m.fps = e.fps; // absent: the viewer assumes 30
+    }
     const i = table.findIndex(b => b.id === e.id);
     if (i >= 0) table[i] = { ...m, label: e.label ?? table[i].label };
     else table.push(m);
