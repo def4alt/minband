@@ -141,7 +141,7 @@ is the Pi link box table (`docs/HACKATHON_PLAN.md` 3.3) and lives in `src/link.t
 
 - Applying a profile sets the shaper (`enabled`, `bps`, `delayMs`, `loss`, `queue`; `burstSec`
   back to 0.5), the link budget and the airtime model. `clean` turns the shaper off.
-- `contested` runs a timer loop on the server: `lora` for 3-8 s, then 100 % loss for 1-5 s
+- `contested` runs a timer loop on the server: `lora` for 4-12 s, then 100 % loss for 1-5 s
   (uniform, `CONTESTED` in `src/link.ts`), until another profile or a hand-made shaper change.
 - `external`: the Pi link box shapes. Shaper off; budget and airtime model from the profile named
   by `as` (default `clean`); no `contested` loop (the box runs it).

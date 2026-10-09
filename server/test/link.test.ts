@@ -108,15 +108,15 @@ test('contested: lora alternating with random blackouts; stops when another prof
   const { clock, shaper, link, st } = mk(() => seq[i++ % seq.length]);
   link.apply('contested');
   assert.deepEqual([shaper.config.loss, shaper.config.bps, st.budget, link.model.kind], [0.1, 2_000, 1_500, 'lora']);
-  assert.deepEqual(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested, { blackout: false, switchInMs: 3_000 }); // rng 0 -> shortest on
-  clock.advance(2_999); assert.equal(shaper.config.loss, 0.1);
+  assert.deepEqual(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested, { blackout: false, switchInMs: 4_000 }); // rng 0 -> shortest on
+  clock.advance(3_999); assert.equal(shaper.config.loss, 0.1);
   clock.advance(1); assert.equal(shaper.config.loss, 1);
   assert.equal(shaper.config.bps, 2_000, 'blackout is lora at 100 % loss');
   assert.deepEqual(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested, { blackout: true, switchInMs: 5_000 }); // rng 1 -> longest blackout
   assert.equal(link.profile, 'contested');
   clock.advance(5_000); assert.equal(shaper.config.loss, 0.1);
-  assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested!.switchInMs, 5_500);
-  clock.advance(5_500); assert.equal(shaper.config.loss, 1);
+  assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested!.switchInMs, 8_000);
+  clock.advance(8_000); assert.equal(shaper.config.loss, 1);
   link.apply('hf');
   assert.equal(clock.pending, 0, 'loop timer cancelled');
   clock.advance(60_000);
@@ -153,7 +153,7 @@ test("manual shaper change: 'custom' with the model kept; timed overrides keep t
 
   // Leaving contested mid-blackout by hand does not keep the jammer's 100 % loss.
   link.apply('contested');
-  clock.advance(3_000);
+  clock.advance(4_000);
   assert.equal(shaper.config.loss, 1);
   link.manual({ delayMs: 100 });
   assert.deepEqual([link.profile, shaper.config.loss, shaper.config.delayMs, clock.pending], ['custom', 0.1, 100, 0]);

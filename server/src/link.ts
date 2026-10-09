@@ -56,8 +56,9 @@ export const PROFILES: readonly LinkProfile[] = [
 ];
 export const findProfile = (name: string): LinkProfile | undefined => PROFILES.find(p => p.name === name);
 
-/** contested: lora for `onMs`, then a blackout (100 % loss) for `blackoutMs`, each uniform in [lo, hi]. */
-export const CONTESTED = { onMs: [3_000, 8_000], blackoutMs: [1_000, 5_000] } as const;
+/** contested: lora for `onMs`, then a blackout (100 % loss) for `blackoutMs`, each uniform in [lo, hi]
+ * (tools/pi-link.sh CONTESTED_UP 4-12 s, CONTESTED_DOWN 1-5 s). */
+export const CONTESTED = { onMs: [4_000, 12_000], blackoutMs: [1_000, 5_000] } as const;
 
 /** Shaper config for a profile ('clean' = shaper off, everything reset). */
 export function shaperFor(p: LinkProfile): ShaperConfig {

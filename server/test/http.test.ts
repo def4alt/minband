@@ -97,8 +97,8 @@ test('GET /api/link applies profiles (400 on bad input, nothing changes); /api/s
     ({ j } = await get('?profile=external&as=hf'));
     assert.deepEqual([j.profile, j.as, j.model.kind, j.model.rateBps, world.budgetBps, shaper.config.enabled], ['external', 'hf', 'serial', 9_600, 8_000, false]);
     ({ j } = await get('?profile=contested'));
-    assert.deepEqual(j.contested, { blackout: false, switchInMs: 3_000 });
-    clock.advance(3_000);
+    assert.deepEqual(j.contested, { blackout: false, switchInMs: 4_000 });
+    clock.advance(4_000);
     assert.equal((await get('')).j.contested.blackout, true);
 
     // A timed override keeps the profile; a hand-made change ends it.
