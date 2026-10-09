@@ -317,6 +317,8 @@ final class VideoBaseline {
                 AVVideoHeightKey: r.height,
                 AVVideoCompressionPropertiesKey: compression,
             ]
+            // AVAssetWriterInput raises (crashes) on settings the encoder rejects; fail the rendition instead.
+            guard writer.canApply(outputSettings: settings, forMediaType: .video) else { throw Failure("\(r.name): encoder rejected the settings") }
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
             input.expectsMediaDataInRealTime = true
             // The sensor image is landscape; the app is portrait. Display metadata only.
