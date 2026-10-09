@@ -3,12 +3,22 @@ import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { World } from './world.js';
 import { createApi, shaperState } from './http.js';
+import { parseAnchor } from './geo.js';
+import { cotConfigFromEnv, startCot } from './cot.js';
 import type { ControlMessage } from './types.js';
 
 const UDP_PORT = Number(process.env.MINBAND_UDP_PORT ?? 7777);
 const WS_PORT = Number(process.env.MINBAND_WS_PORT ?? 8080);
 
 const world = new World();
+// Geodetic anchor and CoT export (MINBAND_GEO, MINBAND_COT, MINBAND_COT_HZ; see README).
+let cotCfg: ReturnType<typeof cotConfigFromEnv>;
+try {
+  if (process.env.MINBAND_GEO) world.geo = parseAnchor(process.env.MINBAND_GEO);
+  cotCfg = cotConfigFromEnv(process.env);
+} catch (e) { console.error(`config: ${(e as Error).message}`); process.exit(1); }
+console.log(world.geo ? `geo anchor ${JSON.stringify(world.geo)}` : 'geo anchor: none (MINBAND_GEO="lat,lon,headingDeg[,altM]" or /api/geo)');
+const cot = startCot(world, cotCfg);
 const udp = dgram.createSocket('udp4');
 world.onAck = (addr, ack) => {
   const i = addr.lastIndexOf(':');
@@ -19,7 +29,7 @@ udp.on('error', e => { console.error(`udp: ${e.message}`); process.exit(1); });
 udp.bind(UDP_PORT, () => console.log(`udp ingest on :${UDP_PORT}`));
 
 // One HTTP server for the API and the WebSocket upgrade.
-const server = http.createServer(createApi(world));
+const server = http.createServer(createApi(world, { cot: cotCfg.opts }));
 const wss = new WebSocketServer({ server });
 server.on('error', e => { console.error(`http/ws: ${e.message}`); process.exit(1); });
 server.listen(WS_PORT, () => console.log(`ws + http api on :${WS_PORT}`));
@@ -46,6 +56,7 @@ const timers = [
 
 const shutdown = () => {
   timers.forEach(clearInterval);
+  cot?.stop();
   for (const c of wss.clients) c.terminate();
   wss.close(); server.close(); udp.close();
   setTimeout(() => process.exit(0), 200).unref();

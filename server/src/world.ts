@@ -20,6 +20,7 @@ import { Fusion } from './fusion.js';
 import { Shaper, UDP_IP_OVERHEAD } from './shaper.js';
 import { peek, type Peek } from './peek.js';
 import { SnapshotRing, evaluateTwin, parseGroundTruthCsv, summarize, type TwinEvaluation } from './groundtruth.js';
+import { anchorView, geoPoint, type GeoAnchor } from './geo.js';
 import type { DeviceView, EntityView, PoseView, Snapshot, TwinError } from './types.js';
 import { TICK_HZ } from './types.js';
 
@@ -108,7 +109,7 @@ export class Device {
   free() { this.rx.free(); }
 }
 
-export interface WorldOptions { now?: () => number; shaper?: Shaper }
+export interface WorldOptions { now?: () => number; shaper?: Shaper; geo?: GeoAnchor | null }
 type TwinRecord = TwinEvaluation & { updatedMs: number };
 
 export class World {
@@ -127,12 +128,15 @@ export class World {
   readonly rings = new Map<number, SnapshotRing>();
   readonly twin = new Map<number, TwinRecord>();
   lastSnapshot: Snapshot | null = null;
+  /** Geodetic anchor of the marker origin (S3): fills Snapshot.geo and GlobalEntity.geo; CoT needs it. */
+  geo: GeoAnchor | null;
   private readonly unattributed = new RateWindow();
   readonly startedMs: number;
 
   constructor(opts: WorldOptions = {}) {
     this.now = opts.now ?? Date.now;
     this.shaper = opts.shaper ?? new Shaper({ now: this.now });
+    this.geo = opts.geo ?? null;
     this.startedMs = this.now();
   }
 
@@ -270,12 +274,13 @@ export class World {
     this.expire(nowMs);
     const devices = this.views(nowMs);
     for (const v of devices) if (!v.provisional) this.ring(v.deviceId).push(v.edgeTick, v.entities);
-    const global = this.fusion.update(devices, nowMs);
+    const global = this.fusion.update(devices, nowMs).map(g => ({ ...g, geo: this.geo && geoPoint(g.pos, this.geo) }));
     const entityCount = devices.reduce((a, d) => a + d.entities.length, 0);
     this.lastSnapshot = {
       t: nowMs, devices, global, shaper: this.shaper.config, fusion: this.fusion.enabled,
       baselines: { ...BASELINES, naiveMetadataBps: entityCount * 31 * 30 * 8 + 30 * 40 * 8 },
       budgetBps: this.budgetBps, shaperRevertMs: this.shaper.revertInMs(),
+      geo: anchorView(this.geo),
     };
     return this.lastSnapshot;
   }

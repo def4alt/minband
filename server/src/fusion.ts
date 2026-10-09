@@ -11,6 +11,8 @@ import type { DeviceView, EntityView, GlobalEntity } from './types.js';
 export const MERGE_DIST = 0.5, MERGE_VEL = 0.5, SPLIT_DIST = 1.0, MERGE_MS = 1000, SPLIT_MS = 1000;
 
 type Key = string; // `${deviceKey}#${id}`
+/** World.snapshot adds `geo` (geo.ts) after fusion. */
+export type FusedEntity = Omit<GlobalEntity, 'geo'>;
 const devKey = (d: DeviceView): string => d.key ?? `id:${d.deviceId}`;
 
 export class Fusion {
@@ -22,7 +24,7 @@ export class Fusion {
   private farSince = new Map<string, number>();
   private nextGid = 1;
 
-  update(devices: DeviceView[], nowMs: number): GlobalEntity[] {
+  update(devices: DeviceView[], nowMs: number): FusedEntity[] {
     const all: { k: Key; dk: string; d: number; e: EntityView }[] = [];
     for (const d of devices) {
       const dk = devKey(d);
@@ -67,7 +69,7 @@ export class Fusion {
     for (const pk of [...this.farSince.keys()]) if (!touched.has(pk)) this.farSince.delete(pk);
 
     const byKey = new Map(all.map(a => [a.k, a]));
-    const out: GlobalEntity[] = [];
+    const out: FusedEntity[] = [];
     for (const [gid, members] of this.groups) {
       const ms = [...members].map(k => byKey.get(k)!).filter(Boolean);
       if (!ms.length) continue;
