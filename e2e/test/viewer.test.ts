@@ -2,6 +2,9 @@
 // twin (WebGL), and its readouts follow the live snapshot.
 import { test, after, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Browser } from 'playwright';
 import { startStack, startViewer, getJson, sleep, type Stack } from '../lib/stack.ts';
 import { launch, openPage, shot } from '../lib/browser.ts';
@@ -72,4 +75,23 @@ test('blackout: the credits say coasting before stale, the key says dismount', a
   await page.waitForFunction(() => !/coasting/.test(document.getElementById('cEdge')?.textContent ?? ''), null, { timeout: 15_000 });
   await page.close();
   assert.deepEqual(errors, []);
+});
+
+test('the view keeps up with the 30 Hz feed at 1080p in STAGE (stale snapshots dropped, not queued)', async () => {
+  // Slow frames (software GL here, a busy laptop on stage) used to queue every snapshot: with
+  // video recording on, the credits lagged 9 s after 40 s and 34 s after 80 s.
+  const video = mkdtempSync(join(tmpdir(), 'minband-lag-'));
+  const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, recordVideo: { dir: video, size: { width: 1920, height: 1080 } } });
+  const page = await ctx.newPage();
+  try {
+    await page.goto(viewer.url + '?stage=1');
+    await page.waitForFunction(() => document.getElementById('status')?.hidden, null, { timeout: 15_000 });
+    for (const profile of ['lora', 'telemetry', 'clean']) {
+      await sleep(15_000);
+      await getJson(`${s.server.api}/api/link?profile=${profile}`);
+      const t0 = Date.now();
+      await page.waitForFunction(p => new RegExp(`\\b${p}\\b`).test(document.getElementById('cLink')?.textContent ?? ''), profile, { timeout: 3000, polling: 100 });
+      console.log(`${profile} shown after ${Date.now() - t0} ms`);
+    }
+  } finally { await ctx.close(); rmSync(video, { recursive: true, force: true }); }
 });

@@ -3,7 +3,7 @@ import { Halftone } from './halftone';
 import { VideoOnLink } from './videolink';
 import { Clicker, Waterfall } from './waterfall';
 import { fmtBps, fmtKbps, fmtRate, fmtSeconds, fmtTimes, h264, linkDown, linkRate, modelText } from './link';
-import type { ControlMessage, LinkProfile, ShaperConfig, Snapshot } from './types';
+import type { ControlMessage, LinkProfile, PacketEvent, ShaperConfig, Snapshot } from './types';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -268,11 +268,29 @@ function setStatus(text: string | null) {
   el.hidden = false; setText('status', text);
 }
 
+// Render at most once per animation frame, always the newest snapshot: when a frame is slower
+// than the 30 Hz feed (software GL, a busy laptop) stale snapshots are dropped instead of queued,
+// which otherwise left the view tens of seconds behind the link. Packet events of the skipped
+// snapshots are carried into the rendered one, since the waterfall needs every datagram.
+let pendingSnap: Snapshot | null = null, frameQueued = false;
+const pendingPackets: PacketEvent[] = [];
+function queueSnapshot(snap: Snapshot) {
+  pendingSnap = snap;
+  if (snap.packets?.length) { pendingPackets.push(...snap.packets); if (pendingPackets.length > 4000) pendingPackets.splice(0, pendingPackets.length - 4000); }
+  if (frameQueued) return;
+  frameQueued = true;
+  requestAnimationFrame(() => {
+    frameQueued = false;
+    const s = pendingSnap; pendingSnap = null;
+    if (s) render({ ...s, packets: pendingPackets.splice(0) });
+  });
+}
+
 function connect() {
   ws = new WebSocket(WS_URL);
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
-    if (m.type === 'snapshot') render(m.snap);
+    if (m.type === 'snapshot') queueSnapshot(m.snap);
     else if (m.type === 'log' && m.lines.length) { const l = $('log'); l.textContent = (l.textContent + m.lines.join('\n') + '\n').split('\n').slice(-60).join('\n'); l.scrollTop = l.scrollHeight; }
   };
   ws.onclose = () => { setStatus('no link to server · retrying'); setTimeout(connect, 1000); };
