@@ -10,6 +10,7 @@ const ENDPOINTS = [
   'GET  /api/metrics',
   'GET  /api/shaper?enabled=0|1&bps=&delayMs=&loss=0..1&burstSec=&queue=&revertAfterMs=',
   'GET  /api/link?profile=clean|degraded|hf|lora|telemetry|contested|blackout|external&as=<profile>',
+  'GET  /api/baseline-a',
   'GET  /api/budget?bps=',
   'GET  /api/fusion?enabled=0|1',
   'POST /api/ground-truth?deviceId=  (body: CSV tick,id,class,x,y,z,vx,vy,vz,conf)',
@@ -82,6 +83,11 @@ export function createApi(world: World) {
             world.link.apply(profile, as);
           }
           send(res, 200, world.linkView());
+          return;
+        }
+        case '/api/baseline-a': {
+          const table = world.baselineA.get(true);
+          send(res, 200, { baselineA: table, file: world.baselineA.file, error: world.baselineA.error });
           return;
         }
         case '/api/budget': {

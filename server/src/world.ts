@@ -23,6 +23,7 @@ import { Fusion } from './fusion.js';
 import { Shaper, UDP_IP_OVERHEAD } from './shaper.js';
 import { peek, type Peek } from './peek.js';
 import { Link, NO_AIRTIME, airtimeMs, type LinkDeps } from './link.js';
+import { BaselineA } from './baseline.js';
 import { SnapshotRing, evaluateTwin, parseGroundTruthCsv, summarize, type TwinEvaluation } from './groundtruth.js';
 import type { AirtimeModel, DeviceView, EntityView, LinkView, PacketEvent, PoseView, Snapshot, TwinError } from './types.js';
 import { TICK_HZ } from './types.js';
@@ -35,7 +36,6 @@ export const ADOPT_WINDOW_MS = 5_000;
 export const ADOPT_TICK_TOLERANCE = TICK_HZ;
 const RATE_WINDOW_MS = 2_000;
 const LOG_LINES = 200;
-const BASELINES = { h264_720p_bps: 1_500_000, h264_480p_bps: 500_000, naiveMetadataBps: 0 };
 /** Packet events kept between snapshots (oldest dropped first). */
 export const MAX_PACKETS = 2_000;
 /** Until core's peek_json lands, Peek has no `ids`. */
@@ -133,6 +133,8 @@ export interface WorldOptions {
   now?: () => number; shaper?: Shaper;
   /** Timers and RNG for the contested loop (tests pass a fake clock). */
   link?: Pick<LinkDeps, 'rng' | 'schedule' | 'cancel'>;
+  /** Default: runs/baseline_a.json (MINBAND_BASELINE_A). */
+  baselineAFile?: string;
 }
 type TwinRecord = TwinEvaluation & { updatedMs: number };
 
@@ -145,6 +147,7 @@ export class World {
   readonly fusion = new Fusion();
   readonly shaper: Shaper;
   readonly link: Link;
+  readonly baselineA: BaselineA;
   /** Link budget (0 = unlimited), split over the live devices in each ack: see `edgeBudget`. */
   budgetBps = 0;
   log: string[] = [];
@@ -165,6 +168,7 @@ export class World {
     this.now = opts.now ?? Date.now;
     this.shaper = opts.shaper ?? new Shaper({ now: this.now });
     this.link = new Link({ ...opts.link, shaper: this.shaper, now: this.now, setBudget: b => { this.budgetBps = b; }, note: l => this.note(this.now(), l) });
+    this.baselineA = new BaselineA(opts.baselineAFile, this.now);
     this.startedMs = this.now();
   }
 
@@ -339,11 +343,12 @@ export class World {
     for (const v of devices) if (!v.provisional) this.ring(v.deviceId).push(v.edgeTick, v.entities);
     const global = this.fusion.update(devices, nowMs);
     const entityCount = devices.reduce((a, d) => a + d.entities.length, 0);
+    const baselineA = this.baselineA.get();
     const snap: Snapshot = {
       t: nowMs, devices, global, shaper: this.shaper.config, fusion: this.fusion.enabled,
-      baselines: { ...BASELINES, naiveMetadataBps: entityCount * 31 * 30 * 8 + 30 * 40 * 8 },
+      baselines: { ...this.baselineA.legacy(), naiveMetadataBps: entityCount * 31 * 30 * 8 + 30 * 40 * 8 },
       budgetBps: this.budgetBps, shaperRevertMs: this.shaper.revertInMs(),
-      link: this.linkView(nowMs, devices), packets: this.packets.splice(0),
+      link: this.linkView(nowMs, devices), packets: this.packets.splice(0), baselineA,
     };
     this.lastSnapshot = snap;
     return snap;

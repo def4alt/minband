@@ -115,3 +115,22 @@ test('GET /api/link applies profiles (400 on bad input, nothing changes); /api/s
     assert.equal(typeof m.shaper.counters.droppedQueue, 'number');
   });
 });
+
+test('GET /api/baseline-a returns the table; metrics carry per-device airtime', async () => {
+  const clock = new FakeClock();
+  const world = new World({ now: clock.now, shaper: new Shaper({ now: clock.now, schedule: clock.schedule, cancel: clock.cancel }), baselineAFile: '/nonexistent/baseline_a.json' });
+  const e = new ScriptedEdge(world, clock, '127.0.0.1:9000', 42, 1);
+  wireAcks(world, [e]);
+  world.link.apply('external', 'lora');
+  e.run(600);
+  await withServer(world, async base => {
+    const b = await (await fetch(`${base}/api/baseline-a`)).json();
+    assert.deepEqual(b.baselineA.map((x: { id: string }) => x.id), ['h264_720p', 'h264_480p', 'h264_360p']);
+    assert.deepEqual([b.file, b.error], ['/nonexistent/baseline_a.json', null]);
+    const m = await (await fetch(`${base}/api/metrics`)).json();
+    assert.ok(m.devices[0].airtimeShare > 0);
+    assert.equal(m.link.airtimeShare, m.devices[0].airtimeShare);
+    assert.deepEqual([m.link.profile, m.link.as], ['external', 'lora']);
+  });
+  e.free();
+});
