@@ -54,7 +54,7 @@ a server that has `/api/link`.
 - **Queue.** netem's `limit` also counts packets waiting out the delay, so it caps datagrams in
   flight. `hf` is the one profile where that binds before the rate: 8 per 500 ms is 16
   datagrams/s, and 9600 bit/s carries 16 datagrams/s of 75 B, so smaller datagrams at a higher
-  count (a one-update delta is ~59 B; many devices in the drones-per-link run) are tail-dropped on
+  count (a one-update delta is 64 B; many devices in the drones-per-link run) are tail-dropped on
   top of the 1 % loss. Raise its `limit` if that run shows drops the rate does not explain.
 - **Kernel.** netem needs the `sch_netem` module; Raspberry Pi OS ships it (`modinfo sch_netem`).
 - **Settings.** `UP_DEV`, `DOWN_DEV`, `PORT`, `SERVER`, setup's `SSID`/`PASSWORD`/`BAND`/`COUNTRY`,
