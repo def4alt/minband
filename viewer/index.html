@@ -58,9 +58,10 @@
     #scene { flex: 1 1 0; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
     #scene canvas { display: block; }
     #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; letter-spacing: .3em; }
-    #key { position: absolute; left: var(--pad); bottom: 20px; display: flex; gap: 20px; pointer-events: none; z-index: 2; color: var(--ink-3); }
+    #key { position: absolute; left: var(--pad); right: var(--pad); bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px 20px; pointer-events: none; z-index: 2; color: var(--ink-3); }
     #key span { display: inline-flex; align-items: center; gap: 8px; }
-    .tag3d { font: 400 9.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); white-space: nowrap; pointer-events: none; padding: 0 0 4px 7px; border-left: 1px solid var(--ink-3); }
+    /* Hover / tap tag: class · id · state · error radius, then the grid reference when there is one. */
+    .tag3d { font: 400 9.5px/1.5 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); white-space: pre; pointer-events: none; padding: 0 0 4px 7px; border-left: 1px solid var(--ink-3); }
     .tag3d.lost { border-left-color: var(--ink); }
 
     /* ---- side-by-side raw video, halftoned ---- */
@@ -77,6 +78,18 @@
     #camOverlay .second { color: var(--ink); }
     #res { display: flex; gap: 2px; flex-shrink: 0; }
     #res button { padding: 5px 6px 4px; font-family: var(--mono); letter-spacing: .06em; }
+    /* V1: the countdown to the next frame through this link, and the S23 thumbnail chip. */
+    #frameClock { position: absolute; left: var(--pad); bottom: 16px; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 6px; margin-left: -10px; background: var(--bg); pointer-events: none; }
+    #thumbBox { position: absolute; right: var(--pad); bottom: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding: 6px; margin-right: -6px; background: var(--bg); pointer-events: none; }
+    #thumb { display: block; width: 72px; height: 72px; border: 1px solid var(--ink-3); }
+
+    /* ---- V3 link activity: in DETAILS, or on the stage beside the twin in STAGE mode ---- */
+    .activity { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+    #waterfall { display: block; width: 100%; height: 220px; }
+    #stage > .activity { flex: 0 0 232px; padding: 18px 16px 0; border-left: 1px solid var(--ink-3); background: var(--bg); }
+    #stage > .activity #waterfall { flex: 1 1 0; height: auto; }
+    #stage > .activity .note { display: none; }
+    #stage.staged #scene { flex-grow: 1.5; } /* STAGE: the twin stays the widest thing on screen */
 
     /* ---- side panel ---- */
     #side { grid-area: side; border-left: 1px solid var(--ink-3); overflow: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; background: var(--bg); }
@@ -143,6 +156,7 @@
       .credit dd { white-space: nowrap; }
       #stage { flex: 1 1 auto; flex-direction: column; margin-bottom: var(--sheet-peek); }
       #camera { border-left: 0; border-top: 1px solid var(--ink-3); }
+      #stage > .activity { flex: 0 0 200px; border-left: 0; border-top: 1px solid var(--ink-3); padding: 12px var(--pad) 0; }
       #camTitle .val { display: none; }
       #camOverlay { padding: 12px var(--pad) 14px; }
       #key { left: var(--pad); bottom: 14px; gap: 14px; }
@@ -175,15 +189,17 @@
       <div id="scene">
         <div id="status" class="lbl">connecting</div>
         <div id="key" class="lbl" aria-hidden="true">
-          <span><svg width="7" height="15" viewBox="0 0 7 15"><rect x=".5" y=".5" width="6" height="14" rx="3" fill="currentColor"/></svg>person</span>
+          <span><svg width="7" height="15" viewBox="0 0 7 15"><rect x=".5" y=".5" width="6" height="14" rx="3" fill="currentColor"/></svg>dismount</span>
           <span><svg width="7" height="7" viewBox="0 0 7 7"><circle cx="3.5" cy="3.5" r="3" fill="currentColor"/></svg>carried</span>
           <span><svg width="8" height="8" viewBox="0 0 8 8"><rect x=".5" y=".5" width="7" height="7" fill="currentColor"/></svg>static</span>
+          <span><svg width="13" height="9" viewBox="0 0 13 9"><ellipse cx="6.5" cy="4.5" rx="6" ry="4" fill="none" stroke="currentColor"/></svg>error radius</span>
+          <span><svg width="13" height="9" viewBox="0 0 13 9"><ellipse cx="6.5" cy="4.5" rx="6" ry="4" fill="none" stroke="currentColor" stroke-dasharray="2.2 1.6"/></svg>coasting</span>
           <span><svg width="8" height="8" viewBox="0 0 8 8"><rect x=".5" y=".5" width="7" height="7" fill="none" stroke="currentColor" stroke-dasharray="1 2"/></svg>stale</span>
         </div>
       </div>
       <section id="camera" hidden aria-label="raw video stand-in">
         <div class="capbar">
-          <div id="camTitle"><span class="lbl">Raw video</span><span class="val">laptop camera, stand-in for the drone feed</span></div>
+          <div id="camTitle"><span class="lbl" id="camTitleL">Raw video</span><span class="val" id="camTitleV">laptop camera, stand-in for the drone feed</span></div>
           <div id="res" role="group" aria-label="video quality">
             <button data-res="360">360p</button><button data-res="480">480p</button><button data-res="720" class="on">720p</button><button data-res="1080">1080p</button>
           </div>
@@ -192,9 +208,14 @@
           <canvas id="halftone"></canvas>
           <video id="cam" autoplay muted playsinline></video>
           <div id="camPlaceholder" hidden><div class="row1"><span class="lbl">Raw video</span><span class="val">unavailable</span></div><span class="note" id="camReason"></span></div>
+          <div id="frameClock" hidden><span class="lbl" id="frameClockL">Next frame</span><span class="primary" id="frameClockV">0:00</span></div>
+          <div id="thumbBox" hidden><canvas id="thumb" aria-label="AI thumbnail, 150 bytes"></canvas><span class="lbl">AI thumbnail · 150 B</span></div>
         </div>
         <div id="camOverlay">
-          <span class="lbl">Raw video at this quality</span><span class="second" id="rawRate">1.50 Mbps</span>
+          <span class="lbl">H.264 at this quality</span><span class="val" id="rawRate">1.50 Mbps</span>
+          <span class="lbl">Video on this link</span><span class="second" id="vlValue">flows normally</span>
+          <span></span><span class="note" id="vlDetail"></span>
+          <span class="lbl" id="vlThumbLbl">AI thumbnail</span><span class="val" id="vlThumb"></span>
           <span class="lbl">Twin right now</span><span class="val" id="rawVs">idle</span>
         </div>
       </section>
@@ -210,8 +231,9 @@
         <div class="kv"><span class="lbl">Twin error</span><span class="second" id="twinErr">–</span></div>
       </section>
       <section class="sec">
-        <div class="kv"><span class="lbl">Scenario</span><span class="val dim" id="scenarioName">clean</span></div>
-        <div class="scen" id="scenario" role="group" aria-label="link scenario">
+        <div class="kv"><span class="lbl">Link profile</span><span class="val dim" id="scenarioName">clean</span></div>
+        <!-- Replaced by the server's profile table (snap.link.profiles); these scenarios are the fallback for an older server. -->
+        <div class="scen" id="scenario" role="group" aria-label="link profile">
           <button data-scenario="clean">Clean<span class="p">no impairment</span></button>
           <button data-scenario="contested">Contested<span class="p">50 kbps · 300 ms · 5%</span></button>
           <button data-scenario="jammed">Jammed<span class="p">2 kbps · 800 ms · 30%</span></button>
@@ -227,6 +249,12 @@
           <div class="note" id="baselines"></div>
           <div class="note" id="twinErrDetail">twin error: no ground truth uploaded</div>
         </section>
+        <section class="sec" id="activitySec">
+          <div class="activity" id="activity">
+            <div class="kv"><span class="lbl">Link activity</span><span class="note dim">one tick per datagram · width = bytes</span></div>
+            <canvas id="waterfall" aria-label="link activity: one tick per datagram, newest at the top"></canvas>
+          </div>
+        </section>
         <section class="sec">
           <div class="lbl">Link controls</div>
           <label class="slider" for="capSlider"><span class="kv"><span class="lbl">Bandwidth cap</span><span class="val" id="bpsv">off</span></span><input id="capSlider" type="range" min="0" max="200" value="0" /></label>
@@ -241,6 +269,8 @@
             <button id="fusion" class="tog on" aria-pressed="true"><span>Fusion</span><span class="v">on</span></button>
             <button id="ghosts" class="tog" aria-pressed="false"><span>Ghosts</span><span class="v">off</span></button>
             <button id="sbs" class="tog" aria-pressed="false"><span>Side by side</span><span class="v">off</span></button>
+            <button id="stageMode" class="tog" aria-pressed="false" title="presenter view: link activity on the stage, video on the same link beside the twin"><span>Stage</span><span class="v">off</span></button>
+            <button id="click" class="tog" aria-pressed="false" title="a soft click per uplink datagram"><span>Click</span><span class="v">off</span></button>
           </div>
         </section>
         <section class="sec">
