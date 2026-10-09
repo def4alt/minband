@@ -14,7 +14,10 @@ pub struct ReceiverConfig {
     pub stale_ticks: u32,
     /// Entity not refreshed for this long is dropped by `gc`.
     pub drop_ticks: u32,
-    /// A seq gap that stays open for this long (edge time) is nacked.
+    /// A seq gap that stays open for this long (edge time) is nacked. 0: at once. A gap is seen only
+    /// when a later datagram arrives, and its age advances only with later datagrams, so any wait
+    /// for reordering (which UDP over one radio hop, the shaper and netem do not produce) turns into
+    /// "wait for the next datagram after the wait", ~0.5 s on a sparse link.
     pub gap_nack_ticks: u32,
     /// Forget a gap after this long; it can no longer be repaired meaningfully.
     pub gap_forget_ticks: u32,
@@ -31,7 +34,7 @@ impl Default for ReceiverConfig {
         Self {
             stale_ticks: 6 * TICK_HZ,
             drop_ticks: 10 * TICK_HZ,
-            gap_nack_ticks: TICK_HZ / 5,
+            gap_nack_ticks: 0,
             gap_forget_ticks: 3 * TICK_HZ,
             renack_ticks: TICK_HZ / 2,
             hard_drop_ticks: 30 * TICK_HZ,
@@ -535,7 +538,9 @@ mod tests {
 
     #[test]
     fn detects_gap_and_nacks_after_delay() {
-        let mut r = Receiver::new(ReceiverConfig::default());
+        // With a reordering allowance the nack waits for a later datagram past it.
+        let cfg = ReceiverConfig { gap_nack_ticks: TICK_HZ / 5, ..ReceiverConfig::default() };
+        let mut r = Receiver::new(cfg);
         r.on_datagram(&delta(1, 0, vec![])).unwrap();
         r.on_datagram(&delta(3, 10, vec![])).unwrap();
         assert_eq!(r.stats().gaps_detected, 1);
@@ -550,6 +555,21 @@ mod tests {
         // Late arrival of seq 2 closes the gap.
         assert_ne!(r.on_datagram(&delta(2, 5, vec![])).unwrap(), Event::Ignored);
         assert!(!r.needs_ack());
+    }
+
+    /// Default: a gap is nacked as soon as the datagram after it arrives.
+    #[test]
+    fn gap_is_nacked_at_once_by_default() {
+        let mut r = Receiver::new(ReceiverConfig::default());
+        r.on_datagram(&delta(1, 0, vec![])).unwrap();
+        assert!(!r.needs_ack());
+        r.on_datagram(&delta(3, 10, vec![])).unwrap();
+        assert!(r.needs_ack());
+        match decode(&r.make_ack(0)).unwrap() {
+            Message::Ack { last_seq: 3, missing, .. } => assert_eq!(missing, vec![2]),
+            m => panic!("{m:?}"),
+        }
+        assert!(!r.needs_ack(), "then re-nacked only after renack_ticks");
     }
 
     #[test]

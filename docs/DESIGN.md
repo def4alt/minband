@@ -173,7 +173,9 @@ Single crate `minband-core`, deterministic:
   budget; scale `θ_pos` and `θ_vel` by `1.25` when over, `0.9` when under 70 %, scale clamped to
   `[0.33, 13]` (0.05..1.95 m at the default θ_pos). Despawns and spawns are never suppressed.
   Reported in metrics so the viewer can show "fidelity knob at 0.4 m".
-- **Loss handling**: receiver tracks a window of seqs; a gap older than 200 ms becomes a `Nack`.
+- **Loss handling**: receiver tracks a window of seqs; a gap becomes a `Nack` as soon as the
+  datagram after it arrives (the link does not reorder, and a gap's age only advances with later
+  datagrams, so a 200 ms reordering allowance cost ~0.5 s of repair latency on sparse links).
   The edge responds with the *current* state of every entity touched in the missing seqs (state
   repair), not the lost packets.
 - **Hello refresh**: after being acked, the edge re-sends `Hello` every 5 s (Cadence) so a restarted
@@ -266,7 +268,7 @@ runs on synthetic ground truth (perfect-tracker velocities, optional gaussian no
   baselines as reference lines.
 - **Resilience**: twin error and availability vs packet loss rate (0, 5, 20, 50 %, Bernoulli,
   both directions, 50 ms one-way delay) at `θ_pos` 0.15, mean of 10 seeds, with state repair
-  (an ack listing the open gaps whenever a gap turns 200 ms old, checked every 100 ms) and
+  (an ack listing the open gaps whenever one is due, checked every 100 ms) and
   without (no acks; keyframes only). The live server's cadence (an ack after any datagram once
   100 ms have passed) is measured too, as a bytes comparison.
 
