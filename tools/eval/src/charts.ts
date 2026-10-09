@@ -104,8 +104,9 @@ function legend(x0: number, y: number, maxX: number, items: { label: string; key
 /** Scenario key: a short trace and dot in the scenario's hue. */
 const seriesKey = (color: string) => `<line x1="0" y1="0" x2="40" y2="0" stroke="${color}" stroke-width="1"/><circle cx="20" cy="0" r="2.4" fill="${color}"/>`;
 const refKey = (stroke: string, dash?: string) => `<line x1="0" y1="0" x2="40" y2="0" stroke="${stroke}" stroke-width="1"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
-// Reference lines: dashed in --ink-2; H.264 long dashes, naive metadata short ones.
-const REF_H264 = { stroke: C.ink2, dash: '5 4' }, REF_NAIVE = { stroke: C.ink2, dash: '1.5 3' };
+// Reference lines: dashed in --ink-2; H.264 long dashes, naive metadata short ones, link profile
+// rates (with the AI thumbnail interval they allow, Baseline C) dash-dot.
+const REF_H264 = { stroke: C.ink2, dash: '5 4' }, REF_NAIVE = { stroke: C.ink2, dash: '1.5 3' }, REF_LINK = { stroke: C.ink2, dash: '7 3 1.5 3' };
 
 /** Nice upper bound and step for a linear axis starting at 0. */
 function niceMax(max: number, ticks = 6): { max: number; step: number } {
@@ -117,7 +118,13 @@ function niceMax(max: number, ticks = 6): { max: number; step: number } {
 
 const fmtBytes = (b: number) => (b >= 1e6 ? `${b / 1e6} MB/s` : b >= 1e3 ? `${b / 1e3} kB/s` : `${b} B/s`);
 const fmtBits = (bps: number) => (bps >= 1e6 ? `${Number((bps / 1e6).toPrecision(3))} Mbps` : `${Number((bps / 1e3).toPrecision(3))} kbps`);
+/** Seconds with 2 decimals below 1 s, 1 decimal below 10 s, whole above. */
+const fmtS = (s: number) => (!Number.isFinite(s) ? '-' : `${s.toFixed(s < 1 ? 2 : s < 10 ? 1 : 0)} s`);
 const pretty = (s: string) => s.replace(/_/g, ' ');
+/** Baseline C rows: link profile rates (no scenario), and equal bytes per scenario. */
+const linkRows = (base: Rec[]) => base.filter(b => b.kind === 'C' && !b.scenario);
+const thumbByScenario = (base: Rec[]) => new Map(base.filter(b => b.kind === 'C' && b.scenario).map(b => [String(b.scenario), b]));
+const linkName = (b: Rec) => String(b.id).replace(/^thumb_/, '');
 
 function scenarioOrder(rows: Rec[]): string[] {
   const seen: string[] = [];
@@ -128,10 +135,12 @@ function scenarioOrder(rows: Rec[]): string[] {
 // ---------------------------------------------------------------- fidelity vs bytes
 
 export function fidelityChart(rows: Rec[], baselines: Rec[], meta: { note?: string } = {}): string {
-  const W = 960, H = 600, X0 = 40;
+  const W = 960, H = 620, X0 = 40;
   const scen = scenarioOrder(rows), hue = huesFor(scen);
   const A = baselines.filter(b => b.kind === 'A');
   const B = baselines.filter(b => b.kind === 'B');
+  const Cl = linkRows(baselines), Ce = thumbByScenario(baselines);
+  const chip = baselines.find(b => b.kind === 'C')?.chip_bytes;
   const allMeasured = A.length > 0 && A.every(a => a.measured === 'true');
   const noneMeasured = !A.some(a => a.measured === 'true');
 
@@ -143,11 +152,12 @@ export function fidelityChart(rows: Rec[], baselines: Rec[], meta: { note?: stri
     { label: `θ_pos ${DEFAULT_THETA} m default`, key: `<circle cx="20" cy="0" r="5" fill="none" stroke="${C.ink2}" stroke-width="1"/><circle cx="20" cy="0" r="2.4" fill="${C.ink}"/>` },
     { label: allMeasured ? 'H.264 measured' : noneMeasured ? 'H.264 configured' : 'H.264 video', key: refKey(REF_H264.stroke, REF_H264.dash) },
     { label: 'naive 30 Hz metadata', key: refKey(REF_NAIVE.stroke, REF_NAIVE.dash) },
+    ...(Cl.length ? [{ label: `link rate · ${chip} B AI thumbnail interval`, key: refKey(REF_LINK.stroke, REF_LINK.dash) }] : []),
   ]);
   head.push(leg.svg);
 
-  const L = 84, R = W - X0, T = leg.bottom + 30, Bm = H - 92;
-  const xs = [...rows.map(r => Number(r.bytes_per_s)), ...A.map(a => Number(a.bytes_per_s)), ...B.map(b => Number(b.bytes_per_s))].filter(v => v > 0);
+  const L = 84, R = W - X0, T = leg.bottom + 30, Bm = H - 106;
+  const xs = [...rows.map(r => Number(r.bytes_per_s)), ...[...A, ...B, ...Cl].map(b => Number(b.bytes_per_s))].filter(v => v > 0);
   const lx0 = Math.floor(Math.log10(Math.min(10, ...xs)));
   const lx1 = Math.ceil(Math.log10(Math.max(...xs) * 1.15) * 2) / 2;
   const X = (b: number) => L + ((Math.log10(Math.max(b, 10 ** lx0)) - lx0) / (lx1 - lx0)) * (R - L);
@@ -181,6 +191,7 @@ export function fidelityChart(rows: Rec[], baselines: Rec[], meta: { note?: stri
     const ent = Number.isInteger(b.ent) ? String(b.ent) : b.ent.toFixed(1);
     refs.push({ x: b.bytes, label: `naive 30 Hz · ${ent} ${b.ent === 1 ? 'entity' : 'entities'} · ${fmtBits(b.bps)}`, ref: REF_NAIVE });
   }
+  for (const c of Cl) refs.push({ x: Number(c.bytes_per_s), label: `${linkName(c)} link ${fmtBits(Number(c.bps))} · ${c.chip_bytes} B thumbnail every ${fmtS(Number(c.interval_s))}`, ref: REF_LINK });
   for (const r of refs) {
     const x = X(r.x);
     g.push(line(x, T, x, Bm, r.ref.stroke, r.ref.dash));
@@ -200,13 +211,18 @@ export function fidelityChart(rows: Rec[], baselines: Rec[], meta: { note?: stri
     const d = pts.find(p => Math.abs(Number(p.theta_pos) - DEFAULT_THETA) < 1e-9);
     if (d) {
       const x = X(Number(d.bytes_per_s)), y = Y(Number(d.err_mean_m) * 100);
+      const c = Ce.get(s);
+      const thumb = c ? `\nAI thumbnail at these bytes: one ${c.chip_bytes} B chip every ${fmtS(Number(c.interval_s))}` : '';
       g.push(`<circle cx="${n(x)}" cy="${n(y)}" r="5" fill="none" stroke="${C.ink2}" stroke-width="1"/>`);
-      g.push(marker(x, y, `${pretty(s)} · DEFAULT θ_pos ${d.theta_pos} m\n${Number(d.bytes_per_s).toFixed(1)} B/s (${Number(d.kbps).toFixed(2)} kbps)\nmean ${(Number(d.err_mean_m) * 100).toFixed(2)} cm · p95 ${(Number(d.err_p95_m) * 100).toFixed(2)} cm`, { color, r: 2.4 }));
+      g.push(marker(x, y, `${pretty(s)} · DEFAULT θ_pos ${d.theta_pos} m\n${Number(d.bytes_per_s).toFixed(1)} B/s (${Number(d.kbps).toFixed(2)} kbps)\nmean ${(Number(d.err_mean_m) * 100).toFixed(2)} cm · p95 ${(Number(d.err_p95_m) * 100).toFixed(2)} cm${thumb}`, { color, r: 2.4 }));
     }
   });
 
-  const foot = text(X0, H - 22, meta.note ?? `Baseline A ${allMeasured ? 'measured on the phone' : noneMeasured ? `is ${CONFIGURED_SOURCE}` : `marked (configured) is ${CONFIGURED_SOURCE}`}. Baseline B = entities × 31 B × 30 Hz + 30 Hz × 40 B. Table: summary.md.`, { tone: 'ink2', size: 10 });
-  return svgOpen(W, H, 'Twin error vs bandwidth', 'Mean twin position error against uplink bytes per second for each scenario (one colour each) as the position threshold is swept; vertical dashed reference lines mark H.264 video and naive 30 Hz metadata.')
+  const foot = text(X0, H - 36, meta.note ?? `Baseline A ${allMeasured ? 'measured on the phone' : noneMeasured ? `is ${CONFIGURED_SOURCE}` : `marked (configured) is ${CONFIGURED_SOURCE}`}. Baseline B = entities × 31 B × 30 Hz + 30 Hz × 40 B.`, { tone: 'ink2', size: 10 })
+    + text(X0, H - 20, chip !== undefined
+      ? `Baseline C = one ${chip} B AI thumbnail every (${chip} + 28) B × 8 / rate; at MinBand's own bytes in the default-θ tooltips. Table: summary.md.`
+      : 'Table: summary.md.', { tone: 'ink2', size: 10 });
+  return svgOpen(W, H, 'Twin error vs bandwidth', 'Mean twin position error against uplink bytes per second for each scenario (one colour each) as the position threshold is swept; vertical dashed reference lines mark H.264 video, naive 30 Hz metadata and the link profile rates with the AI thumbnail interval each allows.')
     + head.join('') + g.join('') + foot + '</svg>\n';
 }
 
@@ -286,6 +302,8 @@ const times = (a: number, b: number) => (b > 0 ? `${Math.round(a / b).toLocaleSt
 export function summary(fid: Rec[], res: Rec[], base: Rec[], meta: { title?: string; source?: string } = {}): string {
   const A = base.filter(b => b.kind === 'A');
   const B = new Map(base.filter(b => b.kind === 'B').map(b => [String(b.scenario), b]));
+  const Cl = linkRows(base), Ce = thumbByScenario(base);
+  const chip = base.find(b => b.kind === 'C')?.chip_bytes;
   const at = fid.filter(r => Math.abs(Number(r.theta_pos) - DEFAULT_THETA) < 1e-9);
   const scen = scenarioOrder(fid);
   const lines: string[] = [];
@@ -295,14 +313,16 @@ export function summary(fid: Rec[], res: Rec[], base: Rec[], meta: { title?: str
   if (d0) lines.push(`Operating point: θ_pos ${DEFAULT_THETA} m, θ_vel ${2 * DEFAULT_THETA} m/s, no loss, no delay; ${fx(Number(d0.duration_s), 0)} s per log at ${d0.frame_hz} Hz. Bytes are on the wire: payload + 28 B UDP/IP per datagram.`, '');
   lines.push('## Key numbers', '');
   const aCols = A.map(a => `vs ${a.label}${a.measured === 'true' ? '' : '*'}`);
-  lines.push(`| Scenario | Entities | MinBand B/s | MinBand kbps | Datagrams (Δ / kf) | Mean error (cm) | p95 error (cm) | Naive 30 Hz kbps | vs naive | ${aCols.join(' | ')} |`);
-  lines.push(`|---|---:|---:|---:|---:|---:|---:|---:|---:|${aCols.map(() => '---:').join('|')}|`);
+  const thumbCol = Ce.size ? ` ${chip} B AI thumbnail at these bytes |` : '';
+  lines.push(`| Scenario | Entities | MinBand B/s | MinBand kbps | Datagrams (Δ / kf) | Mean error (cm) | p95 error (cm) | Naive 30 Hz kbps | vs naive |${thumbCol} ${aCols.join(' | ')} |`);
+  lines.push(`|---|---:|---:|---:|---:|---:|---:|---:|---:|${Ce.size ? '---:|' : ''}${aCols.map(() => '---:').join('|')}|`);
   for (const s of scen) {
     const r = at.find(x => x.scenario === s);
     if (!r) continue;
-    const bps = Number(r.bytes_per_s) * 8, b = B.get(s);
+    const bps = Number(r.bytes_per_s) * 8, b = B.get(s), c = Ce.get(s);
     const nb = b ? Number(b.bps) : NaN;
-    lines.push(`| ${pretty(s)} | ${fx(Number(r.entities_mean), Number.isInteger(Number(r.entities_mean)) ? 0 : 1)} | ${fx(Number(r.bytes_per_s))} | ${fx(Number(r.kbps), 2)} | ${r.datagrams} (${r.deltas} / ${r.keyframes}) | ${fx(Number(r.err_mean_m) * 100, 2)} | ${fx(Number(r.err_p95_m) * 100, 2)} | ${fx(nb / 1000, 2)} | ${times(nb, bps)} | ${A.map(a => times(Number(a.bps), bps)).join(' | ')} |`);
+    const thumb = Ce.size ? ` ${c ? `every ${fmtS(Number(c.interval_s))}` : '-'} |` : '';
+    lines.push(`| ${pretty(s)} | ${fx(Number(r.entities_mean), Number.isInteger(Number(r.entities_mean)) ? 0 : 1)} | ${fx(Number(r.bytes_per_s))} | ${fx(Number(r.kbps), 2)} | ${r.datagrams} (${r.deltas} / ${r.keyframes}) | ${fx(Number(r.err_mean_m) * 100, 2)} | ${fx(Number(r.err_p95_m) * 100, 2)} | ${fx(nb / 1000, 2)} | ${times(nb, bps)} |${thumb} ${A.map(a => times(Number(a.bps), bps)).join(' | ')} |`);
   }
   lines.push('');
   if (A.some(a => a.measured !== 'true')) lines.push(`\\* Baseline A marked * is ${CONFIGURED_SOURCE}.`, '');
@@ -310,7 +330,23 @@ export function summary(fid: Rec[], res: Rec[], base: Rec[], meta: { title?: str
   lines.push('| Baseline | Bitrate | Source |', '|---|---:|---|');
   for (const a of A) lines.push(`| A: ${a.label} (${a.resolution}) | ${fmtBits(Number(a.bps))} | ${a.measured === 'true' ? a.source : CONFIGURED_SOURCE} |`);
   for (const s of scen) { const b = B.get(s); if (b) lines.push(`| B: naive 30 Hz, ${pretty(s)} (${fx(Number(b.entities_mean), 2)} entities) | ${fmtBits(Number(b.bps))} | entities × 31 B × 30 Hz × 8 + 30 Hz × 40 B × 8 |`); }
+  if (Ce.size || Cl.length) lines.push(`| C: ${chip} B AI thumbnail every N s | MinBand's rate, or a link's | N = (${chip} + 28) B × 8 / rate; below |`);
   lines.push('');
+  if (Ce.size || Cl.length) {
+    lines.push('## Baseline C: AI thumbnail', '');
+    lines.push(`At a few hundred bytes per second the realistic competitor is not video (a ~30 KB H.264 still takes ~2 min at 2 kbit/s) but a periodic AI thumbnail: the edge detector crops what it found and sends one ~${chip} B chip (a 32x32-class JPEG; MeshCore sends 100-200 B images over LoRa) every N = (${chip} + 28) B × 8 / R seconds at a wire rate of R bit/s.`, '');
+    if (Ce.size) {
+      lines.push(`| Scenario | MinBand B/s | The same bytes as thumbnails: one ${chip} B chip every |`, '|---|---:|---:|');
+      for (const s of scen) { const c = Ce.get(s); if (c) lines.push(`| ${pretty(s)} | ${fx(Number(c.bytes_per_s))} | ${fmtS(Number(c.interval_s))} |`); }
+      lines.push('');
+    }
+    if (Cl.length) {
+      lines.push(`| Link profile (\`tools/pi-link.sh\`) | Rate | The whole link as thumbnails: one ${chip} B chip every |`, '|---|---:|---:|');
+      for (const c of Cl) lines.push(`| ${linkName(c)} | ${fmtBits(Number(c.bps))} | ${fmtS(Number(c.interval_s))} |`);
+      lines.push('');
+    }
+    lines.push('What each buys at equal bytes: a chip is evidence a person can check (what the detector saw, including its mistakes and decoys), but of one object at a time, every N s, with no 3D position, no identity across chips and nothing in between; if each chip shows one object, k entities are each revisited every k·N s. The twin carries every entity\'s position and velocity continuously (within θ_pos on a lossless link) and no pixels. They answer different questions; chips on demand inside the same budget (S8) combine them.', '');
+  }
   if (res.length) {
     const losses = [...new Set(res.map(r => Number(r.loss)))].sort((a, b) => a - b);
     const r0 = res[0];

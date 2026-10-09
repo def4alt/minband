@@ -105,7 +105,7 @@ Outputs (all under the gitignored `runs/`):
 | `runs/synth/<scenario>.csv` | synthetic ground truth, phone format `tick,id,class,x,y,z,vx,vy,vz,conf` |
 | `runs/eval/fidelity_vs_bytes.csv` | θ sweep, one row per (scenario, θ_pos) |
 | `runs/eval/resilience.csv` | loss sweep, one row per (scenario, loss, repair on/off) |
-| `runs/eval/baselines.csv` | Baseline A (H.264) and Baseline B (naive metadata) per scenario |
+| `runs/eval/baselines.csv` | Baseline A (H.264), Baseline B (naive metadata) per scenario, Baseline C (AI thumbnail) per scenario and per link profile |
 | `runs/eval/fidelity_vs_bytes.svg`, `resilience.svg` | the two charts |
 | `runs/eval/summary.md` | key-number table for the slides |
 
@@ -157,9 +157,11 @@ directions, 6 ticks = 50 ms one-way delay, 10 seeds averaged for loss > 0):
 
 | Column | Meaning |
 |---|---|
-| `kind` | `A` (H.264 video) or `B` (naive 30 Hz metadata) |
-| `id`, `label`, `resolution` | e.g. `h264_720p`, `H.264 720p`, `1280x720` (A only) |
-| `scenario`, `entities_mean`, `entities_max` | B only: per log |
-| `bps`, `kbps`, `bytes_per_s` | the bitrate in three units |
-| `measured` | `true` once replaced by a phone measurement, `false` for configured numbers |
+| `kind` | `A` (H.264 video), `B` (naive 30 Hz metadata) or `C` (AI thumbnail) |
+| `id`, `label`, `resolution` | e.g. `h264_720p`, `H.264 720p`, `1280x720` (A only); C: `thumb_equal_bytes`, or `thumb_hf` / `thumb_lora` / `thumb_telemetry` |
+| `scenario` | B: per log. C: the log for `thumb_equal_bytes`, empty for the link rows |
+| `entities_mean`, `entities_max` | B only |
+| `bps`, `kbps`, `bytes_per_s` | the bitrate in three units; C: the rate the thumbnail feed gets (MinBand's wire rate at the default θ_pos, or the link profile's rate) |
+| `chip_bytes`, `interval_s` | C only: chip size (150 B) and N = (`chip_bytes` + 28) × 8 / `bps`, seconds between chips |
+| `measured` | `true` once replaced by a phone measurement, `false` for configured or computed numbers |
 | `source` | provenance; configured A rows say "configured, to be replaced by measured VideoToolbox numbers" |
