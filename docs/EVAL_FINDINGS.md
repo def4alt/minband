@@ -87,7 +87,9 @@ Bold: within the budget and, for *now*, the best of the three or within 2 cm of 
    at the budget (7.3 s at 450, 3.3 s at 1000, 0.5 s from ~6.5 kbit/s), narrows under 80 %, and
    widens at once when a window's allowance is spent early: 80-92 % of the budget for circling
    walkers at 450-8000 bit/s (unit test), one walker at 1000 bit/s 858 bit/s and 14.9 cm, and eight
-   drones on hf deliver 6240 bit/s with 20.5 cm mean twin error in the e2e test. A leaky bucket
+   drones on hf deliver 6240 bit/s with 20.5 cm mean twin error in the e2e test (5724 bit/s, 51 %
+   airtime, 16.2 cm, 4 of 579 datagrams dropped once the sim's edges start at staggered phases
+   instead of keyframing and posing in the same instant). A leaky bucket
    was tried first: it held 87-90 % but its memory made 30 s limit cycles (θ scale 1.7 → 6.5) that
    doubled the telemetry error.
 3. **Immediate nacks.** The receiver nacked a gap once it was 200 ms old, but a gap's age only
