@@ -65,7 +65,7 @@ test('provisional (keyed by address) until its Hello is seen; the 5 s Hello refr
   const e = new ScriptedEdge(world, clock, C, 9, 5);
   wireAcks(world, [e]);
   e.run(1, { deliver: false }); // Hello to the old server
-  e.edge.on_datagram(new Uint8Array([0, 4, 0, 0, 0])); // Ack { last_seq: 0 } from the old server
+  e.edge.on_datagram(new Uint8Array([1, 4, 0, 0, 0])); // Ack { last_seq: 0 } from the old server
   e.run(300);
   assert.deepEqual([...world.devices.keys()], [`addr:${C}`]);
   const v = world.snapshot().devices[0];
@@ -152,7 +152,7 @@ test('no adoption when ambiguous or when the ticks do not continue', () => {
   const x = new ScriptedEdge(w2, c2, A, 42, 1); wireAcks(w2, [x]); x.run(600);
   c2.advance(1000);
   const y = new ScriptedEdge(w2, c2, B, 77, 3);
-  y.edge.on_datagram(new Uint8Array([0, 4, 0, 0, 0]));
+  y.edge.on_datagram(new Uint8Array([1, 4, 0, 0, 0]));
   y.run(120);
   assert.equal(w2.devices.size, 2);
   assert.equal(w2.device(42)!.addr, A);

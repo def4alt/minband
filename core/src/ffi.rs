@@ -161,7 +161,7 @@ mod tests {
         let out = edge.tick(vec![walker(0.25)], 1);
         assert_eq!(out.len(), 1);
         match decode(&out[0]).unwrap() {
-            Message::Delta { seq: 1, tick: 1, updates } => match updates.as_slice() {
+            Message::Delta { seq: 1, tick: 1, theta_q: 15, updates } => match updates.as_slice() {
                 [Update::Spawn(s)] => {
                     assert_eq!((s.id, s.class, s.pos, s.vel, s.conf), (1, PERSON, [0.25, 0.0, 0.5], [1.0, 0.0, 0.0], 240));
                 }
