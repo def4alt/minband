@@ -6,14 +6,21 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p dev",
+    "mock": "tsx dev/mock-server.ts",
+    "smoke": "tsx dev/smoke.ts"
   },
   "dependencies": {
     "three": "^0.169.0"
   },
   "devDependencies": {
+    "@types/node": "^22.10.2",
     "@types/three": "^0.169.0",
+    "@types/ws": "^8.5.12",
+    "playwright": "1.56.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "ws": "^8.18.0"
   }
 }
