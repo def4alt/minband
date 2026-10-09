@@ -128,6 +128,15 @@ A device is *coasting* when (edge time now - edge tick of its last datagram) >= 
 the advertised budget. Per entity the receiver reports `theta` (declared threshold, m), `coasting`
 and `ce` (m): `theta` while not coasting, else `theta + max_speed(class) x silence` with silence
 counted from the device's last datagram (a missed heartbeat is a visible jump), capped at 1000 m.
+
+Trust comes back per entity. The first datagram after a silence of at least `coast_ticks` ends the
+device's coasting, but updates lost during the blackout are repaired only a round trip later (nack)
+or by the next keyframe. So every entity held at that moment stays coasting, its `ce` still growing
+from the silence start (the edge tick of the last datagram before it), until a datagram sent after
+the resume refreshes it: a delta update or repair, or a keyframe part listing it (an older state
+that the receiver rejects does not count). A complete keyframe whose `tick` is at or after the
+resume clears every entity that remains; entities first seen after the resume are trusted at once.
+If another blackout comes before an entity is refreshed, its silence keeps counting from the first.
 `stale` = entity age >= `stale_ticks`. `gc` drops an entity once the device has been silent for
 `stale_ticks` and the entity is `drop_ticks` old, or regardless after max(30 s, 3 x `drop_ticks`).
 When the advertised budget rises (tighter limits) the previous limits still apply for one old

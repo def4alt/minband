@@ -197,7 +197,12 @@ Single crate `minband-core`, deterministic:
   `coast` (one keyframe period plus margin, 2.5 s at budget 0) its entities are *coasting*, and
   each entity's error radius `ce` grows from its declared θ: `ce = θ + max_speed(class) x silence`
   (silence since the device's last datagram, so a missed keyframe is a visible jump; capped at
-  1000 m). Never extrapolate silently: coast, mark, then drop (FAA AD 2017-22-14).
+  1000 m). Never extrapolate silently: coast, mark, then drop (FAA AD 2017-22-14). Trust returns
+  per entity, not with the device: after a blackout the first datagram vouches only for what it
+  carries, the rest keep coasting (`ce` still growing from the silence start) until a datagram
+  sent after the resume refreshes them, or a whole keyframe taken after it arrives (one keyframe
+  period at most while the link holds). Updates lost in the blackout would otherwise sit behind a
+  tight θ ring until the nack round trip.
 - **Staleness**: entity not refreshed for `stale` (6 s at budget 0, 3 keyframe periods) is drawn
   as stale; after `drop` it is dropped once its device is silent. Server-side, a device silent for
   5 s has all its entities stale and is removed after 30 s.
