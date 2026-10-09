@@ -14,13 +14,16 @@
 // Acks are only generated for datagrams that got through the shaper, so an emulated blackout
 // also silences the downlink, and a Hello dropped by the shaper does not get the edge acked (an
 // acked edge stops sending Hello, and the server would never learn its device_id).
+//
+// Packet events (V3): every datagram arriving at the socket (dropped by the shaper or not) and
+// every ack sent is queued as a PacketEvent and drained into the next snapshot.
 import { WasmReceiver } from 'minband-core';
 import { ClockOffset } from './clock.js';
 import { Fusion } from './fusion.js';
 import { Shaper, UDP_IP_OVERHEAD } from './shaper.js';
 import { peek, type Peek } from './peek.js';
 import { SnapshotRing, evaluateTwin, parseGroundTruthCsv, summarize, type TwinEvaluation } from './groundtruth.js';
-import type { DeviceView, EntityView, PoseView, Snapshot, TwinError } from './types.js';
+import type { DeviceView, EntityView, PacketEvent, PoseView, Snapshot, TwinError } from './types.js';
 import { TICK_HZ } from './types.js';
 
 export const DEVICE_SILENT_MS = 5_000;
@@ -32,6 +35,10 @@ export const ADOPT_TICK_TOLERANCE = TICK_HZ;
 const RATE_WINDOW_MS = 2_000;
 const LOG_LINES = 200;
 const BASELINES = { h264_720p_bps: 1_500_000, h264_480p_bps: 500_000, naiveMetadataBps: 0 };
+/** Packet events kept between snapshots (oldest dropped first). */
+export const MAX_PACKETS = 2_000;
+/** Until core's peek_json lands, Peek has no `ids`. */
+type PeekIds = Peek & { ids?: number[] };
 
 /** Sliding-window byte/message counter. */
 export class RateWindow {
@@ -121,6 +128,8 @@ export class World {
   readonly shaper: Shaper;
   budgetBps = 0;
   log: string[] = [];
+  /** Packet events since the last snapshot (V3). */
+  packets: PacketEvent[] = [];
   /** Called with (address, ack datagram) whenever an ack is due. */
   onAck: (addr: string, ack: Uint8Array) => void = () => {};
   /** Per device_id: what the twin served, 30 Hz, last 60 s (outlives the Device for late GT uploads). */
@@ -142,20 +151,34 @@ export class World {
   /** Every raw datagram from the socket. Goes through the shaper, then to its device. */
   ingest(addr: string, buf: Uint8Array): void {
     const nowMs = this.now();
-    (this.byAddr.get(addr)?.offered ?? this.unattributed).push(nowMs, buf.length + UDP_IP_OVERHEAD);
-    this.shaper.offer(buf.length, () => this.deliver(addr, buf, this.now()));
+    const known = this.byAddr.get(addr);
+    (known?.offered ?? this.unattributed).push(nowMs, buf.length + UDP_IP_OVERHEAD);
+    const p: PeekIds = peek(buf);
+    // A Hello names its device before it is routed; anything else belongs to the address's owner.
+    const up: PacketEvent = { t: nowMs, dir: 'up', key: p.kind === 'hello' ? `id:${p.deviceId}` : known?.key ?? '', kind: p.kind, bytes: buf.length + UDP_IP_OVERHEAD, dropped: false };
+    if (p.seq !== undefined) up.seq = p.seq;
+    if (p.ids) up.ids = p.ids;
+    this.packet(up);
+    if (!this.shaper.offer(buf.length, () => this.deliver(addr, buf, p, up, this.now()))) up.dropped = true;
   }
 
-  private deliver(addr: string, buf: Uint8Array, nowMs: number) {
-    const p = peek(buf);
+  private packet(ev: PacketEvent) {
+    if (this.packets.length >= MAX_PACKETS) this.packets.shift();
+    this.packets.push(ev);
+  }
+
+  private deliver(addr: string, buf: Uint8Array, p: Peek, up: PacketEvent, nowMs: number) {
     if (p.kind === 'malformed' || p.kind === 'ack') { this.note(nowMs, `${addr} ignored: ${p.text}`); return; }
     const dev = this.route(addr, p, nowMs);
+    up.key = dev.key; // identified or adopted on the way in (moot if a snapshot already carried it)
     let ev: string;
     try { ev = dev.ingest(buf, nowMs); } catch (e) { this.note(nowMs, `${addr} malformed: ${e}`); return; }
     this.note(nowMs, `${addr} ${ev}`);
     if (dev.rx.needs_ack() || nowMs - dev.lastAckMs >= ACK_INTERVAL_MS) {
       dev.lastAckMs = nowMs;
-      this.onAck(dev.addr, dev.rx.make_ack(this.budgetBps));
+      const ack = dev.rx.make_ack(this.budgetBps);
+      this.packet({ t: nowMs, dir: 'down', key: dev.key, kind: 'ack', bytes: ack.length + UDP_IP_OVERHEAD, dropped: false });
+      this.onAck(dev.addr, ack);
     }
   }
 
@@ -272,12 +295,14 @@ export class World {
     for (const v of devices) if (!v.provisional) this.ring(v.deviceId).push(v.edgeTick, v.entities);
     const global = this.fusion.update(devices, nowMs);
     const entityCount = devices.reduce((a, d) => a + d.entities.length, 0);
-    this.lastSnapshot = {
+    const snap: Snapshot = {
       t: nowMs, devices, global, shaper: this.shaper.config, fusion: this.fusion.enabled,
       baselines: { ...BASELINES, naiveMetadataBps: entityCount * 31 * 30 * 8 + 30 * 40 * 8 },
       budgetBps: this.budgetBps, shaperRevertMs: this.shaper.revertInMs(),
+      packets: this.packets.splice(0),
     };
-    return this.lastSnapshot;
+    this.lastSnapshot = snap;
+    return snap;
   }
 
   /** Evaluate an uploaded ground-truth CSV against what the twin served. Null: unknown device. */
