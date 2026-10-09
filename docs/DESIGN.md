@@ -101,7 +101,10 @@ Single crate `minband-core`, deterministic:
   confidence-weighted mean of its sources' extrapolated positions.
 - **Acks** every 100 ms per device or immediately on a detected gap: `{last_seq, missing[]}`.
 - **Metrics**: bytes in per device (payload + 28 B UDP/IP header), msgs/s, deltas vs keyframes,
-  per-entity staleness, estimated twin error (when the edge later uploads its ground-truth log).
+  per-entity staleness, estimated twin error (when the edge later uploads its ground-truth log),
+  time on air per device under the link profile's radio model (LoRa or serial; payload plus radio
+  framing, without the UDP/IP header), and one event per datagram (up, including shaper drops,
+  and acks down) in every snapshot for the packet waterfall.
 - **WebSocket** on :8080 fans out world snapshots at 30 Hz plus metrics at 2 Hz to the viewer.
 - `npm run sim`: synthetic scene (random walkers, a bouncing object) driven through the WASM
   `Edge` so the full pipeline runs with no phone.
@@ -190,7 +193,13 @@ Two mechanisms, used for different purposes:
    may leave it in debt, so admission does not depend on size (a strict "tokens >= size" rule
    starves 160 B keyframes behind small deltas on a 2 kbps link). Delay never reorders. A timed
    override (`revertAfterMs`, used by the "blackout 10 s" preset) restores the previous link on
-   the server, so it survives a viewer reload; any explicit change ends it early.
+   the server, so it survives a viewer reload; any explicit change ends it early. A queue limit
+   (like netem's `limit`, counting datagrams in the delay line) drops bursts the way the Pi link
+   box does. Named **link profiles** (`/api/link`, the same table as the Pi link box in
+   `HACKATHON_PLAN.md` 3.3) set the shaper, the edge budget and an airtime model in one step;
+   `contested` alternates `lora` with random blackouts on a server timer, and `external` leaves
+   shaping to the box and keeps only its budget and airtime model. The budget is the link's: each
+   ack carries it split over the devices heard in the last 5 s.
 2. **dummynet** (`tools/link.sh`, macOS `dnctl`/`pfctl`) shaping UDP :7777 at the OS level for
    honest measurements and for the recorded evaluation runs.
 
@@ -207,7 +216,8 @@ runs on synthetic ground truth (perfect-tracker velocities, optional gaussian no
   drones send today". Encoded from the recorded ARKit frames with `AVAssetWriter` H.264
   (VideoToolbox) at those target bitrates over the same session as the ground-truth log; the
   bitrate is measured from the encoded track, not quoted. Until then the numbers are shown as
-  "configured, to be replaced by measured VideoToolbox numbers".
+  "configured, to be replaced by measured VideoToolbox numbers". The server (`/api/baseline-a`,
+  `Snapshot.baselineA`) and `tools/eval` read the same `runs/baseline_a.json`.
 - **Baseline B**: naive metadata, full state of every entity every frame at 30 Hz:
   `entities * 31 B * 30 Hz + 30 Hz * 40 B`, entities time-averaged from the log.
 - **Twin error**: at every logged frame, for each ground-truth row, the distance between the

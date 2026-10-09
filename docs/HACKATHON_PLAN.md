@@ -123,9 +123,18 @@ shape wlan0 sport rate 2kbit delay 300ms loss 10% limit 4   # downlink, acks -> 
 | `contested` | `lora`, alternating with 1-5 s random blackouts | | | | 1500 | Intermittent jamming |
 | `blackout` | | | 100 % | | | Link cut (or pull the Ethernet cable) |
 
-Set the budget from the laptop with `curl 'localhost:8080/api/budget?bps=...'` when switching
-profiles, until the box does it itself (stretch L2). Unplugging the cable can change the NAT source
+When switching profiles on the box, tell the server which one it emulates:
+`curl 'localhost:8080/api/link?profile=external&as=lora'` sets the edge budget from this table and
+the airtime model for the time-on-air readout, with the in-process shaper off (stretch L2 is the box
+doing this itself). Without the box, `/api/link?profile=lora` applies the same row in-process,
+including `contested` as a server-side loop (`server/README.md`). The budget is the link's: the
+server splits it over the devices it hears. Unplugging the cable can change the NAT source
 port when it comes back; the server's device identity handles that (DESIGN §4).
+
+netem's `limit` counts packets still in the delay line, so it also caps the rate in datagrams:
+`limit / delay`, 16 datagrams/s for `hf`. Eight one-walker feeds send about 17/s, so the `hf` row
+drops about a third of them at the queue (measured in-process, which models `limit` the same way);
+raise `hf`'s queue (32 worked) for the drones-per-link run.
 
 Say what the box is: it reproduces a radio's rate, delay and loss, not its framing. At 600 bit/s
 the 28 B UDP/IP header is a large share of every datagram; a real telemetry radio would not carry
@@ -162,7 +171,7 @@ golden file only if the change is intentional (`UPDATE_GOLDEN=1`).
 | # | Idea | Size |
 |---|---|---|
 | L1 | `tools/pi-link.sh <profile>` wrapping §3.2-3.3, plus `contested` as a background loop | S |
-| L2 | The script also sets the edge budget and reports the profile name to the server so the viewer shows `LINK: lora 2 kbit/s · 68 % airtime` (needs a small `/api/link` endpoint; the keyframe period follows the budget with S19, the airtime figure comes with S2) | S |
+| L2 | The script also sets the edge budget and reports the profile name to the server so the viewer shows `LINK: lora 2 kbit/s · 68 % airtime` (`/api/link?profile=external&as=<profile>` exists and returns the airtime figure (S2); the keyframe period follows the budget with S19) | S |
 | L3 | Physical button on the Pi GPIO (gpiozero) that cycles profiles; an LED that goes dark on blackout | S |
 | L4 | `simplex` profile: downlink 100 % loss, so the ground station never transmits (do together with S1, the first stretch item) | S |
 
