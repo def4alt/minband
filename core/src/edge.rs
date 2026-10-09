@@ -105,14 +105,11 @@ const KF_PART_MIN_TICKS: u32 = TICK_HZ / 10;
 /// queued behind it) without paying a 39 B header per entity at the lowest rates (3 entities per
 /// part at 600 bit/s, 10 at 1500, a full datagram from ~5 kbit/s).
 const KF_PART_LINK_S: usize = 2;
-/// Budget controller: aim at this share of the budget (percent), leaving room for keyframes,
-/// spawns and despawns, which it cannot throttle.
-const CTRL_TARGET_PERCENT: i64 = 90;
-/// Bucket units per bit on the link: TICK_HZ x 10, so the drain per tick (budget x 0.9 / TICK_HZ)
-/// is an integer.
-const DEBT_PER_BIT: i64 = TICK_HZ as i64 * 10;
-/// A one-update Delta on the wire (68 B): the band holds at least two.
-const CTRL_DATAGRAM_BITS: i64 = 68 * 8;
+/// Budget controller window: long enough for this many one-update Deltas (68 B on the wire) at the
+/// budget (7.3 s at 450 bit/s, 3.3 s at 1000), between half a second and ten seconds.
+const CTRL_WINDOW_DATAGRAMS: u64 = 6;
+const CTRL_DATAGRAM_BITS: u64 = 68 * 8;
+const CTRL_WINDOW_MAX: u32 = 10 * TICK_HZ;
 /// `pose()` slack: callers time poses on their own clock (iOS: frame timestamps), so a call one
 /// frame early still counts as due.
 const POSE_SLACK_TICKS: u32 = TICK_HZ / 30;
@@ -149,15 +146,10 @@ pub struct Edge {
     /// (id, tick) of the last repair sent per id, to ignore repeat nacks within a round trip.
     last_repair: Vec<(u32, u32)>,
     theta_scale: f32,
-    /// Start of the budget controller's current decision interval.
+    /// Start of the budget controller's current window.
     window_start: u32,
-    /// Leaky bucket against the budget, in bits x TICK_HZ x 10 on the link (payload + UDP/IP
-    /// header): every datagram adds its bits, the budget drains it at `CTRL_TARGET` of its rate.
-    debt: i64,
-    /// `debt` at the previous decision: rising means the edge is still spending above target.
-    debt_prev: i64,
-    /// Tick up to which the bucket has been drained.
-    debt_tick: u32,
+    /// Bits on the link (payload + UDP/IP header) since `window_start`.
+    window_bits: u64,
     stats: EdgeStats,
 }
 
@@ -182,9 +174,7 @@ impl Edge {
             last_repair: Vec::new(),
             theta_scale: 1.0,
             window_start: 0,
-            debt: 0,
-            debt_prev: 0,
-            debt_tick: 0,
+            window_bits: 0,
             stats: EdgeStats { theta_scale: 1.0, ..Default::default() },
         };
         e.apply_cadence();
@@ -211,8 +201,7 @@ impl Edge {
     /// next `Ack` overrides it: the server's budget is authoritative once it acks.
     pub fn set_budget(&mut self, bps: u32) {
         self.cfg.budget_bps = bps;
-        self.debt = 0;
-        self.debt_prev = 0;
+        self.window_bits = 0;
         self.apply_cadence();
     }
 
@@ -481,41 +470,40 @@ impl Edge {
         let b = encode(&msg);
         self.stats.bytes_total += b.len() as u64;
         // The controller targets what the link carries: payload plus the UDP/IP header.
-        self.debt += ((b.len() + UDP_IP_OVERHEAD) * 8) as i64 * DEBT_PER_BIT;
+        self.window_bits += ((b.len() + UDP_IP_OVERHEAD) * 8) as u64;
         b
     }
 
-    /// Budget controller. A leaky bucket integrates spending against `CTRL_TARGET` of the budget;
-    /// every half second the thresholds widen (x1.25) while the debt is over the band and still
-    /// rising, and narrow (x0.9) while the credit is over the band and not rising. A fixed 0.5 s
-    /// rate window cannot do this at low budgets: one 68 B datagram in it reads 1088 bit/s, over a
-    /// 1000 bit/s budget, so the scale ratcheted up on every packet and the link sat mostly idle.
-    /// The band holds at least two datagrams, the trend gate stops wind-up, and the bucket is
-    /// clamped so neither a long overload nor a long quiet spell is paid back for long.
+    /// Budget controller: compare the bits on the link over a window with the budget; widen the
+    /// thresholds (x1.25) when over, narrow them (x0.9) under 80 %. The window is half a second or,
+    /// at low budgets, long enough to hold `CTRL_WINDOW_DATAGRAMS` one-update datagrams, so one
+    /// datagram reads as a sixth of the budget: with a fixed 0.5 s window one 68 B datagram read
+    /// 1088 bit/s, so below ~2 kbit/s every packet widened and only empty windows narrowed, which
+    /// settles at ~0.64 datagrams/s whatever the budget (35 % of 1000 bit/s). A window whose whole
+    /// allowance is spent early widens at once, so an overload is answered before the window ends.
+    /// No memory across windows: no wind-up (a leaky bucket swung theta x4 over 30 s cycles).
     fn account(&mut self, now: u32) {
-        let budget = self.cfg.budget_bps as i64;
-        let dt = now.wrapping_sub(self.debt_tick);
-        self.debt_tick = now;
-        if budget == 0 {
-            self.debt = 0;
-            self.debt_prev = 0;
+        let budget = self.cfg.budget_bps as u64;
+        let elapsed = now.wrapping_sub(self.window_start);
+        if budget == 0 || elapsed >= u32::MAX / 2 {
+            self.window_start = now;
+            self.window_bits = 0;
             return;
         }
-        let dt = if dt < u32::MAX / 2 { dt.min(10 * TICK_HZ) } else { 0 } as i64;
-        let band = (budget / 2).max(2 * CTRL_DATAGRAM_BITS) * DEBT_PER_BIT;
-        self.debt = (self.debt - budget * CTRL_TARGET_PERCENT / 10 * dt).clamp(-2 * band, 4 * band);
-        if now.wrapping_sub(self.window_start) < TICK_HZ / 2 {
+        let window = (CTRL_WINDOW_DATAGRAMS * CTRL_DATAGRAM_BITS * TICK_HZ as u64).div_ceil(budget).clamp((TICK_HZ / 2) as u64, CTRL_WINDOW_MAX as u64);
+        let allowance = |ticks: u64| budget * ticks / TICK_HZ as u64;
+        let over_early = self.window_bits > allowance(window);
+        if !over_early && (elapsed as u64) < window {
             return;
         }
-        let rising = self.debt >= self.debt_prev;
-        if self.debt > band && rising {
+        if over_early || self.window_bits > allowance(elapsed as u64) {
             self.theta_scale *= 1.25;
-        } else if self.debt < -band && self.debt <= self.debt_prev {
+        } else if self.window_bits < allowance(elapsed as u64) * 8 / 10 {
             self.theta_scale *= 0.9;
         }
         self.theta_scale = self.theta_scale.clamp(self.cfg.theta_scale_min, self.cfg.theta_scale_max);
-        self.debt_prev = self.debt;
         self.window_start = now;
+        self.window_bits = 0;
     }
 }
 
@@ -793,10 +781,10 @@ mod tests {
             .collect()
     }
 
-    /// The controller holds the budget on average without over-throttling: with a scene that would
-    /// overrun the budget at θ 0.15, the long-run rate on the link sits at 70-100 % of the budget
-    /// and the threshold settles instead of ratcheting to the max. (The fixed 0.5 s window read one
-    /// 68 B datagram as 1088 bit/s and left a 1000 bit/s link at 38 %.)
+    /// The controller holds the budget on average without over-throttling: the long-run rate on the
+    /// link sits at 75-100 % of the budget (measured 80-92 %) and the threshold settles instead of
+    /// ratcheting to the max. (The fixed 0.5 s window read one 68 B datagram as 1088 bit/s and left
+    /// a 1000 bit/s link at 38 %.)
     #[test]
     fn controller_holds_low_budgets_on_average() {
         for (budget, walkers) in [(450u32, 1u32), (1000, 2), (1500, 2), (8000, 12)] {

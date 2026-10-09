@@ -168,11 +168,16 @@ Single crate `minband-core`, deterministic:
   - entity age since last send > `T_max` (3 s at budget 0; 1.5 keyframe periods at a budget, so
     it never pre-empts a slow keyframe)
   - spawn / despawn
-- **Budget controller**: target bits/s set by operator or link estimate. Every 500 ms compare
-  sent bytes, payload plus the 28 B UDP/IP header per datagram (what the link carries), to the
-  budget; scale `θ_pos` and `θ_vel` by `1.25` when over, `0.9` when under 70 %, scale clamped to
-  `[0.33, 13]` (0.05..1.95 m at the default θ_pos). Despawns and spawns are never suppressed.
-  Reported in metrics so the viewer can show "fidelity knob at 0.4 m".
+- **Budget controller**: target bits/s set by operator or link estimate. Compare the bits on the
+  link (payload plus the 28 B UDP/IP header per datagram) over a window with the budget; scale
+  `θ_pos` and `θ_vel` by `1.25` when over, `0.9` when under 80 %, scale clamped to `[0.33, 13]`
+  (0.05..1.95 m at the default θ_pos). The window is 0.5 s, or long enough for six one-update
+  datagrams at the budget (7.3 s at 450 bit/s, 3.3 s at 1000; at most 10 s), and a window whose
+  allowance is spent early widens at once. A fixed 0.5 s window does not work below ~2 kbit/s:
+  one 68 B datagram in it reads 1088 bit/s, so every packet widened and only empty windows
+  narrowed, settling at ~0.64 datagrams/s whatever the budget (one walker used 38 % of
+  1000 bit/s). Measured: 80-92 % of the budget at 450-8000 bit/s. Despawns and spawns are never
+  suppressed. Reported in metrics so the viewer can show "fidelity knob at 0.4 m".
 - **Loss handling**: receiver tracks a window of seqs; a gap becomes a `Nack` as soon as the
   datagram after it arrives (the link does not reorder, and a gap's age only advances with later
   datagrams, so a 200 ms reordering allowance cost ~0.5 s of repair latency on sparse links).
