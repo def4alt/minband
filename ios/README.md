@@ -11,4 +11,4 @@ cd ios && xcodegen generate && open MinBand.xcodeproj
   bindings into `MinBand/Generated/`.
 
 Ownership: `Detector`, `Lift3D`, `Tracker`, `EdgeBridge` are independent files; see
-`Stubs.swift`. The `Pipeline` wiring is fixed.
+their own files under `MinBand/`. The `Pipeline` wiring is fixed.
