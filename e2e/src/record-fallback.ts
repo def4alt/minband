@@ -1,9 +1,11 @@
 // Records the fallback run for the presentation: the real server, sim edges and the viewer in
 // headless Chromium, stepped through the link profiles of the Pi box (docs/HACKATHON_PLAN.md 3.3)
 // and a blackout, captured as video. Output: runs/fallback/fallback-<stamp>.webm (+ .mp4 when
-// ffmpeg is on PATH) and a cue sheet with what happened when.
+// ffmpeg is on PATH) and a cue sheet with what happened when. The viewer is in STAGE mode (link
+// activity strip, video on this link) unless STAGE=0.
 //   npm run record                         # default script, ~2.5 min
-//   DEVICES=2 STAGE=1 npm run record       # fusion demo, viewer in stage mode
+//   DEVICES=2 npm run record               # fusion demo
+//   STAGE=0 npm run record                 # operator view instead of stage mode
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -20,6 +22,8 @@ const STEPS: [number, string, (api: string) => Promise<unknown>][] = [
   [20, 'hf 9.6 kbit/s, 500 ms', async api => getJson(`${api}/api/link?profile=hf`)],
   [25, 'lora 2 kbit/s, 10 % loss: the fidelity knob widens thresholds', async api => getJson(`${api}/api/link?profile=lora`)],
   [25, 'telemetry 600 bit/s: keyframe period stretches with the budget', async api => getJson(`${api}/api/link?profile=telemetry`)],
+  // Back to a 2 s heartbeat first: on telemetry coasting starts only after ~19 s of silence.
+  [10, 'clean again: the 2 s heartbeat returns', async api => getJson(`${api}/api/link?profile=clean`)],
   [16, 'blackout 10 s: entities coast, rings grow, then stale', async api => getJson(`${api}/api/shaper?enabled=1&loss=1&revertAfterMs=10000`)],
   [15, 'link back: re-sync within one keyframe', async () => undefined],
   [20, 'contested: lora with random 1-5 s blackouts', async api => getJson(`${api}/api/link?profile=contested`)],
@@ -35,7 +39,7 @@ const ctx = await browser.newContext({ viewport: SIZE, recordVideo: { dir: OUT, 
 const page = await ctx.newPage();
 const cues: string[] = [];
 try {
-  await page.goto(viewer.url + (process.env.STAGE ? '?stage=1' : ''));
+  await page.goto(viewer.url + (process.env.STAGE === '0' ? '' : '?stage=1'));
   await page.waitForFunction(() => document.getElementById('status')?.hidden, null, { timeout: 20_000 });
   await sleep(4000);
   const t0 = Date.now();
