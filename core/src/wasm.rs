@@ -64,7 +64,8 @@ impl WasmReceiver {
 
     /// JSON array of `{id,class,pos,vel,conf,tick,age,stale,theta,coasting,ce}`: `theta` is the
     /// threshold (m) the edge declared when it last refreshed the entity, `ce` the honest error
-    /// radius (m), which grows with the class speed while the device is `coasting`.
+    /// radius (m). `coasting` and a growing `ce` are per entity: the device is silent, or it came back
+    /// after a blackout and nothing sent since has refreshed that entity.
     pub fn extrapolate_json(&self, at_tick: u32) -> String { extrapolated_json(&self.inner.extrapolate(at_tick)) }
 
     /// The device has been silent for one keyframe period plus margin (cadence of the advertised budget).

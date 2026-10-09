@@ -168,12 +168,19 @@ Single crate `minband-core`, deterministic:
   - entity age since last send > `T_max` (3 s at budget 0; 1.5 keyframe periods at a budget, so
     it never pre-empts a slow keyframe)
   - spawn / despawn
-- **Budget controller**: target bits/s set by operator or link estimate. Every 500 ms compare
-  sent bytes, payload plus the 28 B UDP/IP header per datagram (what the link carries), to the
-  budget; scale `θ_pos` and `θ_vel` by `1.25` when over, `0.9` when under 70 %, scale clamped to
-  `[0.33, 13]` (0.05..1.95 m at the default θ_pos). Despawns and spawns are never suppressed.
-  Reported in metrics so the viewer can show "fidelity knob at 0.4 m".
-- **Loss handling**: receiver tracks a window of seqs; a gap older than 200 ms becomes a `Nack`.
+- **Budget controller**: target bits/s set by operator or link estimate. Compare the bits on the
+  link (payload plus the 28 B UDP/IP header per datagram) over a window with the budget; scale
+  `θ_pos` and `θ_vel` by `1.25` when over, `0.9` when under 80 %, scale clamped to `[0.33, 13]`
+  (0.05..1.95 m at the default θ_pos). The window is 0.5 s, or long enough for six one-update
+  datagrams at the budget (7.3 s at 450 bit/s, 3.3 s at 1000; at most 10 s), and a window whose
+  allowance is spent early widens at once. A fixed 0.5 s window does not work below ~2 kbit/s:
+  one 68 B datagram in it reads 1088 bit/s, so every packet widened and only empty windows
+  narrowed, settling at ~0.64 datagrams/s whatever the budget (one walker used 38 % of
+  1000 bit/s). Measured: 80-92 % of the budget at 450-8000 bit/s. Despawns and spawns are never
+  suppressed. Reported in metrics so the viewer can show "fidelity knob at 0.4 m".
+- **Loss handling**: receiver tracks a window of seqs; a gap becomes a `Nack` as soon as the
+  datagram after it arrives (the link does not reorder, and a gap's age only advances with later
+  datagrams, so a 200 ms reordering allowance cost ~0.5 s of repair latency on sparse links).
   The edge responds with the *current* state of every entity touched in the missing seqs (state
   repair), not the lost packets.
 - **Hello refresh**: after being acked, the edge re-sends `Hello` every 5 s (Cadence) so a restarted
@@ -197,7 +204,12 @@ Single crate `minband-core`, deterministic:
   `coast` (one keyframe period plus margin, 2.5 s at budget 0) its entities are *coasting*, and
   each entity's error radius `ce` grows from its declared θ: `ce = θ + max_speed(class) x silence`
   (silence since the device's last datagram, so a missed keyframe is a visible jump; capped at
-  1000 m). Never extrapolate silently: coast, mark, then drop (FAA AD 2017-22-14).
+  1000 m). Never extrapolate silently: coast, mark, then drop (FAA AD 2017-22-14). Trust returns
+  per entity, not with the device: after a blackout the first datagram vouches only for what it
+  carries, the rest keep coasting (`ce` still growing from the silence start) until a datagram
+  sent after the resume refreshes them, or a whole keyframe taken after it arrives (one keyframe
+  period at most while the link holds). Updates lost in the blackout would otherwise sit behind a
+  tight θ ring until the nack round trip.
 - **Staleness**: entity not refreshed for `stale` (6 s at budget 0, 3 keyframe periods) is drawn
   as stale; after `drop` it is dropped once its device is silent. Server-side, a device silent for
   5 s has all its entities stale and is removed after 30 s.
@@ -261,7 +273,7 @@ runs on synthetic ground truth (perfect-tracker velocities, optional gaussian no
   baselines as reference lines.
 - **Resilience**: twin error and availability vs packet loss rate (0, 5, 20, 50 %, Bernoulli,
   both directions, 50 ms one-way delay) at `θ_pos` 0.15, mean of 10 seeds, with state repair
-  (an ack listing the open gaps whenever a gap turns 200 ms old, checked every 100 ms) and
+  (an ack listing the open gaps whenever one is due, checked every 100 ms) and
   without (no acks; keyframes only). The live server's cadence (an ack after any datagram once
   100 ms have passed) is measured too, as a bytes comparison.
 

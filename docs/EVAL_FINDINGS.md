@@ -54,30 +54,78 @@ Items 3–5 are implemented in core (edge.rs, receiver.rs; see DESIGN.md §4 "Na
 Rerun `npm run eval` after the next real-link session to confirm phantom duration and uplink
 bytes under loss on phone logs.
 
-## Low-rate profiles: cadence from the budget, header in the controller (S19, S16, §3.4)
+## Low-rate profiles: cadence from the budget, header and window in the controller (S19, S16, §3.4)
 
 `npm run replay -- runs/synth/<scenario>.csv --budget B --loss L --delay D --ack server` with the
-link-box profiles' budgets, loss and one-way delay. The replay now advertises the budget in every
-ack like the server, so the edge's cadence and the receiver's coast/stale/drop limits follow it.
-Before = the code before these changes (controller counted payload only, 2 s keyframes, 5 s Hello,
-3 s age cap at every budget). Cells: bit/s on the wire before → after; mean error of present
-entities (cm) before → after. Availability is unchanged within 0.1 points (98.5-99.9 %).
+link-box profiles' budgets, loss and one-way delay, plus 1000 bit/s: the per-device share when
+eight drones split the hf budget (drones per link). The replay advertises the budget in every ack
+like the server, so the edge's cadence and the receiver's coast/stale/drop limits follow it.
+Columns: *before* = the code before protocol v1 (controller counted payload only, 2 s keyframes,
+5 s Hello, 3 s age cap at every budget); *v1* = cadence, header accounting and paced keyframes
+with the fixed 0.5 s controller window; *now* = the budget-scaled window, immediate nacks and the
+repair skip (below). Cells: bit/s on the wire before → v1 → now; mean error of present entities
+(cm) before → v1 → now. Availability is unchanged within 0.2 points (98.4-99.9 %).
 
 | Profile (budget, loss, delay) | static (3) | one walker | three walkers | crowd (8) |
 |---|---|---|---|---|
-| telemetry (450, 5 %, 50 ms) | 609 → **97**; 0 → 0 | 472 → **409**; 24.6 → 19.0 | 884 → 634; 32 → 63 | 1705 → 1333; 28 → 57 |
-| lora (1500, 10 %, 300 ms) | 741 → **181**; 0 → 0 | 1900 → **1205**; 5.7 → 10.8 | 1263 → **1043**; 34 → 39 | 2304 → 1633; 30 → 60 |
-| hf (8000, 1 %, 500 ms) | 559 → 563; 0 → 0 | 2290 → 2316; 8.5 → 8.5 | 6663 → 5887; 8.6 → 9.2 | 8838 → **5801**; 10.9 → 14.5 |
+| telemetry (450, 5 %, 50 ms) | 609 → 97 → **112**; 0 | 472 → 409 → 452; 24.6 → 19.0 → 17.6 | 884 → 634 → 643; 32 → 63 → 59 | 1705 → 1333 → 1356; 28 → 57 → 58 |
+| hf x8 share (1000, 1 %, 500 ms) | 559 → 133 → **133**; 0 | 1194 → 416 → **858**; 12.9 → 26.9 → **14.9** | 1255 → 628 → **907**; 31 → 77 → **40** | 1941 → 1252 → 1314; 37 → 76 → 72 |
+| lora (1500, 10 %, 300 ms) | 741 → 181 → **181**; 0 | 1900 → 1205 → **1156**; 5.7 → 10.8 → 10.7 | 1263 → 1043 → **1252**; 34 → 39 → **24** | 2304 → 1633 → 1556; 30 → 60 → 60 |
+| hf (8000, 1 %, 500 ms) | 559 → 563 → 555; 0 | 2290 → 2316 → 2254; 8.5 | 6663 → 5887 → **6063**; 8.6 → 9.2 → 9.1 | 8838 → 5801 → **6059**; 10.9 → 14.5 → 14.0 |
 
-Bold: now within the budget. Before, the static room alone exceeded the telemetry budget, one
-walker on lora and the crowd on hf ran 27 % and 10 % over (the controller did not see the 28 B per
-datagram), and the static floor was the 2 s keyframe plus the 5 s Hello at any budget. Now it is
-97 bit/s at 450 (keyframe every 15 s, Hello 30 s) and 181 bit/s at 1500 (6.3 s, 12.7 s). Where the
-controller now holds the budget it does so by widening θ, so the error goes up (one walker on
-lora, crowd on hf). Three walkers and the crowd still do not fit 450 bit/s, nor the crowd 1500:
-spawns, despawns and 8-entity keyframes are not suppressible, as expected (§3.4 item 3); the
-compact codec (S6) is the next step there.
+Bold: within the budget and, for *now*, the best of the three or within 2 cm of it. Notes:
 
-The replay has no rate limit or queue, so it measures what the edge offers and the fidelity, not
-the radio queue: the burst fix (keyframe parts paced one per link time, at most 2 s of link time
-each) shows up only on a shaped link (Pi link box, server shaper).
+1. **v1 (cadence, header).** The static floor is now the 15 s keyframe and 30 s Hello at 450 bit/s
+   (97-112 bit/s) and 6.3 s / 12.7 s at 1500 (181 bit/s), instead of the 2 s keyframe plus 5 s
+   Hello at any budget (559-741). The controller sees the 28 B per datagram, so one walker on
+   lora and the crowd on hf no longer run 27 % and 10 % over.
+2. **The fixed 0.5 s controller window over-throttled below ~2 kbit/s** (v1 column, 1000 bit/s):
+   one 68 B datagram in a 0.5 s window reads 1088 bit/s, so every window with a packet widened θ
+   (x1.25) and only empty windows narrowed it (x0.9). That balances at ~0.64 datagrams/s whatever
+   the budget: 77 % of 450 bit/s but 38 % of 1000 (one walker at 416 bit/s, 27 cm). Eight drones on
+   hf delivered 1820 bit/s of 9600 in the e2e test. Now the window holds six one-update datagrams
+   at the budget (7.3 s at 450, 3.3 s at 1000, 0.5 s from ~6.5 kbit/s), narrows under 80 %, and
+   widens at once when a window's allowance is spent early: 80-92 % of the budget for circling
+   walkers at 450-8000 bit/s (unit test), one walker at 1000 bit/s 858 bit/s and 14.9 cm, and eight
+   drones on hf deliver 6240 bit/s with 20.5 cm mean twin error in the e2e test. A leaky bucket
+   was tried first: it held 87-90 % but its memory made 30 s limit cycles (θ scale 1.7 → 6.5) that
+   doubled the telemetry error.
+3. **Immediate nacks.** The receiver nacked a gap once it was 200 ms old, but a gap's age only
+   advances with later datagrams, so the nack waited for the next datagram after 200 ms (~0.5 s on
+   a sparse link, and on the sparsest links the gap was forgotten after 3 s before a second
+   datagram came). Gaps are now nacked as soon as they are seen; links here do not reorder.
+4. **Repair skip.** With immediate nacks, a lost keyframe on a sparse stream is usually revealed by
+   the next keyframe, and the edge then resent what the receiver had just received (lora static
+   181 → 248 bit/s). The edge now skips ids that the datagram at the ack's `last_seq` carried.
+   Under loss at budget 0 this also trims repeat repairs: static at 20 % loss 80 → 69 B/s, the
+   crowd 932 → 920 B/s, errors equal or better (resilience table above).
+
+Three walkers and the crowd still do not fit 450 bit/s, nor the crowd 1000-1500: spawns, despawns
+and 8-entity keyframes are not suppressible, as expected (§3.4 item 3); the compact codec (S6) is
+the next step there. The replay has no rate limit or queue, so it measures what the edge offers
+and the fidelity, not the radio queue: the burst fix (keyframe parts paced one per link time, at
+most 2 s of link time each) shows up only on a shaped link (Pi link box, server shaper).
+
+## The "20 % loss" e2e flake (resilience.test.ts)
+
+The test scores the last 10 s of ground truth (4200 rows at 120 Hz) against a 0.2 m mean. The sim's
+walker 2 wraps from x = +4 to -4 m and the cup spawns at the same tick every 10 s, in one
+datagram, so every scoring window holds one 8 m jump and one spawn. When that datagram is lost
+(p = 0.2) the twin is 8 m off and misses the cup until the repair lands; each 100 ms of repair
+latency adds ~0.03 m to the window mean, so more than ~0.5 s crosses the bound.
+
+- Pose does not cause it. Pose seqs carry no entities and are never repaired; the extra datagrams
+  make gaps visible sooner. Real stack (fresh server and sim per run, the test's procedure): 1/25
+  failures with Pose, 3/25 without. A deterministic replay of the e2e timing (WASM edge and
+  receiver, sim scene, server ack policy, acks applied per 4-tick sim batch, 1000-3000 seeds):
+  8.5 % failures with Pose, 16.9 % without.
+- With immediate nacks (note 3) the replay fails 3.7 % with Pose (p90 window mean 0.198 → 0.071
+  m), 15.8 % without; with the repair skip (note 4) 4.7 % with Pose. Real stack with Pose: 2/25
+  with immediate nacks, 0/25 with both (max 0.182 m, median 0.060 m), so 2/50 after against 4/48
+  before (this probe's 1/25 and an earlier 3/23). What remains is the wrap
+  datagram and its first repair both lost (~4 %), then the 500 ms re-nack. Fewer redundant
+  datagrams (the skip; a stricter seq-keyed repeat rule, tried and dropped) slow the detection of
+  the next loss, which is why removing redundancy costs about a point in this test.
+- So the remaining failures are statistics of one 8 m jump per window, not a protocol fault. A sim
+  walker that does not teleport (or a scoring window that excludes the wrap tick) would make the
+  test measure the steady state.

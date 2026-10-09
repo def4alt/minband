@@ -105,6 +105,11 @@ const KF_PART_MIN_TICKS: u32 = TICK_HZ / 10;
 /// queued behind it) without paying a 39 B header per entity at the lowest rates (3 entities per
 /// part at 600 bit/s, 10 at 1500, a full datagram from ~5 kbit/s).
 const KF_PART_LINK_S: usize = 2;
+/// Budget controller window: long enough for this many one-update Deltas (68 B on the wire) at the
+/// budget (7.3 s at 450 bit/s, 3.3 s at 1000), between half a second and ten seconds.
+const CTRL_WINDOW_DATAGRAMS: u64 = 6;
+const CTRL_DATAGRAM_BITS: u64 = 68 * 8;
+const CTRL_WINDOW_MAX: u32 = 10 * TICK_HZ;
 /// `pose()` slack: callers time poses on their own clock (iOS: frame timestamps), so a call one
 /// frame early still counts as due.
 const POSE_SLACK_TICKS: u32 = TICK_HZ / 30;
@@ -141,9 +146,10 @@ pub struct Edge {
     /// (id, tick) of the last repair sent per id, to ignore repeat nacks within a round trip.
     last_repair: Vec<(u32, u32)>,
     theta_scale: f32,
+    /// Start of the budget controller's current window.
     window_start: u32,
-    /// Bytes on the link (payload + UDP/IP header) since `window_start`.
-    window_bytes: u64,
+    /// Bits on the link (payload + UDP/IP header) since `window_start`.
+    window_bits: u64,
     stats: EdgeStats,
 }
 
@@ -168,7 +174,7 @@ impl Edge {
             last_repair: Vec::new(),
             theta_scale: 1.0,
             window_start: 0,
-            window_bytes: 0,
+            window_bits: 0,
             stats: EdgeStats { theta_scale: 1.0, ..Default::default() },
         };
         e.apply_cadence();
@@ -195,6 +201,7 @@ impl Edge {
     /// next `Ack` overrides it: the server's budget is authoritative once it acks.
     pub fn set_budget(&mut self, bps: u32) {
         self.cfg.budget_bps = bps;
+        self.window_bits = 0;
         self.apply_cadence();
     }
 
@@ -412,7 +419,7 @@ impl Edge {
     /// Feed a datagram received from the server (acks). The ack's `budget_bps` is authoritative
     /// (0 = unlimited), so the edge always runs the cadence the receiver derives from it.
     pub fn on_datagram(&mut self, bytes: &[u8]) {
-        if let Ok(Message::Ack { missing, budget_bps, .. }) = decode(bytes) {
+        if let Ok(Message::Ack { last_seq, missing, budget_bps }) = decode(bytes) {
             self.acked = true;
             if budget_bps != self.cfg.budget_bps {
                 self.set_budget(budget_bps);
@@ -421,12 +428,18 @@ impl Edge {
                 self.force_keyframe = true;
                 return;
             }
-            for m in missing {
-                if let Some((_, ids)) = self.sent.iter().find(|(s, _)| *s == m) {
-                    for id in ids {
-                        if !self.repair_ids.contains(id) {
-                            self.repair_ids.push(*id);
-                        }
+            // Skip an id the datagram at `last_seq` carried: the receiver has it, and it is newer
+            // than the gap. A gap is only seen once a later datagram arrives and is nacked at once,
+            // so on a sparse stream the gap is often revealed by the next keyframe, which already
+            // refreshed everything. (Only `last_seq` is known to have arrived: a seq absent from
+            // `missing` may be a gap whose re-nack is not due yet.)
+            let newest = self.sent.iter().find(|(s, _)| *s == last_seq).map(|(_, ids)| ids.clone()).unwrap_or_default();
+            for m in &missing {
+                let Some((_, ids)) = self.sent.iter().find(|(s, _)| s == m) else { continue };
+                let after = last_seq.wrapping_sub(*m).wrapping_sub(1) < u32::MAX / 2;
+                for id in ids {
+                    if !(after && newest.contains(id)) && !self.repair_ids.contains(id) {
+                        self.repair_ids.push(*id);
                     }
                 }
             }
@@ -463,27 +476,40 @@ impl Edge {
         let b = encode(&msg);
         self.stats.bytes_total += b.len() as u64;
         // The controller targets what the link carries: payload plus the UDP/IP header.
-        self.window_bytes += (b.len() + UDP_IP_OVERHEAD) as u64;
+        self.window_bits += ((b.len() + UDP_IP_OVERHEAD) * 8) as u64;
         b
     }
 
-    /// Budget controller: every half second compare throughput with the budget and scale thresholds.
+    /// Budget controller: compare the bits on the link over a window with the budget; widen the
+    /// thresholds (x1.25) when over, narrow them (x0.9) under 80 %. The window is half a second or,
+    /// at low budgets, long enough to hold `CTRL_WINDOW_DATAGRAMS` one-update datagrams, so one
+    /// datagram reads as a sixth of the budget: with a fixed 0.5 s window one 68 B datagram read
+    /// 1088 bit/s, so below ~2 kbit/s every packet widened and only empty windows narrowed, which
+    /// settles at ~0.64 datagrams/s whatever the budget (35 % of 1000 bit/s). A window whose whole
+    /// allowance is spent early widens at once, so an overload is answered before the window ends.
+    /// No memory across windows: no wind-up (a leaky bucket swung theta x4 over 30 s cycles).
     fn account(&mut self, now: u32) {
-        let window = TICK_HZ / 2;
-        if now.wrapping_sub(self.window_start) < window {
+        let budget = self.cfg.budget_bps as u64;
+        let elapsed = now.wrapping_sub(self.window_start);
+        if budget == 0 || elapsed >= u32::MAX / 2 {
+            self.window_start = now;
+            self.window_bits = 0;
             return;
         }
-        if self.cfg.budget_bps > 0 {
-            let bps = self.window_bytes * 8 * (TICK_HZ as u64) / (window as u64);
-            if bps > self.cfg.budget_bps as u64 {
-                self.theta_scale *= 1.25;
-            } else if bps < (self.cfg.budget_bps as u64) * 7 / 10 {
-                self.theta_scale *= 0.9;
-            }
-            self.theta_scale = self.theta_scale.clamp(self.cfg.theta_scale_min, self.cfg.theta_scale_max);
+        let window = (CTRL_WINDOW_DATAGRAMS * CTRL_DATAGRAM_BITS * TICK_HZ as u64).div_ceil(budget).clamp((TICK_HZ / 2) as u64, CTRL_WINDOW_MAX as u64);
+        let allowance = |ticks: u64| budget * ticks / TICK_HZ as u64;
+        let over_early = self.window_bits > allowance(window);
+        if !over_early && (elapsed as u64) < window {
+            return;
         }
+        if over_early || self.window_bits > allowance(elapsed as u64) {
+            self.theta_scale *= 1.25;
+        } else if self.window_bits < allowance(elapsed as u64) * 8 / 10 {
+            self.theta_scale *= 0.9;
+        }
+        self.theta_scale = self.theta_scale.clamp(self.cfg.theta_scale_min, self.cfg.theta_scale_max);
         self.window_start = now;
-        self.window_bytes = 0;
+        self.window_bits = 0;
     }
 }
 
@@ -654,6 +680,23 @@ mod tests {
         assert_eq!(e.tick(&[], 4 + TICK_HZ).len(), 1);
     }
 
+    /// A gap revealed by a datagram that carried the same entity needs no repair: the receiver
+    /// already holds newer state. One revealed by a Pose (or covered only by a lost seq) does.
+    #[test]
+    fn nack_skips_ids_a_delivered_later_datagram_carried() {
+        let mut e = edge();
+        let seq_of = |d: &[u8]| match decode(d).unwrap() { Message::Delta { seq, .. } | Message::Keyframe { seq, .. } => seq, m => panic!("{m:?}") };
+        let a = seq_of(&e.tick(&[walker(0.0)], 1)[0]); // lost
+        let b = seq_of(&e.tick(&[walker(5.0)], 2)[0]); // arrived: carried entity 1 again
+        e.on_datagram(&encode(&Message::Ack { last_seq: b, missing: vec![a], budget_bps: 0 }));
+        assert!(e.tick(&[walker(5.01)], 3).is_empty(), "nothing to repair");
+        let c = seq_of(&e.tick(&[walker(9.0)], 4)[0]); // lost
+        let d = seq_of(&e.tick(&[walker(0.0)], 5)[0]); // lost too: does not cover c
+        let p = match decode(&e.pose([0.0; 3], [0.0, 0.0, 0.0, 1.0], true, 6).unwrap()).unwrap() { Message::Pose { seq, .. } => seq, m => panic!("{m:?}") };
+        e.on_datagram(&encode(&Message::Ack { last_seq: p, missing: vec![c, d], budget_bps: 0 }));
+        assert_eq!(e.tick(&[walker(0.01)], 7).len(), 1, "repaired");
+    }
+
     #[test]
     fn many_missing_forces_keyframe() {
         let mut e = edge();
@@ -724,8 +767,8 @@ mod tests {
     }
 
     /// One delta per tick (35 B payload): ~34 kbit/s of payload, ~61 kbit/s on the link. At a
-    /// 45 kbit/s budget the payload alone sits in the dead band (70-100 %); only header
-    /// accounting sees the overrun.
+    /// 45 kbit/s budget the payload alone is under the controller's 90 % target (it would narrow);
+    /// only header accounting sees the overrun.
     #[test]
     fn controller_counts_the_udp_ip_header() {
         let budget = 45_000;
@@ -733,18 +776,63 @@ mod tests {
         let hello = e.tick(&[], 0);
         e.on_datagram(&ack(budget));
         let (mut payload, mut wire) = (hello[0].len(), hello[0].len() + UDP_IP_OVERHEAD);
-        for now in 1..=TICK_HZ / 2 {
+        for now in 1..=2 * TICK_HZ {
             let jump = Track { id: 1, class: PERSON, pos: [0.5 * (now % 2) as f32, 0.0, 0.0], vel: [0.0; 3], conf: 200 };
             for d in e.tick(&[jump], now) {
                 payload += d.len();
                 wire += d.len() + UDP_IP_OVERHEAD;
             }
         }
-        let (payload_bps, wire_bps) = (payload as u32 * 16, wire as u32 * 16); // half a second
-        assert!(payload_bps > budget * 7 / 10 && payload_bps < budget, "payload alone: {payload_bps} bit/s");
+        let (payload_bps, wire_bps) = (payload as u32 * 4, wire as u32 * 4); // two seconds
+        assert!(payload_bps > budget * 7 / 10 && payload_bps < budget * 9 / 10, "payload alone: {payload_bps} bit/s");
         assert!(wire_bps > budget, "on the link: {wire_bps} bit/s");
-        assert_eq!(e.stats().theta_scale, 1.25, "controller saw the header");
+        assert!(e.stats().theta_scale > 1.2, "controller saw the header: {}", e.stats().theta_scale);
         assert_eq!(e.stats().bytes_total, payload as u64, "bytes_total stays payload only");
+    }
+
+    /// `n` people circling at 1.2 m/s on 3 m circles (continuous turning: a delta every ~0.6 s each
+    /// at θ 0.15), each in its own phase.
+    fn circlers(n: u32, now: u32) -> Vec<Track> {
+        (0..n)
+            .map(|i| {
+                let a = now as f64 / TICK_HZ as f64 * 0.4 + i as f64 * 1.3;
+                let c = [i as f64 * 8.0, 0.0];
+                let pos = [(c[0] + 3.0 * a.cos()) as f32, 0.0, (c[1] + 3.0 * a.sin()) as f32];
+                let vel = [(-1.2 * a.sin()) as f32, 0.0, (1.2 * a.cos()) as f32];
+                Track { id: 1 + i, class: PERSON, pos, vel, conf: 230 }
+            })
+            .collect()
+    }
+
+    /// The controller holds the budget on average without over-throttling: the long-run rate on the
+    /// link sits at 75-100 % of the budget (measured 80-92 %) and the threshold settles instead of
+    /// ratcheting to the max. (The fixed 0.5 s window read one 68 B datagram as 1088 bit/s and left
+    /// a 1000 bit/s link at 38 %.)
+    #[test]
+    fn controller_holds_low_budgets_on_average() {
+        for (budget, walkers) in [(450u32, 1u32), (1000, 2), (1500, 2), (8000, 12)] {
+            let mut e = Edge::new(1, 42, EdgeConfig::default());
+            e.tick(&[], 0);
+            e.on_datagram(&ack(budget));
+            let (warmup, end) = (60 * TICK_HZ, 240 * TICK_HZ);
+            let (mut bits, mut scales) = (0u64, Vec::new());
+            for now in 1..end {
+                for d in e.tick(&circlers(walkers, now), now) {
+                    if now >= warmup {
+                        bits += ((d.len() + UDP_IP_OVERHEAD) * 8) as u64;
+                    }
+                }
+                if now >= warmup && now % (TICK_HZ / 2) == 0 {
+                    scales.push(e.stats().theta_scale);
+                }
+            }
+            let bps = bits * TICK_HZ as u64 / (end - warmup) as u64;
+            let mean_scale = scales.iter().sum::<f32>() / scales.len() as f32;
+            let at_max = scales.iter().filter(|s| **s >= e.cfg.theta_scale_max).count();
+            assert!(bps >= budget as u64 * 3 / 4 && bps <= budget as u64, "budget {budget}: {bps} bit/s, theta scale {mean_scale}");
+            assert!(at_max == 0, "budget {budget}: theta at the max in {at_max} of {} samples", scales.len());
+            assert!(mean_scale > e.cfg.theta_scale_min && mean_scale < e.cfg.theta_scale_max, "budget {budget}: regulating, not pinned ({mean_scale})");
+        }
     }
 
     fn statics(n: u32) -> Vec<Track> {

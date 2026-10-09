@@ -14,7 +14,10 @@ pub struct ReceiverConfig {
     pub stale_ticks: u32,
     /// Entity not refreshed for this long is dropped by `gc`.
     pub drop_ticks: u32,
-    /// A seq gap that stays open for this long (edge time) is nacked.
+    /// A seq gap that stays open for this long (edge time) is nacked. 0: at once. A gap is seen only
+    /// when a later datagram arrives, and its age advances only with later datagrams, so any wait
+    /// for reordering (which UDP over one radio hop, the shaper and netem do not produce) turns into
+    /// "wait for the next datagram after the wait", ~0.5 s on a sparse link.
     pub gap_nack_ticks: u32,
     /// Forget a gap after this long; it can no longer be repaired meaningfully.
     pub gap_forget_ticks: u32,
@@ -31,7 +34,7 @@ impl Default for ReceiverConfig {
         Self {
             stale_ticks: 6 * TICK_HZ,
             drop_ticks: 10 * TICK_HZ,
-            gap_nack_ticks: TICK_HZ / 5,
+            gap_nack_ticks: 0,
             gap_forget_ticks: 3 * TICK_HZ,
             renack_ticks: TICK_HZ / 2,
             hard_drop_ticks: 30 * TICK_HZ,
@@ -66,11 +69,14 @@ pub struct Extrapolated {
     /// Position threshold (m) the edge declared in the datagram that last refreshed this entity:
     /// while the link is good the twin is within this of the edge's track.
     pub theta: f32,
-    /// The device has been silent for at least `coast_ticks`: the heartbeat that makes "no update
-    /// = within threshold" true is missing, so `theta` no longer bounds the error.
+    /// `theta` no longer bounds the error: the device has been silent for at least `coast_ticks`
+    /// (the heartbeat that makes "no update = within threshold" true is missing), or it spoke again
+    /// after such a silence but nothing sent since has refreshed this entity (updates lost in the
+    /// blackout are repaired a round trip later, or by the next keyframe).
     pub coasting: bool,
-    /// Honest error radius (m): `theta`, or while coasting `theta + max_speed(class) x silence`
-    /// with silence counted from the device's last datagram (capped at `CE_MAX_M`).
+    /// Honest error radius (m): `theta`, or while coasting `theta + max_speed(class) x silence`,
+    /// silence counted from the device's last datagram before the (first unrepaired) blackout, so a
+    /// missed heartbeat is a visible jump (capped at `CE_MAX_M`).
     pub ce: f32,
 }
 
@@ -113,6 +119,9 @@ struct Entity {
     state: EntityState,
     /// `theta_q` of the datagram that last refreshed this entity.
     theta_q: u8,
+    /// Not refreshed since the device resumed after a silence of at least `coast_ticks`: the edge
+    /// tick of its last datagram before that silence (the oldest, if several blackouts went by).
+    suspect_since: Option<u32>,
 }
 
 pub struct Receiver {
@@ -125,6 +134,8 @@ pub struct Receiver {
     keyframe: Option<(u32, u8, u64, Vec<u32>)>,
     /// Newest edge tick seen in any datagram: the edge time of its last datagram.
     last_edge_tick: u32,
+    /// Send tick of the first datagram after the last silence of at least `coast_ticks`.
+    resumed_at: Option<u32>,
     device_id: Option<u32>,
     session_nonce: Option<u32>,
     pose: Option<Pose>,
@@ -145,6 +156,7 @@ impl Receiver {
             gaps: Vec::new(),
             keyframe: None,
             last_edge_tick: 0,
+            resumed_at: None,
             device_id: None,
             session_nonce: None,
             pose: None,
@@ -197,6 +209,16 @@ impl Receiver {
 
     pub fn on_datagram(&mut self, bytes: &[u8]) -> Result<Event, CodecError> {
         let msg = decode(bytes)?;
+        let sent = match &msg {
+            Message::Hello { tick, .. } | Message::Delta { tick, .. } | Message::Pose { tick, .. } | Message::Bye { tick, .. } => Some(*tick),
+            Message::Keyframe { tick, entities, .. } => Some(newest_tick(*tick, entities)),
+            Message::Ack { .. } => None,
+        };
+        if let Some(t) = sent {
+            if self.stats.datagrams > 0 {
+                self.note_resume(t);
+            }
+        }
         self.stats.datagrams += 1;
         self.stats.bytes += bytes.len() as u64;
         Ok(match msg {
@@ -209,6 +231,7 @@ impl Receiver {
                     self.keyframe = None;
                     self.last_seq = None;
                     self.last_edge_tick = 0;
+                    self.resumed_at = None;
                     self.grace = None;
                 }
                 self.session_nonce = Some(session_nonce);
@@ -291,21 +314,27 @@ impl Receiver {
     /// Entities extrapolated to `at_tick` (edge clock).
     pub fn extrapolate(&self, at_tick: u32) -> Vec<Extrapolated> {
         let l = self.limits(at_tick);
-        let silence = since(at_tick, self.last_edge_tick);
-        let coasting = silence >= l.coast;
-        let silence_s = silence as f32 / TICK_HZ as f32;
+        let device_coasting = since(at_tick, self.last_edge_tick) >= l.coast;
         self.entities
             .iter()
             .map(|e| {
                 let age = since(at_tick, e.state.tick);
                 let theta = theta_m(e.theta_q);
-                let ce = if coasting {
-                    let r = theta + prior(e.state.class).max_speed * silence_s;
-                    if r < CE_MAX_M { r } else { CE_MAX_M }
-                } else {
-                    theta
+                // Trust runs out at the oldest of: the device's last word (while it is silent) and
+                // the start of a blackout this entity has not been refreshed since.
+                let from = match (device_coasting, e.suspect_since) {
+                    (_, Some(s)) => Some(s),
+                    (true, None) => Some(self.last_edge_tick),
+                    (false, None) => None,
                 };
-                Extrapolated { state: Predictor::step(&e.state, at_tick), age_ticks: age, stale: age >= l.stale, theta, coasting, ce }
+                let ce = match from {
+                    Some(f) => {
+                        let r = theta + prior(e.state.class).max_speed * (since(at_tick, f) as f32 / TICK_HZ as f32);
+                        if r < CE_MAX_M { r } else { CE_MAX_M }
+                    }
+                    None => theta,
+                };
+                Extrapolated { state: Predictor::step(&e.state, at_tick), age_ticks: age, stale: age >= l.stale, theta, coasting: from.is_some(), ce }
             })
             .collect()
     }
@@ -360,6 +389,27 @@ impl Receiver {
         let before = self.entities.len();
         self.entities.retain(|e| all_ids.contains(&e.state.id) || tick.wrapping_sub(e.state.tick) >= u32::MAX / 2);
         self.stats.reconciled += (before - self.entities.len()) as u32;
+        // A whole keyframe taken after the resume re-establishes every entity that remains.
+        if matches!(self.resumed_at, Some(r) if tick.wrapping_sub(r) < u32::MAX / 2) {
+            self.resumed_at = None;
+            for e in &mut self.entities {
+                e.suspect_since = None;
+            }
+        }
+    }
+
+    /// A datagram sent at `sent` after a silence of at least `coast_ticks`: until something sent
+    /// from now on refreshes them, the entities held so far are as uncertain as during the silence.
+    fn note_resume(&mut self, sent: u32) {
+        let silence = sent.wrapping_sub(self.last_edge_tick);
+        if silence >= u32::MAX / 2 || silence < self.limits(sent).coast {
+            return;
+        }
+        let start = self.last_edge_tick;
+        for e in &mut self.entities {
+            e.suspect_since.get_or_insert(start);
+        }
+        self.resumed_at = Some(sent);
     }
 
     fn note_tick(&mut self, tick: u32) {
@@ -410,14 +460,14 @@ impl Receiver {
                 match self.entities.iter_mut().find(|e| e.state.id == s.id) {
                     Some(e) => {
                         if s.tick.wrapping_sub(e.state.tick) < u32::MAX / 2 {
-                            *e = Entity { state: s, theta_q };
+                            *e = Entity { state: s, theta_q, suspect_since: None };
                             true
                         } else {
                             false
                         }
                     }
                     None => {
-                        self.entities.push(Entity { state: s, theta_q });
+                        self.entities.push(Entity { state: s, theta_q, suspect_since: None });
                         true
                     }
                 }
@@ -488,7 +538,9 @@ mod tests {
 
     #[test]
     fn detects_gap_and_nacks_after_delay() {
-        let mut r = Receiver::new(ReceiverConfig::default());
+        // With a reordering allowance the nack waits for a later datagram past it.
+        let cfg = ReceiverConfig { gap_nack_ticks: TICK_HZ / 5, ..ReceiverConfig::default() };
+        let mut r = Receiver::new(cfg);
         r.on_datagram(&delta(1, 0, vec![])).unwrap();
         r.on_datagram(&delta(3, 10, vec![])).unwrap();
         assert_eq!(r.stats().gaps_detected, 1);
@@ -503,6 +555,21 @@ mod tests {
         // Late arrival of seq 2 closes the gap.
         assert_ne!(r.on_datagram(&delta(2, 5, vec![])).unwrap(), Event::Ignored);
         assert!(!r.needs_ack());
+    }
+
+    /// Default: a gap is nacked as soon as the datagram after it arrives.
+    #[test]
+    fn gap_is_nacked_at_once_by_default() {
+        let mut r = Receiver::new(ReceiverConfig::default());
+        r.on_datagram(&delta(1, 0, vec![])).unwrap();
+        assert!(!r.needs_ack());
+        r.on_datagram(&delta(3, 10, vec![])).unwrap();
+        assert!(r.needs_ack());
+        match decode(&r.make_ack(0)).unwrap() {
+            Message::Ack { last_seq: 3, missing, .. } => assert_eq!(missing, vec![2]),
+            m => panic!("{m:?}"),
+        }
+        assert!(!r.needs_ack(), "then re-nacked only after renack_ticks");
     }
 
     #[test]
@@ -622,6 +689,68 @@ mod tests {
         assert!(!r.coasting(coast + 1));
         // The host's estimate of edge now lagging the newest datagram is not silence.
         assert!(!r.coasting(coast - 5) && r.gc(coast - 5).is_empty() && !r.extrapolate(coast - 5)[0].stale);
+    }
+
+    /// After a blackout, trust comes back per entity: the first datagram ends the device's silence
+    /// but vouches only for what it carries; the rest stays coasting, its ce still growing from the
+    /// start of the blackout, until a datagram sent after the resume refreshes it.
+    #[test]
+    fn trust_returns_per_entity_after_a_blackout() {
+        let mut r = Receiver::new(ReceiverConfig::default());
+        let chair = |id, t| EntityState { class: CHAIR, vel: [0.0; 3], ..st(id, 3.0, t) };
+        r.on_datagram(&delta(1, 100, vec![Update::Spawn(st(1, 0.0, 100)), Update::Spawn(st(2, 1.0, 100)), Update::Spawn(chair(3, 100))])).unwrap();
+        let back = 100 + 10 * TICK_HZ; // 10 s blackout
+        assert!(r.coasting(back - 1) && r.extrapolate(back - 1).iter().all(|e| e.coasting));
+        // The first datagram after it refreshes only entity 1 (its other updates were lost).
+        r.on_datagram(&delta(9, back, vec![Update::Update(st(1, 2.0, back))])).unwrap();
+        let at = back + 30;
+        assert!(!r.coasting(at), "the device is back");
+        let ex = r.extrapolate(at);
+        assert_eq!((ex[0].coasting, ex[0].ce), (false, 0.15));
+        let silence_s = (at - 100) as f32 / TICK_HZ as f32;
+        assert!(ex[1].coasting && ex[1].ce == 0.15 + 3.0 * silence_s, "walker 2 still unknown: {}", ex[1].ce);
+        assert!(ex[2].coasting && ex[2].ce == 0.15 + 1.0 * silence_s, "chair: {}", ex[2].ce);
+        // A spawn after the resume is trusted at once; an older state does not vouch for anything.
+        r.on_datagram(&delta(10, back + 40, vec![Update::Spawn(st(7, 0.0, back + 40)), Update::Update(st(2, 1.0, 90))])).unwrap();
+        let ex = r.extrapolate(back + 50);
+        assert!(!ex[3].coasting && ex[1].coasting);
+        // A repair (a delta update sent after the resume) restores entity 2.
+        r.on_datagram(&delta(11, back + 60, vec![Update::Update(st(2, 1.5, back + 60))])).unwrap();
+        let ex = r.extrapolate(back + 70);
+        assert_eq!((ex[1].coasting, ex[1].ce), (false, 0.15));
+        assert!(ex[2].coasting, "the chair waits for a keyframe");
+        // A second blackout before the chair is refreshed: its silence still counts from the first.
+        let back2 = back + 70 + 5 * TICK_HZ;
+        r.on_datagram(&delta(12, back2, vec![Update::Update(st(1, 2.0, back2))])).unwrap();
+        let ex = r.extrapolate(back2);
+        assert!(ex[2].ce == 0.15 + 1.0 * ((back2 - 100) as f32 / TICK_HZ as f32), "chair from the first blackout: {}", ex[2].ce);
+        assert!(ex[1].coasting && ex[1].ce == 0.15 + 3.0 * ((back2 - back - 60) as f32 / TICK_HZ as f32), "walker 2 from its repair");
+        // A complete keyframe taken after the resume re-establishes everything that remains.
+        r.on_datagram(&kf(13, back2 + 10, 0, 1, vec![st(1, 2.1, back2 + 10), st(2, 1.6, back2 + 10), chair(3, back2 + 10), st(7, 0.1, back2 + 10)])).unwrap();
+        assert!(r.extrapolate(back2 + 11).iter().all(|e| !e.coasting && e.ce == 0.15));
+    }
+
+    /// A paced keyframe that started before the blackout and completes after it does not vouch
+    /// for the entities its earlier parts carried; one taken after the resume does.
+    #[test]
+    fn only_a_keyframe_taken_after_the_resume_clears_trust() {
+        let mut r = Receiver::new(ReceiverConfig::default());
+        r.on_datagram(&delta(1, 100, vec![Update::Spawn(st(1, 0.0, 100)), Update::Spawn(st(2, 1.0, 100))])).unwrap();
+        r.on_datagram(&kf(2, 200, 0, 2, vec![st(1, 0.5, 200)])).unwrap();
+        let back = 200 + 5 * TICK_HZ;
+        r.on_datagram(&kf(3, 200, 1, 2, vec![st(2, 1.5, back)])).unwrap();
+        let ex = r.extrapolate(back + 1);
+        assert!(ex[0].coasting && !ex[1].coasting, "part 0 was sent before the blackout");
+        // The resume datagram is itself a keyframe taken after the silence: all trusted at once.
+        let mut r = Receiver::new(ReceiverConfig::default());
+        r.on_datagram(&delta(1, 100, vec![Update::Spawn(st(1, 0.0, 100)), Update::Spawn(st(2, 1.0, 100))])).unwrap();
+        r.on_datagram(&kf(5, back, 0, 1, vec![st(1, 0.5, back), st(2, 1.5, back)])).unwrap();
+        assert!(r.extrapolate(back + 1).iter().all(|e| !e.coasting && e.ce == 0.15));
+        // Silence shorter than coast_ticks is not a blackout.
+        let mut r = Receiver::new(ReceiverConfig::default());
+        r.on_datagram(&delta(1, 100, vec![Update::Spawn(st(1, 0.0, 100)), Update::Spawn(st(2, 1.0, 100))])).unwrap();
+        r.on_datagram(&delta(2, 100 + ReceiverConfig::default().coast_ticks - 1, vec![])).unwrap();
+        assert!(r.extrapolate(400).iter().all(|e| !e.coasting));
     }
 
     /// A static scene at 600 bit/s: keyframes every ~14 s are the only refresh. Between them the
