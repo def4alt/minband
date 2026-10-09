@@ -70,9 +70,11 @@ refreshed it (`Extrapolated.theta`, metres).
 - Edge sends `Hello` until it receives any `Ack`, then starts `Delta`/`Keyframe`/`Pose`.
 - Every `Delta` and `Keyframe` consumes one `seq`. `Pose` also consumes one (so gaps are
   detectable) but is never repaired.
-- Server acks every 100 ms or immediately on a gap. `missing` lists seqs not received; the edge
-  resends current state for entities it touched in those seqs (state repair, see DESIGN §4), or a
-  `Keyframe` if more than 8 seqs are missing.
+- Server acks every 100 ms or immediately on a gap; a gap is nacked as soon as the datagram after
+  it arrives (no reordering allowance) and re-nacked at most every 500 ms. `missing` lists seqs not
+  received; the edge resends current state for entities it touched in those seqs (state repair,
+  see DESIGN §4), except those the datagram at `last_seq` carried (the receiver has newer state),
+  or a `Keyframe` if more than 8 seqs are missing.
 - `budget_bps` in `Ack` pushes a budget (bit/s on the link, UDP/IP header included) to the edge.
   It is authoritative, `0` included (`0` = unlimited): the edge always runs the cadence below for
   the budget the receiver last advertised, and the receiver derives its liveness thresholds from
