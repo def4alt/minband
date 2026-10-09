@@ -38,7 +38,14 @@ function unpack(buf: Uint8Array): Uint8Array[] {
 
 /** Bytes sent since the last stats line, incl. 28 B UDP/IP per datagram. */
 const sims: { deviceId: number; edge: WasmEdge; bytes: number }[] = [];
-for (let d = 0; d < DEVICES; d++) {
+// Each device starts at its own phase (golden-ratio spread over up to 10 s): real edges are not
+// phase-locked, and eight edges keyframing and posing in the same instant overrun a narrow link's
+// queue in a way real drones would not.
+const phaseMs = (d: number) => Math.round(((d * 0.6180339887) % 1) * Math.min(10_000, 1250 * DEVICES));
+
+for (let d = 0; d < DEVICES; d++) setTimeout(() => startDevice(d), DEVICES > 1 ? phaseMs(d) : 0);
+
+function startDevice(d: number) {
   const deviceId = 100 + d;
   const scene = SCENE === 'spread' ? spreadScene(d, DEVICES, WALKERS) : sharedScene(deviceId);
   const camera = SCENE === 'spread' ? spreadCamera(d, DEVICES) : sharedCamera(d, DEVICES);
@@ -80,6 +87,7 @@ for (let d = 0; d < DEVICES; d++) {
     } catch { /* server not up yet */ }
   }, GT_POST_MS);
 }
+
 setInterval(() => {
   let total = 0;
   for (const s of sims) {

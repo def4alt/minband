@@ -21,9 +21,12 @@ export function sharedScene(deviceId: number): Scene {
   return tick => {
     const t = tick / TICK_HZ;
     const n = (k: number) => (Math.sin(t * 7.3 + k * 13.1 + deviceId) * 0.02);
+    // Walker 2 paces back and forth along x in [-4, 4] (it used to teleport from +4 to -4, an
+    // 8 m jump no tracker reports, which dominated the twin error under loss).
+    const u = (t * 0.8) % 16, out = u < 8;
     const tracks = [
       { id: 1, class: 0, pos: [3 * Math.cos(t * 0.4), 0, 3 * Math.sin(t * 0.4)], vel: [-1.2 * Math.sin(t * 0.4), 0, 1.2 * Math.cos(t * 0.4)], conf: 230 },
-      { id: 2, class: 0, pos: [((t * 0.8) % 8) - 4, 0, 2], vel: [0.8, 0, 0], conf: 200 },
+      { id: 2, class: 0, pos: [out ? u - 4 : 12 - u, 0, 2], vel: [out ? 0.8 : -0.8, 0, 0], conf: 200 },
       { id: 3, class: 56, pos: [-2, 0, -2], vel: [0, 0, 0], conf: 180 },
     ];
     if (Math.floor(t / 5) % 2 === 0) tracks.push({ id: 4, class: 41, pos: [1, 0.8, -1 + 0.3 * Math.sin(t)], vel: [0, 0, 0.3 * Math.cos(t)], conf: 150 });

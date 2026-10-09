@@ -29,7 +29,8 @@ Sim only: `DEVICES` (1), `SCENE` (`shared`: every device sees the same walkers, 
 feeds), `WALKERS` (1, spread only; each follows the eval's `one_walker` tour, ~120-130 B/s per
 walker on the wire), `MINBAND_HOST` (127.0.0.1), `VERBOSE`, `GT_POST_MS` (5000; 0 disables
 ground-truth upload), `GT_WINDOW_S` (10), `MINBAND_API` (`http://$MINBAND_HOST:8080`). Device ids
-are 100 + d. Each device also sends `Pose` (its frustum in the viewer): offered at 2 Hz like the
+are 100 + d. With more than one device, each starts at its own phase (spread over up to 10 s), so
+keyframes and poses of N edges do not leave in the same instant. Each device also sends `Pose` (its frustum in the viewer): offered at 2 Hz like the
 phone, sent by core at the budget's pose interval (0.5 s unlimited, 10 s below 4 kbit/s), with
 `originLocked` true. `shared`: each device walks its own 6 m circle around the scene at 1.6 m,
 looking at it; `spread`: a drone 6 m above its area on a 4 m orbit, looking at the area. Every 5 s

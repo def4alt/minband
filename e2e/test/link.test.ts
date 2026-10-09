@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startStack, getJson, sleep, type Stack } from '../lib/stack.ts';
+import { startStack, getJson, sleep, waitFor, type Stack } from '../lib/stack.ts';
 
 let s: Stack;
 const baselineFile = join(mkdtempSync(join(tmpdir(), 'minband-e2e-')), 'baseline_a.json');
@@ -50,7 +50,8 @@ test('lora profile: shaper, budget and LoRa time on air; dropped datagrams are r
   assert.equal(snap.link.profile, 'lora');
   assert.ok(snap.link.airtimeShare > 0.05, `airtime ${snap.link.airtimeShare}`);
   assert.ok(dev100(snap).airtimeShare > 0, 'per-device airtime');
-  assert.ok(s.feed.packets.slice(from).some(p => p.dropped), '10 % loss shows as dropped packets');
+  // ~20 datagrams in 8 s at this budget: P(no loss) ~ 0.9^20, so wait for the first drop.
+  await waitFor('a dropped datagram (10 % loss)', () => s.feed.packets.slice(from).some(p => p.dropped), 30_000);
   assert.equal(dev100(snap).entities.filter((e: any) => e.stale).length, 0, 'twin holds');
 });
 
