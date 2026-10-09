@@ -14,7 +14,7 @@ with emulated impairment.
 |---|---|---|
 | `core/` | Entity model, predictor, divergence thresholds, delta codec, budget controller. Compiled to iOS (uniffi) and WASM (server/viewer). | Rust |
 | `server/` | UDP ingest, reliability/resync, world model, multi-device fusion, metrics, WebSocket fan-out, in-process link shaper. | TypeScript (Node) |
-| `viewer/` | Three.js twin, staleness/ghost rendering, bytes/sec graph, link slider, side-by-side mode. | TypeScript (Vite) |
+| `viewer/` | Three.js twin, error rings and coasting/staleness, link profiles and airtime, link activity strip, video-on-this-link panel, bytes/sec graph, mock snapshot server. | TypeScript (Vite) |
 | `ios/` | ARKit (marker origin, pose, depth) + Vision/CoreML detection + tracker + core FFI + UDP client. | Swift |
 | `tools/` | Link impairment (dummynet), baseline measurement, evaluation and charts. | Shell / TS |
 | `proto/` | Wire protocol spec. | Markdown |
@@ -47,3 +47,23 @@ cd viewer && npm install && npm run dev      # http://localhost:5173
 Without a phone, `npm run sim` in `server/` replays a synthetic scene through the full
 edge pipeline (core predictor + thresholds + codec) so the twin, graphs and link slider work
 end to end.
+
+### Viewer without the server: mock and smoke test
+
+`viewer/dev/mock-server.ts` speaks the server's WebSocket protocol on :8080 with every field of
+the snapshot contract (`server/src/types.ts`), including the hackathon ones the server does not
+produce yet. It is a small deterministic simulation (two edges running core's predictor, theta,
+budget controller and heartbeat; shaper; receiver; fusion; MGRS) looping through
+clean, a 10 s blackout, recovery, hf, lora and telemetry.
+
+```bash
+cd viewer && npm run mock                            # terminal 1
+cd viewer && npm run dev                             # terminal 2, http://localhost:5173
+MOCK_PHASE=blackout@8 MOCK_HOLD=1 npm run mock       # start and stay in a phase (stale here)
+curl 'localhost:8080/mock?phase=lora&at=4&hold=1'    # jump at runtime; also freeze=1, geo=0, measured=1, legacy=1
+npm run smoke                                        # mock + Vite + headless Chromium: screenshots, fails on console errors
+```
+
+In the viewer, `STAGE` (in DETAILS, or `?stage=1`) is the presenter view: the link activity strip
+beside the twin and the video-on-this-link panel; the operator view keeps the restraint rules in
+[docs/STYLE.md](docs/STYLE.md).

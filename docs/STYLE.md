@@ -26,8 +26,9 @@ Light theme is not supported; the product is dark by design.
 - The ground is not a flat grid: a low-amplitude procedural contour field (displaced wireframe
   plane, like the mountain reference) at `--ink-4`, with the marker origin at the flattest point.
   Grid helper lines, if any, are `--ink-4` and sparse.
-- Class is conveyed by silhouette, not colour: person = tall capsule, carried object = small
-  sphere, static object = box. Device is conveyed by line style: solid, dashed, dotted.
+- Class is conveyed by silhouette, not colour: person (shown as "dismount") = tall capsule,
+  carried object = small sphere, static object = box. Device is conveyed by line style: solid,
+  dashed, dotted (frustums, trails, ghosts; never the error ring, see below).
 - **Entities are solid, not wire** (decided 2026-10-09). Tracked objects are filled, matte
   monochrome meshes: `--ink` at 85 to 100 % with soft hemispheric lighting so they read as
   volumes against the line terrain. Fresh = bright solid; stale = the same solid fading toward
@@ -91,6 +92,38 @@ The product must be usable first. Less on screen, not more.
 - **Whitespace is part of the design.** Panels have 24 px padding, rows have 12 px gaps, and the
   credits row has at most three pairs. Nothing blinks except a lost device.
 - **Motion is informative only.** No idle animation on the terrain, no pulsing, no scanlines.
+
+## Trust, link and stage visuals (added 2026-10-09)
+
+Element types for the hackathon visuals (docs/HACKATHON_PLAN.md section 5). Same tokens, same
+hairlines; each moves only when a datagram arrived, a bit was delivered or a heartbeat was missed.
+
+- **Trust states.** Live = bright solid. Coasting (the device missed its heartbeat, S15) = the
+  same solid at about `--ink-2`, velocity arrow dimmed. Stale = the fade to `--ink-3`, dotted
+  outline, gone, as above. Coasting does not blink; only a lost device does.
+- **Error ring (V2).** Every entity stands on a 1 px ground ring of radius `ce` (metres), draped on
+  the contour field. Its line style says trust, not device: live solid, coasting dashed (48 dashes
+  at any size), stale dotted. Full opacity up to 1.5 m, then falling as sqrt(1.5 / r) to 0.3, so a
+  blackout's wide rings stay quieter than the solids. A ring is drawn no larger than 12 m (the
+  basin and the first swells): a larger one stays at 12 m with four short outward ticks, and the
+  hover tag gives the real radius (`±24 m`). Shrinking snaps (a refresh resets the error); growth
+  eases over about 0.2 s.
+- **Tags** may carry a second line: the grid reference (MGRS) when the server has a geodetic anchor.
+  The anchor's own reference sits in the credits row after the entity count.
+- **Link activity strip (V3).** Vertical, newest at the top, 36 px per second, one 1 px tick per
+  datagram, width proportional to bytes (1200 B = the lane). Uplink right of a hairline spine in
+  `--ink`, downlink left in `--ink-2`, dropped datagrams dotted `--ink-3` with a small x, keyframes
+  with a 5 px end cap. Beside it H.264 on the same scale, which is a solid bar (`--ink-3` at half
+  opacity). A missed keyframe is the strip's one dashed rule (`NO KEYFRAME · DEV 101 102`), a
+  resync a solid `--ink-3` rule, a dead link a 0.05 wash. Lives in DETAILS; STAGE moves it onto
+  the stage.
+- **Video on this link (V1).** Halftone painted top-down at the link rate, a 1 px `--ink-2` rule at
+  the row being written, the previous frame below it at 12 % luminance. The countdown
+  (`NEXT FRAME 1:52`) is the panel's one large number. The AI thumbnail is a 72 px square, hairline
+  border, 6 px cells. With the link unshaped the panel is the live halftone and says so.
+- **STAGE** is the presenter toggle (in DETAILS, remembered per browser, `?stage=1`): the link
+  activity strip beside the twin and the video-on-this-link panel open. The operator view stays as
+  "Restraint" describes. The per-datagram click (`CLICK`) is off by default.
 
 ## Charts: colour for series (added 2026-10-09)
 
