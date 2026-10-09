@@ -19,13 +19,13 @@ const DEVICES = process.env.DEVICES ?? '1';
 /** [seconds to hold, label, action] */
 const STEPS: [number, string, (api: string) => Promise<unknown>][] = [
   [20, 'clean Wi-Fi: walkers in straight lines cost almost nothing, turns spike', async api => getJson(`${api}/api/link?profile=clean`)],
+  // The blackout comes first, on the 2 s heartbeat: after a slow profile the receiver keeps the
+  // slow thresholds for one old coast period (18.8 s after telemetry), so coasting would show late.
+  [16, 'blackout 10 s: entities coast, rings grow, then stale', async api => getJson(`${api}/api/shaper?enabled=1&loss=1&revertAfterMs=10000`)],
+  [12, 'link back: re-sync within one keyframe', async () => undefined],
   [20, 'hf 9.6 kbit/s, 500 ms', async api => getJson(`${api}/api/link?profile=hf`)],
   [25, 'lora 2 kbit/s, 10 % loss: the fidelity knob widens thresholds', async api => getJson(`${api}/api/link?profile=lora`)],
   [25, 'telemetry 600 bit/s: keyframe period stretches with the budget', async api => getJson(`${api}/api/link?profile=telemetry`)],
-  // Back to a 2 s heartbeat first: on telemetry coasting starts only after ~19 s of silence.
-  [10, 'clean again: the 2 s heartbeat returns', async api => getJson(`${api}/api/link?profile=clean`)],
-  [16, 'blackout 10 s: entities coast, rings grow, then stale', async api => getJson(`${api}/api/shaper?enabled=1&loss=1&revertAfterMs=10000`)],
-  [15, 'link back: re-sync within one keyframe', async () => undefined],
   [20, 'contested: lora with random 1-5 s blackouts', async api => getJson(`${api}/api/link?profile=contested`)],
   [8, 'clean again', async api => getJson(`${api}/api/link?profile=clean`)],
 ];

@@ -27,6 +27,13 @@ and the picture survives the link dying.
 | 7 | Numbers are measured: fidelity-vs-bytes curve, two baselines, loss sweep. | `runs/eval/*.svg`, measured H.264 (P0) |
 | 8 | It is a link layer, not a drone: radio- and airframe-neutral, sits under or beside video. | Drones-per-link slide: ~10 one-walker feeds in 9.6 kbit/s |
 
+Demo order: straight line and a turn, then pull the cable on the clean or hf profile, plug it back,
+then step the box down through hf, lora, telemetry. After a slow profile the twin keeps the slow
+heartbeat's thresholds for one coast period (about 19 s after telemetry), so a cable pulled right
+after stepping back up shows coasting late; on telemetry itself coasting starts after ~19 s of
+silence and stale at 45 s, by design (15 s heartbeat). `cd e2e && npm run record` records this
+order as the fallback run.
+
 Do not claim: that the delta idea is new (it is DIS dead reckoning, say so first); the detector
 (edge detection is crowded; lead with the link and the twin); stealth (fewer transmissions mean
 less airtime, not undetectable); the video ratio before H.264 is measured on the phone.
