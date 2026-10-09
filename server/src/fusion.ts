@@ -75,10 +75,14 @@ export class Fusion {
       if (!ms.length) continue;
       let w = 0; const pos = [0, 0, 0], vel = [0, 0, 0];
       for (const m of ms) { const c = m.e.stale ? 1 : m.e.conf + 1; w += c; for (let i = 0; i < 3; i++) { pos[i] += m.e.pos[i] * c; vel[i] += m.e.vel[i] * c; } }
+      // Error radius: the best (lowest) of the fresh sources, else of all; coasting only when every
+      // source is (one device still on its heartbeat vouches for the entity).
+      const fresh = ms.filter(m => !m.e.stale);
       out.push({
         gid, class: ms[0].e.class,
         pos: [pos[0] / w, pos[1] / w, pos[2] / w], vel: [vel[0] / w, vel[1] / w, vel[2] / w],
         sources: ms.map(m => ({ deviceId: m.d, id: m.e.id })), stale: ms.every(m => m.e.stale),
+        ce: Math.min(...(fresh.length ? fresh : ms).map(m => m.e.ce)), coasting: ms.every(m => m.e.coasting),
       });
     }
     return out;

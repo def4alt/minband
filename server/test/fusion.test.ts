@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { Fusion, MERGE_MS, SPLIT_MS } from '../src/fusion.js';
 import type { DeviceView, EntityView } from '../src/types.js';
 
-const ent = (id: number, x: number, cls = 0, vx = 0): EntityView => ({ id, class: cls, pos: [x, 0, 0], vel: [vx, 0, 0], conf: 200, tick: 0, age: 0, stale: false });
+const ent = (id: number, x: number, cls = 0, vx = 0, o: Partial<EntityView> = {}): EntityView => ({ id, class: cls, pos: [x, 0, 0], vel: [vx, 0, 0], conf: 200, tick: 0, age: 0, stale: false, theta: 0.15, coasting: false, ce: 0.15, ...o });
+const CADENCE_0 = { keyframeMs: 2000, helloRefreshMs: 5000, poseMs: 500, coastMs: 2500, staleMs: 6000, dropMs: 10000 };
 const dev = (deviceId: number, entities: EntityView[], key = `id:${deviceId}`): DeviceView => ({
   deviceId, addr: '', entities, pose: null, bps: 0, msgsPerSec: 0, stats: {}, lastSeenMs: 0,
   key, provisional: false, offeredBps: 0, edgeTick: 0, silent: false, addrChanges: 0, clockOffsetMs: null,
-  airtimeShare: 0,
+  airtimeShare: 0, cadence: CADENCE_0, coasting: false,
 });
 /** Run `f.update` every 33 ms from `from` to `to` (inclusive) with a fixed scene; return the last output. */
 function run(f: Fusion, from: number, to: number, devices: () => DeviceView[]) {
@@ -103,6 +104,20 @@ test('a member that changes class splits after 1 s', () => {
   const recls = () => [dev(1, [ent(1, 0)]), dev(2, [ent(7, 0.3, 56)])];
   assert.equal(run(f, 1133, 1133 + SPLIT_MS - 1, recls).length, 1);
   assert.equal(f.update(recls(), 1133 + SPLIT_MS).length, 2);
+});
+
+test('fused ce is the best fresh source; coasting only when every source coasts', () => {
+  const f = new Fusion();
+  const scene = (a: Partial<EntityView>, b: Partial<EntityView>) => () => [dev(1, [ent(1, 0, 0, 0, a)]), dev(2, [ent(7, 0.3, 0, 0, b)])];
+  let g = run(f, 0, 1100, scene({ ce: 0.3 }, { ce: 0.2 }));
+  assert.equal(g.length, 1);
+  assert.deepEqual([g[0].ce, g[0].coasting], [0.2, false]);
+  g = run(f, 1133, 1200, scene({ ce: 0.3 }, { ce: 1.5, coasting: true }));
+  assert.deepEqual([g[0].ce, g[0].coasting], [0.3, false], 'one source on its heartbeat vouches for it');
+  g = run(f, 1233, 1300, scene({ ce: 0.3, stale: true }, { ce: 1.5, coasting: true }));
+  assert.deepEqual([g[0].ce, g[0].coasting], [1.5, false], 'a stale source does not lower ce');
+  g = run(f, 1333, 1400, scene({ ce: 2.5, stale: true, coasting: true }, { ce: 4, stale: true, coasting: true }));
+  assert.deepEqual([g[0].ce, g[0].coasting, g[0].stale], [2.5, true, true], 'all stale: best of all');
 });
 
 test('timers do not leak as tracks come and go', () => {
