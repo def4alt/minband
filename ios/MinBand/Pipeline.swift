@@ -13,8 +13,9 @@ import Foundation
 /// - main: @Published UI state only.
 ///
 /// Rates: detection ~12 Hz, `tracker.tracks(at:)` -> ground truth -> `edge.tick` at 30 Hz,
-/// Pose at 2 Hz, HUD stats at 2 Hz, H.264 baseline frames at 30 Hz. Before the origin is locked
-/// the edge is ticked with no tracks (it sends only Hello) and no Pose is sent.
+/// Pose offered to the core at 2 Hz (the core sends one only when its budget-derived pose
+/// interval is due, S19), HUD stats at 2 Hz, H.264 baseline frames at 30 Hz. Before the origin is
+/// locked the edge is ticked with no tracks (it sends only Hello) and no Pose is offered.
 final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     @Published var originLocked = false
     @Published var originSource = "none"         // none | marker | manual
@@ -48,6 +49,8 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     /// refresh every 5 s, so silence beyond 7 s means the server or the network is gone.
     static let linkLostAfter: TimeInterval = 7
     static let trackInterval: TimeInterval = 1.0 / 30
+    /// How often a Pose is offered to the core. The core decides which are sent (S19: its pose
+    /// interval follows the byte budget) and returns empty Data for the others.
     static let poseInterval: TimeInterval = 0.5
     static let statsInterval: TimeInterval = 0.5
     static let ticksPerSecond: Double = 120
@@ -261,8 +264,10 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
             lastTrackCount = tracks.count
         }
 
-        // Pose at 2 Hz, only once the origin means something. The bridge converts the ARKit
-        // world camera transform into the marker frame (Origin.toMarker / rotationToMarker).
+        // Pose offered at 2 Hz, only once the origin means something; the core returns empty Data
+        // unless a Pose is due (its interval follows the budget, S19), and `send` drops that. The
+        // bridge converts the ARKit world camera transform into the marker frame
+        // (Origin.toMarker / rotationToMarker).
         if locked, ts - lastPoseTime >= Pipeline.poseInterval {
             lastPoseTime = ts
             send(edge.pose(frame.camera.transform, tick: tick))
@@ -298,6 +303,8 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
 
     // MARK: internals
 
+    /// Empty Data means "nothing due" (a Pose before the first ack or between the core's pose
+    /// intervals) and is never put on the wire as an empty datagram.
     private func send(_ d: Data) {
         guard !d.isEmpty, let transport else { return }
         transport.send(d)

@@ -45,8 +45,10 @@ final class EdgeBridge {
     /// centre in the marker frame; orientation is a unit quaternion `[x, y, z, w]` (w last,
     /// w >= 0) rotating ARKit camera-frame vectors into the marker frame. ARKit camera axes are
     /// those of the landscape-right sensor: +X right, +Y up, -Z along the optical axis (in portrait
-    /// +X is the device's bottom edge, +Y its right edge). Consumes a seq. Returns empty `Data`
-    /// until the server has acked (the edge sends only Hello before that); do not send it.
+    /// +X is the device's bottom edge, +Y its right edge). Returns empty `Data` until the server
+    /// has acked (the edge sends only Hello before that) and whenever no Pose is due (the core
+    /// derives the pose interval from the byte budget, S19); never send empty Data. A returned
+    /// Pose consumes a seq.
     func pose(_ t: simd_float4x4, tick: UInt32) -> Data {
         let origin = Origin.shared
         let p = origin.toMarker(SIMD3(t.columns.3.x, t.columns.3.y, t.columns.3.z))

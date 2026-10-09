@@ -134,7 +134,9 @@ ARSession (60 Hz, arQueue) ──► every ~83 ms, one frame in flight ──►
   │                                Lift3D: LiDAR depth (5x5 median) | plane raycast -> marker frame
   │                                Tracker.update: gated NN + constant-velocity Kalman
   ├─ 30 Hz: Tracker.tracks(at: frame time) -> GroundTruthLog -> EdgeBridge.tick -> UDP
-  ├─ 2 Hz:  EdgeBridge.pose(ARCamera.transform)  (only once the origin is locked)
+  ├─ 2 Hz:  EdgeBridge.pose(ARCamera.transform)  (only once the origin is locked; the core
+  │         returns empty Data unless a Pose is due, its interval follows the budget (S19), and
+  │         empty Data is never sent)
   ├─ 30 Hz, opt-in: capturedImage -> VideoBaseline queue (H.264 720p/480p/360p, one frame in flight)
   ├─ ARImageAnchor -> Origin.lock (re-lock only on >2 cm / >1 deg corrections)
   └─ ARPlaneAnchor (horizontal, below the camera) -> Origin floor height
