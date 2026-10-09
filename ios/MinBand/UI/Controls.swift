@@ -1,14 +1,17 @@
 import SwiftUI
 
 /// Bottom controls: one row of uppercase text buttons separated by hairlines (START/STOP,
-/// ORIGIN HERE, WIREFRAME, SHARE LOG). A small `HOST` button above the row reveals the inline
-/// `HOST  192.168.1.10` field. Active state inverts (ink background, bg text). No fills
-/// otherwise, no rounded corners, no symbols.
+/// ORIGIN HERE, WIREFRAME, SHARE LOG). Above the row, small toggles: `H.264` (also record the
+/// H.264 baseline in the next run, see `VideoBaseline`) and `HOST` (reveals the inline
+/// `HOST  192.168.1.10` field); both apply at START and are disabled while running. Active state
+/// inverts (ink background, bg text). No fills otherwise, no rounded corners, no symbols.
 struct BottomBar: View {
     @Binding var host: String
     let running: Bool
     let wireframe: Bool
     let manualOrigin: Bool
+    let h264: Bool
+    let onH264: () -> Void
     let onStartStop: () -> Void
     let onOriginHere: () -> Void
     let onWireframe: () -> Void
@@ -21,6 +24,11 @@ struct BottomBar: View {
         VStack(spacing: 0) {
             HStack {
                 Spacer()
+                Button("H.264", action: onH264)
+                    .buttonStyle(SmallButtonStyle(active: h264))
+                    .disabled(running)
+                    .accessibilityValue(h264 ? "on" : "off")
+                    .accessibilityHint("Also record H.264 video at 720p, 480p and 360p in the next run to measure the video baseline")
                 Button("HOST") { hostOpen.toggle() }
                     .buttonStyle(SmallButtonStyle(active: hostOpen))
                     .disabled(running)

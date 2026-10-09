@@ -6,14 +6,16 @@ import Foundation
 ///
 /// Threads
 /// - `arQueue` (serial): ARSession delegate callbacks, and everything that touches `edge`,
-///   `transport` and `groundTruth`. `start`/`stop` hop onto it synchronously.
+///   `transport`, `groundTruth` and `videoBaseline`. `start`/`stop` hop onto it synchronously.
 /// - `detectQueue` (serial): Vision/CoreML, 3D lift and `tracker.update`, at most one frame in
 ///   flight (~12 Hz), so a slow model never blocks ARKit or makes it drop frames.
+/// - `VideoBaseline`'s own queue (opt-in H.264 baseline): scaling and encoding, one frame in flight.
 /// - main: @Published UI state only.
 ///
 /// Rates: detection ~12 Hz, `tracker.tracks(at:)` -> ground truth -> `edge.tick` at 30 Hz,
-/// Pose at 2 Hz, HUD stats at 2 Hz. Before the origin is locked the edge is ticked with no
-/// tracks (it sends only Hello) and no Pose is sent.
+/// Pose offered to the core at 2 Hz (the core sends one only when its budget-derived pose
+/// interval is due, S19), HUD stats at 2 Hz, H.264 baseline frames at 30 Hz. Before the origin is
+/// locked the edge is ticked with no tracks (it sends only Hello) and no Pose is offered.
 final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     @Published var originLocked = false
     @Published var originSource = "none"         // none | marker | manual
@@ -36,6 +38,7 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     @Published var liftMarks: [LiftMark] = []    // lifted 3D points of tracked boxes, in the view
     @Published var arUnsupported = false         // start() refused: no world tracking (simulator)
     @Published var link: LinkState = .off        // from datagrams received from the server, 2 Hz
+    @Published var baselineNote = ""             // H.264 baseline: recording / finishing / kbps / error
 
     /// LiDAR scene reconstruction, used by the WIREFRAME stage mode.
     static let supportsMesh = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
@@ -46,6 +49,8 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     /// refresh every 5 s, so silence beyond 7 s means the server or the network is gone.
     static let linkLostAfter: TimeInterval = 7
     static let trackInterval: TimeInterval = 1.0 / 30
+    /// How often a Pose is offered to the core. The core decides which are sent (S19: its pose
+    /// interval follows the byte budget) and returns empty Data for the others.
     static let poseInterval: TimeInterval = 0.5
     static let statsInterval: TimeInterval = 0.5
     static let ticksPerSecond: Double = 120
@@ -65,6 +70,7 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     private var transport: UdpTransport?
     private var edge: EdgeBridge?
     private var groundTruth: GroundTruthLog?
+    private var videoBaseline: VideoBaseline?    // opt-in H.264 baseline for this run
     private var isRunning = false
     private var sessionStart: TimeInterval = 0
     private var lastDetectionTime: TimeInterval = 0
@@ -81,6 +87,8 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     private var lastReceive: TimeInterval = 0    // systemUptime of the last datagram from the server
     /// main only: the configuration the session runs, re-run with changes by setWireframe(_:).
     private var runningConfig: ARWorldTrackingConfiguration?
+    /// main only: bumped by every start, so a late H.264 result never overwrites a newer run's note.
+    private var baselineRun = 0
 
     private let viewportLock = NSLock()
     private var _viewport = CGSize(width: 390, height: 844)
@@ -104,7 +112,9 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
 
     // MARK: control (main thread)
 
-    func start(host: String) {
+    /// `videoBaseline`: also record the H.264 baseline (720p/480p/360p) for this run, see
+    /// `VideoBaseline`. Off by default: three encoders cost battery and thermal headroom.
+    func start(host: String, videoBaseline recordVideo: Bool = false) {
         guard ARWorldTrackingConfiguration.isSupported else {
             status = "ARKit world tracking is not supported on this device"
             arUnsupported = true
@@ -121,7 +131,7 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         runningConfig = config
 
         let (h, port) = UdpTransport.parse(host)
-        arQueue.sync {
+        let baselineError: String? = arQueue.sync {
             Origin.shared.reset()
             tracker.reset()
             sessionStart = 0
@@ -136,10 +146,25 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
             }
             transport = t
             edge = EdgeBridge(deviceId: DeviceIdentity.id, sessionNonce: UInt32.random(in: 1...UInt32.max))
-            groundTruth = GroundTruthLog()
+            let gt = GroundTruthLog()
+            groundTruth = gt
+            videoBaseline = nil
+            var failure: String?
+            if recordVideo {
+                do { videoBaseline = try VideoBaseline(log: gt.url) } catch { failure = error.localizedDescription }
+            }
             isRunning = true
+            return failure
         }
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        baselineRun += 1
+        if !recordVideo {
+            baselineNote = ""
+        } else if let baselineError {
+            baselineNote = "h.264 baseline unavailable: \(baselineError)"
+        } else {
+            baselineNote = "recording h.264 baseline"
+        }
         running = true
         link = .waiting
         originLocked = false; originSource = "none"
@@ -148,11 +173,14 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
 
     func stop() {
         session.pause()
-        arQueue.sync {
+        let baseline: VideoBaseline? = arQueue.sync {
             isRunning = false
             transport?.close(); groundTruth?.close()
-            transport = nil; edge = nil; groundTruth = nil
+            let b = videoBaseline
+            transport = nil; edge = nil; groundTruth = nil; videoBaseline = nil
+            return b
         }
+        if let baseline { finishBaseline(baseline) }
         running = false
         link = .off
         runningConfig = nil
@@ -186,6 +214,20 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
 
+    /// Finishes and measures the H.264 files in the background (about a second), then shows the
+    /// measured kbps (or the error) as a notice until the next start.
+    private func finishBaseline(_ baseline: VideoBaseline) {
+        let run = baselineRun
+        baselineNote = "h.264 baseline finishing"
+        baseline.finish { [weak self] outcome in
+            let note = outcome.summary
+            DispatchQueue.main.async {
+                guard let self, self.baselineRun == run else { return }
+                self.baselineNote = note
+            }
+        }
+    }
+
     /// Writes buffered ground-truth rows so the file can be shared.
     func flushLog() { arQueue.sync { groundTruth?.flush() } }
 
@@ -203,6 +245,9 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         framesSinceStats += 1
         let locked = Origin.shared.isLocked
 
+        // Opt-in H.264 baseline: hands the captured image to its own queue at ~30 Hz and returns.
+        videoBaseline?.offer(frame.capturedImage, time: ts)
+
         // Detection at ~12 Hz on a background queue, never more than one frame in flight.
         if !detecting, ts - lastDetectionTime >= Pipeline.detectInterval - 0.004 {
             detecting = true
@@ -219,8 +264,10 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
             lastTrackCount = tracks.count
         }
 
-        // Pose at 2 Hz, only once the origin means something. The bridge converts the ARKit
-        // world camera transform into the marker frame (Origin.toMarker / rotationToMarker).
+        // Pose offered at 2 Hz, only once the origin means something; the core returns empty Data
+        // unless a Pose is due (its interval follows the budget, S19), and `send` drops that. The
+        // bridge converts the ARKit world camera transform into the marker frame
+        // (Origin.toMarker / rotationToMarker).
         if locked, ts - lastPoseTime >= Pipeline.poseInterval {
             lastPoseTime = ts
             send(edge.pose(frame.camera.transform, tick: tick))
@@ -256,6 +303,8 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
 
     // MARK: internals
 
+    /// Empty Data means "nothing due" (a Pose before the first ack or between the core's pose
+    /// intervals) and is never put on the wire as an empty datagram.
     private func send(_ d: Data) {
         guard !d.isEmpty, let transport else { return }
         transport.send(d)
