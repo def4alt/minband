@@ -64,7 +64,7 @@ to 192.168.1.10                                       server host, quietest
 ---------------------------------------------------
         camera  |  WIREFRAME stage  |  standby terrain (stopped)
         detections: corner ticks, `PERSON · 03`, `+` at the lifted 3D point
-                                              HOST    reveals the inline host field
+                                       H.264  HOST    H.264 baseline toggle; inline host field
 ---------------------------------------------------
 START | ORIGIN HERE | WIREFRAME | SHARE LOG           active state inverts
 ```
@@ -93,6 +93,9 @@ START | ORIGIN HERE | WIREFRAME | SHARE LOG           active state inverts
   `ARKIT UNAVAILABLE` instead of starting.
 - **HOST**: the small button above the bar reveals `HOST  192.168.1.10` (monospace, `host` or
   `host:port`); Done or HOST again hides it. Disabled while running.
+- **H.264**: the small toggle left of HOST also records the H.264 baseline in the next run (see
+  "H.264 baseline" below). Off at every launch, disabled while running; its state and result
+  show as a notice under the HUD.
 
 | File | What |
 |---|---|
@@ -132,6 +135,7 @@ ARSession (60 Hz, arQueue) ──► every ~83 ms, one frame in flight ──►
   │                                Tracker.update: gated NN + constant-velocity Kalman
   ├─ 30 Hz: Tracker.tracks(at: frame time) -> GroundTruthLog -> EdgeBridge.tick -> UDP
   ├─ 2 Hz:  EdgeBridge.pose(ARCamera.transform)  (only once the origin is locked)
+  ├─ 30 Hz, opt-in: capturedImage -> VideoBaseline queue (H.264 720p/480p/360p, one frame in flight)
   ├─ ARImageAnchor -> Origin.lock (re-lock only on >2 cm / >1 deg corrections)
   └─ ARPlaneAnchor (horizontal, below the camera) -> Origin floor height
 ```
@@ -142,8 +146,9 @@ ARSession (60 Hz, arQueue) ──► every ~83 ms, one frame in flight ──►
 | `Detector.swift` | Loads the first model in the bundle, runs `VNCoreMLRequest` on `capturedImage` with orientation `.right`, keeps the 9 tracked COCO classes (`person 0, backpack 24, handbag 26, bottle 39, cup 41, chair 56, tv 62, laptop 63, cell phone 67`, same ids as `core/src/classes.rs`) at confidence >= 0.35. Boxes come back in normalized **captured-image** coordinates (sensor landscape, origin top-left), the space ARKit's intrinsics, raycast queries and `displayTransform` use. |
 | `Lift3D.swift` | Box -> 3D point in the marker frame. Depth: 5x5 median at the box centre, `.low` confidence ignored, unprojected with `ARCamera.intrinsics` scaled to `imageResolution`. No depth: `ARSession.raycast` (`.estimatedPlane`, horizontal) from the centre, or for people from the gravity-bottom of the box. People are reported at their feet (the viewer draws capsules above `pos`). No depth and no hit: dropped. |
 | `Tracker.swift` | Pure Swift. Greedy global nearest neighbour gated per class (0.7 m person, 0.4 m otherwise), CV Kalman per track (6D state, one shared 2x2 covariance since the axes are identical and independent), process noise q = 0.1 m^2/s^3 (0.02 for chair/laptop/tv), measurement sigma 0.1 m. Birth after 3 hits (tentative tracks die after 0.35 s), death after 1.0 s without hits, ids monotonically increasing and never reused. `tracks(at:)` extrapolates with velocity clamped to the class max speed (3 m/s, 1 m/s for chair/laptop/tv, as in the core). Confidence is an EMA with a 12/255 hysteresis so the core's conf buckets do not flap. |
-| `Pipeline.swift` | Threads, rates and wiring above. Publishes `originLocked`, `originSource`, `trackCount`, `bytesPerSec` (core estimate), `wireBytesPerSec` (measured, +28 B UDP/IP per datagram), `seq`, `thetaScale`, `detections`, `fps`, `detectHz`, `detectorStatus`, `depthMode`, `status`, and for the UI only `link` (off / waiting / up / lost, from datagrams received from the server), `liftMarks` (lifted points of tracked boxes projected into the view), `featurePoints`, `meshAnchors`, `wireframe` (`setWireframe(_:)`), `arUnsupported`. Before the origin is locked the edge is ticked with `[]` (Hello only) and no Pose is sent. |
-| `GroundTruthLog.swift` | `Documents/gt-<unix>.csv`, `tick,id,class,x,y,z,vx,vy,vz,conf` (tools/eval reads it), 5 decimals, buffered and written once per second and on stop. Visible in the Files app; **SHARE LOG** opens a share sheet for the newest file. |
+| `Pipeline.swift` | Threads, rates and wiring above. Publishes `originLocked`, `originSource`, `trackCount`, `bytesPerSec` (core estimate), `wireBytesPerSec` (measured, +28 B UDP/IP per datagram), `seq`, `thetaScale`, `detections`, `fps`, `detectHz`, `detectorStatus`, `depthMode`, `status`, and for the UI only `link` (off / waiting / up / lost, from datagrams received from the server), `liftMarks` (lifted points of tracked boxes projected into the view), `featurePoints`, `meshAnchors`, `wireframe` (`setWireframe(_:)`), `arUnsupported`, `baselineNote` (H.264 baseline: recording / finishing / measured kbps). Before the origin is locked the edge is ticked with `[]` (Hello only) and no Pose is sent. |
+| `GroundTruthLog.swift` | `Documents/gt-<unix>.csv`, `tick,id,class,x,y,z,vx,vy,vz,conf` (tools/eval reads it), 5 decimals, buffered and written once per second and on stop. Visible in the Files app; **SHARE LOG** opens a share sheet for the newest file plus its `baseline_a-<unix>.json` if that run recorded one. |
+| `VideoBaseline.swift` | Opt-in H.264 baseline (Baseline A of tools/eval): three `AVAssetWriter`s at 720p/480p/360p during the run, measured bps into `Documents/baseline_a-<unix>.json` at stop. See "H.264 baseline" below. |
 | `ContentView.swift`, `ARViewContainer.swift`, `UI/` | The screen, see "UI" below. Portrait only. |
 
 Tuning was done in simulation (`MinBandTests/TrackerTests`): at 12 Hz and 0.1 m noise,
@@ -161,8 +166,9 @@ xcodebuild test -project MinBand.xcodeproj -scheme MinBand \
 `MinBandTests` is an unhosted logic-test bundle that compiles the perception files directly
 (no core, no app launch): tracker birth/death/ids/gating/clamping and a constant-velocity target
 within 10 %, origin conversions (flat, tilted, wall, manual, quaternion), label mapping and
-Vision-to-captured-image rect mapping, unprojection, GT CSV format, and, if the model was present
-at generate time, a real Vision pass. A developer-only end-to-end orientation check runs YOLO
+Vision-to-captured-image rect mapping, unprojection, GT CSV format, the H.264 baseline's bps
+arithmetic, file names and JSON shape, and, if the model was present at generate time, a real
+Vision pass. A developer-only end-to-end orientation check runs YOLO
 on a photo both upright (`.up`) and as the sensor would deliver it in portrait (`.right`):
 
 ```bash
@@ -180,7 +186,78 @@ Neural Engine (expected ~15 ms for YOLOv8n 320 on A15+), and end-to-end bytes/s.
 that only a phone can show: the WIREFRAME dome actually hiding the camera feed, the mesh wires
 and point cloud (density, frame rate), the session re-run when WIREFRAME toggles on a LiDAR
 device, the `+` lift marks landing on feet, the axis labels' size, and LINK `lost` after a
-server stop.
+server stop. The H.264 baseline (encoders, scaling, read-back, frame drops, thermal load) also
+runs only on a phone.
 
 Ownership: `Detector`, `Lift3D`, `Tracker`, `Origin`, `Pipeline` and the UI are the perception
 side; `EdgeBridge` and `Generated/` belong to the core bridge.
+
+## H.264 baseline (Baseline A)
+
+The video baseline that `tools/eval` and the viewer compare MinBand with is measured on this
+phone, in the same run that writes the ground-truth log (tools/eval/README.md "Baselines").
+
+1. While stopped, tap **H.264** above the bar (left of HOST; inverted = on). It is off at every
+   launch because three hardware encoders cost battery and thermal headroom; it applies at START
+   and is disabled while running. Keep the app in the foreground for the whole run: ARKit pauses
+   in the background (a gap in the video timeline lowers the measured rate) and iOS may stop the
+   hardware encoders, which fails the writers.
+2. START, run the scene to compare against (the demo scene, a minute or more), STOP. The notices
+   under the HUD read `RECORDING H.264 BASELINE` during the run, `H.264 BASELINE FINISHING` for
+   about a second after STOP, then the measured rates until the next START, e.g.
+   `H.264 KBPS  720P 1442 · 480P 495 · 360P 251`.
+3. **SHARE LOG** shares the newest `gt-<unix>.csv` together with `baseline_a-<unix>.json` from the
+   same run (AirDrop them to the laptop). Both are also in the Files app (On My iPhone > MinBand),
+   next to the three videos `h264_720p-<unix>.mp4`, `h264_480p-<unix>.mp4` and
+   `h264_360p-<unix>.mp4` (about 11 MB per minute at 720p; delete them when done).
+4. On the laptop, from the repo root:
+
+   ```bash
+   mkdir -p runs/phone
+   cp ~/Downloads/gt-1712345.csv runs/phone/
+   cp ~/Downloads/baseline_a-1712345.json runs/baseline_a.json
+   cd tools/eval && npm run baselines && npm run charts
+   # or the whole pipeline on the phone log:
+   #   npm run eval -- --gt ../../runs/phone/gt-1712345.csv
+   ```
+
+   then restart the server so it picks up `runs/baseline_a.json` and the viewer drops
+   "configured".
+
+What `VideoBaseline.swift` measures, from START to STOP (also before the origin is locked): at
+~30 Hz each `ARFrame.capturedImage` (the 4:3 sensor image, full-range 4:2:0) is scaled by a
+`VTPixelTransferSession` (aspect fill, i.e. cropped to 16:9 the way a 16:9 camera would frame
+it) into 1280x720, 854x480 and 640x360 buffers from each
+`AVAssetWriterInputPixelBufferAdaptor`'s pool and appended to three `AVAssetWriter`s (.mp4):
+`AVVideoCodecType.h264` (hardware encoder, High profile auto level), `AVVideoAverageBitRateKey`
+1.5 Mbps / 500 kbps / 250 kbps, `AVVideoExpectedSourceFrameRateKey` 30,
+`AVVideoMaxKeyFrameIntervalKey` 60, `AVVideoAllowFrameReorderingKey` false, real-time input,
+presentation times from `ARFrame.timestamp` (relative to the first frame; a portrait rotation
+flag is set for playback only). Scaling and encoding run on their own serial queue with one frame
+in flight: a frame that arrives while the previous one is still being scaled, or that a writer is
+not ready for, is dropped and counted, so the ARKit delegate queue never waits and no ARFrame is
+retained. At STOP the files are finished and read back with `AVAssetReader` without output
+settings (samples stay compressed): bps = sum of `CMSampleBufferGetTotalSampleSize` * 8 /
+duration, with duration = first to last frame plus 1/30 s. If the read-back fails the file size
+(container included) is used instead. The json is what `loadBaselineA` reads:
+
+```json
+{
+  "entries" : [
+    {
+      "bps" : 1442308,
+      "id" : "h264_720p",
+      "label" : "H.264 720p",
+      "resolution" : "1280x720",
+      "source" : "measured: AVAssetWriter H.264 720p30 target 1.5 Mbps, session gt-1712345, 62.4 s"
+    },
+    ...
+  ]
+}
+```
+
+`source` gains `, N of M frames dropped` when frames were dropped and `, file size incl.
+container` for the fallback. A rendition that failed is left out (tools/eval keeps its configured
+row); the notice then ends in `· 1 FAILED` and the Xcode console has the reason
+(`MinBand VideoBaseline: ...`). Rate control over- or undershoots the target depending on the
+scene, which is why the number is measured rather than quoted.

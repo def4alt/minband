@@ -48,7 +48,8 @@ targets:
         # No bridging header: the generated Swift does `import minband_coreFFI`, a Clang module
         # shipped inside the XCFramework.
 
-  # Logic tests for the perception pipeline (tracker, origin, detector mapping, lift, GT log).
+  # Logic tests for the perception pipeline (tracker, origin, detector mapping, lift, GT log) and
+  # the H.264 baseline's bps arithmetic and JSON.
   # Not hosted in the app and not linked against the core: the tested files are compiled in
   # directly, so these run even when the XCFramework is stale.
   MinBandTests:
@@ -62,6 +63,7 @@ targets:
       - MinBand/Detector.swift
       - MinBand/Lift3D.swift
       - MinBand/GroundTruthLog.swift
+      - MinBand/VideoBaseline.swift
       # The gitignored YOLO model, if present, so testBundledModelRunsIfPresent can load it.
       - path: MinBand/Models
         optional: true
