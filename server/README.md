@@ -112,9 +112,13 @@ curl 'localhost:8080/api/shaper?enabled=1&loss=1&revertAfterMs=10000'  # 10 s bl
 curl 'localhost:8080/api/shaper?enabled=0'                             # clean
 ```
 
-Order per datagram: loss, queue limit, token bucket, delay. A datagram is admitted while the
-bucket is positive and may leave it in debt (long-run rate is exactly `bps`; admission does not
-depend on size, so keyframes do not starve behind small deltas). The queue limit counts datagrams
+Order per datagram: loss, queue limit, rate, delay. With a `queue` set (every link profile) the
+rate is netem's: a datagram waits for the link, serialised at `bps` behind the ones ahead of it,
+and arrives when its transmission ends plus `delayMs`; only a full queue drops. Without a queue
+(the manual slider) a token bucket admits a datagram while it is positive and may leave it in
+debt (long-run rate is exactly `bps`; admission does not depend on size, so keyframes do not
+starve behind small deltas), but it has no queue: at 600 bit/s it holds 37.5 B, so a datagram
+sent within about a second of another is dropped. The queue limit counts datagrams
 still in the delay line, as netem's `limit` does, so it caps the link at `queue / delay`
 datagrams/s (`lora`: 4 / 0.3 s, about 13/s; `hf`: 32 / 0.5 s = 64/s) whatever their size. Acks are only generated for datagrams
 that got through. Any explicit change ends a pending timed override first.
@@ -198,7 +202,7 @@ protocol v1): 2.1 datagrams/s, 131 B/s on the wire, mean payload 35 B. Uplink ai
 `lora` / `contested` 56 % (105 % on LongFast), `telemetry` 128 % (acks add 1.5 %, 30 %, 24 %); the
 `lora` figure matches the 52 % of its 2 kbit/s wire rate. At a profile's own budget the edge adapts
 (cadence, thresholds), so the live figure differs: the default two-walker sim reads 56-67 % up on
-`lora` and about 43 % on `telemetry`, where the shaper drops about half its datagrams.
+`lora`; on `telemetry` the scene does not fit and the readout goes above 100 %.
 
 ### `GET /api/baseline-a`
 

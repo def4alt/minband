@@ -159,3 +159,22 @@ test('sanitizeShaper validates ranges and booleans', () => {
   assert.equal(bad.errors.length, 4);
   assert.deepEqual(bad.ok, {});
 });
+
+test('queue + bps: netem rate, datagrams wait for the link instead of being dropped', () => {
+  const { s, clock } = mk();
+  s.set({ enabled: true, bps: 600, delayMs: 50, queue: 4 }); // telemetry profile
+  const got: [number, number][] = []; const t0 = clock.t;
+  // A 65 B delta, then a 66 B keyframe 200 ms later: the bucket (37.5 B) would drop the keyframe.
+  assert.equal(s.offer(65, () => got.push([0, clock.t])), true);
+  clock.advance(200);
+  assert.equal(s.offer(66, () => got.push([1, clock.t])), true);
+  clock.advance(5000);
+  const tx0 = (65 + UDP_IP_OVERHEAD) * 8 / 600 * 1000, tx1 = (66 + UDP_IP_OVERHEAD) * 8 / 600 * 1000;
+  assert.deepEqual(got.map(g => g[0]), [0, 1]);
+  assert.ok(Math.abs(got[0][1] - t0 - (tx0 + 50)) <= 1, `first at +${got[0][1] - t0}`);
+  assert.ok(Math.abs(got[1][1] - t0 - (tx0 + tx1 + 50)) <= 1, `second waits behind the first: +${got[1][1] - t0}`);
+  assert.equal(s.counters.droppedCap, 0);
+  // A burst beyond the queue is tail-dropped.
+  for (let i = 0; i < 6; i++) s.offer(65, () => {});
+  assert.equal(s.counters.droppedQueue, 2);
+});

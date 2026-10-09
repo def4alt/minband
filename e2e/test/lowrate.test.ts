@@ -23,6 +23,8 @@ test('telemetry: keyframes stretch toward 15 s, budget held, nothing flashes sta
   await sleep(45_000);
   const kf = keyframesSince(t0);
   assert.ok(kf.length <= 12, `${kf.length} keyframe datagrams in 45 s (2 s cadence would be ~23 keyframes)`);
+  // ...and the heartbeat does arrive: 3 keyframes due in 45 s at 15 s, 5 % loss.
+  assert.ok(kf.length >= 2, `only ${kf.length} keyframe datagrams delivered in 45 s`);
   const hist = s.feed.recent(45_000);
   const staleSnaps = hist.filter(x => dev100(x)?.entities.some((e: any) => e.stale)).length;
   assert.equal(staleSnaps, 0, `${staleSnaps} of ${hist.length} snapshots had stale entities`);

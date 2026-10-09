@@ -13,6 +13,12 @@
 // and admission does not depend on size: with a strict "tokens >= size" rule a 160 B keyframe
 // never fits a 2 kbps link's 125 B bucket while small deltas keep it near empty, so repair
 // starves. This behaves like a drop-tail queue, which is what a narrow radio link does.
+// With a queue limit set (every link profile), the rate is netem's `rate`, not the bucket: a
+// datagram waits for the link, serialised at bps behind the ones ahead of it, and is delivered when
+// its transmission ends plus the delay; only a full queue drops. Without it (the manual slider) the
+// bucket below applies. The bucket alone has no queue: at 600 bit/s it holds 37.5 B, less than one
+// datagram, so anything sent within a second of another datagram was dropped, which is not what
+// the Pi box's netem does (a paced keyframe 0.2 s after a delta was lost every time).
 // Delay is FIFO: a datagram is never delivered before one offered earlier, even if delayMs drops.
 import type { ShaperConfig } from './types.js';
 
@@ -86,6 +92,8 @@ export class Shaper {
   private timer: unknown = null;
   private timerDue = Infinity;
   private lastDue = -Infinity;
+  /** When the link finishes sending the last datagram admitted in queue mode (ms). */
+  private lastTxEnd = -Infinity;
   private revert: { prev: ShaperConfig; at: number; handle: unknown } | null = null;
 
   constructor(deps: ShaperDeps | (() => number) = {}) {
@@ -135,6 +143,12 @@ export class Shaper {
     if (!c.enabled) return this.admit(wire, 0, deliver);
     if (c.loss > 0 && this.rng() < c.loss) { k.droppedLoss++; return this.drop(wire); }
     if (c.queue && this.line.length >= c.queue) { k.droppedQueue++; return this.drop(wire); }
+    if (c.bps > 0 && c.queue) {
+      const now = this.now();
+      const txEnd = Math.max(now, this.lastTxEnd) + wire * 8 / c.bps * 1000;
+      this.lastTxEnd = txEnd;
+      return this.admit(wire, txEnd - now + c.delayMs, deliver);
+    }
     if (c.bps > 0) {
       const now = this.now(); const cap = this.capacity();
       this.tokens = Math.min(cap, this.tokens + Math.max(0, now - this.lastRefill) / 1000 * c.bps / 8);
