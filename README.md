@@ -13,10 +13,11 @@ with emulated impairment.
 | Path | What | Language |
 |---|---|---|
 | `core/` | Entity model, predictor, divergence thresholds, delta codec, budget controller. Compiled to iOS (uniffi) and WASM (server/viewer). | Rust |
-| `server/` | UDP ingest, reliability/resync, world model, multi-device fusion, metrics, WebSocket fan-out, in-process link shaper. | TypeScript (Node) |
+| `server/` | UDP ingest, reliability/resync, world model, multi-device fusion, metrics, WebSocket fan-out, in-process link shaper and link profiles (time on air), CoT export to TAK, geodetic anchor (WGS84/MGRS). | TypeScript (Node) |
 | `viewer/` | Three.js twin, error rings and coasting/staleness, link profiles and airtime, link activity strip, video-on-this-link panel, bytes/sec graph, mock snapshot server. | TypeScript (Vite) |
-| `ios/` | ARKit (marker origin, pose, depth) + Vision/CoreML detection + tracker + core FFI + UDP client. | Swift |
-| `tools/` | Link impairment (dummynet), baseline measurement, evaluation and charts. | Shell / TS |
+| `ios/` | ARKit (marker origin, pose, depth) + Vision/CoreML detection + tracker + core FFI + UDP client; opt-in H.264 baseline measurement (VideoToolbox). | Swift |
+| `tools/` | Pi 5 link box (`pi-link.sh`, tc netem profiles), golden vectors on aarch64 under qemu, dummynet (macOS), evaluation, baselines and charts. | Shell / TS |
+| `e2e/` | End-to-end tests: real server + WASM core + sim edges over UDP, viewer in headless Chromium, kernel shaping on `lo`, CoT listener; fallback-run recorder. | TypeScript (Node) |
 | `proto/` | Wire protocol spec. | Markdown |
 | `docs/` | Design, prior art, milestones. | Markdown |
 
@@ -46,7 +47,22 @@ cd viewer && npm install && npm run dev      # http://localhost:5173
 
 Without a phone, `npm run sim` in `server/` replays a synthetic scene through the full
 edge pipeline (core predictor + thresholds + codec) so the twin, graphs and link slider work
-end to end.
+end to end (`DEVICES=8 SCENE=spread npm run sim` for the drones-per-link run).
+
+## Tests
+
+```bash
+cd core && cargo test                 # unit + golden vectors (tools/golden-aarch64.sh: the same on aarch64 under qemu)
+cd server && npm test                 # node:test, fake clock
+cd tools/eval && npm test             # replay; `npm run eval` regenerates runs/eval/
+bash tools/test/pi-link.test.sh       # link box dry run (sudo tools/test/pi-link-kernel.test.sh: real tc on lo)
+cd viewer && npm run smoke            # mock snapshot server + headless Chromium screenshots
+cd e2e && npm install && npm test     # end to end: server + sim + viewer + CoT + kernel-shaped link (root for tc)
+cd e2e && npm run record              # fallback run video through the link profiles -> runs/fallback/
+```
+
+The WASM packages (`core/pkg-node`, `core/pkg-web`) must be built first (core/README.md); use
+binaryen 117's `wasm-opt` (wasm-pack downloads it; older distro builds break wasm-bindgen).
 
 ### Viewer without the server: mock and smoke test
 
