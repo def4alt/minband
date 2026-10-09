@@ -419,7 +419,7 @@ impl Edge {
     /// Feed a datagram received from the server (acks). The ack's `budget_bps` is authoritative
     /// (0 = unlimited), so the edge always runs the cadence the receiver derives from it.
     pub fn on_datagram(&mut self, bytes: &[u8]) {
-        if let Ok(Message::Ack { missing, budget_bps, .. }) = decode(bytes) {
+        if let Ok(Message::Ack { last_seq, missing, budget_bps }) = decode(bytes) {
             self.acked = true;
             if budget_bps != self.cfg.budget_bps {
                 self.set_budget(budget_bps);
@@ -428,12 +428,18 @@ impl Edge {
                 self.force_keyframe = true;
                 return;
             }
-            for m in missing {
-                if let Some((_, ids)) = self.sent.iter().find(|(s, _)| *s == m) {
-                    for id in ids {
-                        if !self.repair_ids.contains(id) {
-                            self.repair_ids.push(*id);
-                        }
+            // Skip an id the datagram at `last_seq` carried: the receiver has it, and it is newer
+            // than the gap. A gap is only seen once a later datagram arrives and is nacked at once,
+            // so on a sparse stream the gap is often revealed by the next keyframe, which already
+            // refreshed everything. (Only `last_seq` is known to have arrived: a seq absent from
+            // `missing` may be a gap whose re-nack is not due yet.)
+            let newest = self.sent.iter().find(|(s, _)| *s == last_seq).map(|(_, ids)| ids.clone()).unwrap_or_default();
+            for m in &missing {
+                let Some((_, ids)) = self.sent.iter().find(|(s, _)| s == m) else { continue };
+                let after = last_seq.wrapping_sub(*m).wrapping_sub(1) < u32::MAX / 2;
+                for id in ids {
+                    if !(after && newest.contains(id)) && !self.repair_ids.contains(id) {
+                        self.repair_ids.push(*id);
                     }
                 }
             }
@@ -672,6 +678,23 @@ mod tests {
         // After repair_min_ticks a repeat nack is honoured again.
         e.on_datagram(&encode(&Message::Ack { last_seq: seq, missing: vec![seq], budget_bps: 0 }));
         assert_eq!(e.tick(&[], 4 + TICK_HZ).len(), 1);
+    }
+
+    /// A gap revealed by a datagram that carried the same entity needs no repair: the receiver
+    /// already holds newer state. One revealed by a Pose (or covered only by a lost seq) does.
+    #[test]
+    fn nack_skips_ids_a_delivered_later_datagram_carried() {
+        let mut e = edge();
+        let seq_of = |d: &[u8]| match decode(d).unwrap() { Message::Delta { seq, .. } | Message::Keyframe { seq, .. } => seq, m => panic!("{m:?}") };
+        let a = seq_of(&e.tick(&[walker(0.0)], 1)[0]); // lost
+        let b = seq_of(&e.tick(&[walker(5.0)], 2)[0]); // arrived: carried entity 1 again
+        e.on_datagram(&encode(&Message::Ack { last_seq: b, missing: vec![a], budget_bps: 0 }));
+        assert!(e.tick(&[walker(5.01)], 3).is_empty(), "nothing to repair");
+        let c = seq_of(&e.tick(&[walker(9.0)], 4)[0]); // lost
+        let d = seq_of(&e.tick(&[walker(0.0)], 5)[0]); // lost too: does not cover c
+        let p = match decode(&e.pose([0.0; 3], [0.0, 0.0, 0.0, 1.0], true, 6).unwrap()).unwrap() { Message::Pose { seq, .. } => seq, m => panic!("{m:?}") };
+        e.on_datagram(&encode(&Message::Ack { last_seq: p, missing: vec![c, d], budget_bps: 0 }));
+        assert_eq!(e.tick(&[walker(0.01)], 7).len(), 1, "repaired");
     }
 
     #[test]
