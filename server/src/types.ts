@@ -77,6 +77,15 @@ export interface LinkView {
   /** Uplink datagrams/s over the rate window, all devices. */
   msgsPerSec: number;
   profiles: LinkProfile[];
+  // Optional additions (server, hackathon S2):
+  /** With profile 'external': the profile whose budget and airtime model are used. */
+  as?: string;
+  /** Downlink (acks) channel time per second under the same model; a half-duplex radio shares the channel with the uplink. */
+  downAirtimeShare?: number;
+  /** Acks/s over the rate window, all devices. */
+  downMsgsPerSec?: number;
+  /** Only while profile is 'contested': current phase and ms until it switches. */
+  contested?: { blackout: boolean; switchInMs: number };
 }
 /** One datagram, for the packet waterfall (V3). Sent in the snapshot that follows it. */
 export interface PacketEvent {

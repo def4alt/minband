@@ -26,11 +26,9 @@ server.listen(WS_PORT, () => console.log(`ws + http api on :${WS_PORT}`));
 wss.on('connection', ws => {
   ws.on('message', raw => {
     let m: ControlMessage; try { m = JSON.parse(raw.toString()); } catch { return; }
-    if (m.type === 'shaper') {
-      const r = Number(m.revertAfterMs);
-      if (m.revertAfterMs !== undefined && Number.isFinite(r) && r > 0) world.shaper.setFor(m.config ?? {}, Math.min(r, 3_600_000));
-      else world.shaper.set(m.config ?? {});
-    } else if (m.type === 'budget') { const b = Number(m.bps); if (Number.isFinite(b) && b >= 0) world.budgetBps = Math.round(b); }
+    if (m.type === 'shaper') world.link.manual(m.config ?? {}, m.revertAfterMs); // by hand: profile 'custom' unless timed
+    else if (m.type === 'link') world.link.apply(m.profile, m.as); // invalid names: logged, nothing changes
+    else if (m.type === 'budget') { const b = Number(m.bps); if (Number.isFinite(b) && b >= 0) world.budgetBps = Math.round(b); }
     else if (m.type === 'fusion') world.fusion.enabled = !!m.enabled;
   });
 });
@@ -45,7 +43,7 @@ const timers = [
 ];
 
 const shutdown = () => {
-  timers.forEach(clearInterval);
+  timers.forEach(clearInterval); world.link.stop();
   for (const c of wss.clients) c.terminate();
   wss.close(); server.close(); udp.close();
   setTimeout(() => process.exit(0), 200).unref();
