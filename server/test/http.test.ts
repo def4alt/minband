@@ -21,7 +21,7 @@ test('GET /api/shaper sets and reports the shaper; bad input is a 400 that chang
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('access-control-allow-origin'), '*');
     let j = await r.json();
-    assert.deepEqual(j.config, { bps: 2000, delayMs: 100, loss: 0.3, enabled: true, burstSec: 0.5 });
+    assert.deepEqual(j.config, { bps: 2000, delayMs: 100, loss: 0.3, enabled: true, burstSec: 0.5, queue: 0 });
     assert.equal(typeof j.counters.dropped, 'number');
     r = await fetch(`${base}/api/shaper?loss=30`);
     assert.equal(r.status, 400);

@@ -100,6 +100,8 @@ export interface ShaperConfig {
   bps: number; delayMs: number; loss: number; enabled: boolean;
   /** Token bucket depth in seconds of `bps` (added in M5, default 0.5). */
   burstSec: number;
+  /** Max datagrams held in the delay line, like netem's `limit` (hackathon S2, optional; 0 or absent = unbounded). */
+  queue?: number;
 }
 export interface Snapshot {
   t: number; devices: DeviceView[]; global: GlobalEntity[]; shaper: ShaperConfig; fusion: boolean;
