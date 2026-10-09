@@ -3,123 +3,256 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#070809" />
   <title>MinBand twin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400&family=Inter:wght@200;300;400&display=swap" />
   <style>
-    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --panel: #161b22cc; --panel-solid: #161b22; --line: #30363d; --accent: #58a6ff; --warn: #ff7b72; --ok: #3fb950; --sheet-peek: 64px; }
-    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-    #app { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: 1fr 140px; height: 100vh; height: 100dvh; }
-    #stage { grid-row: 1 / 3; display: flex; min-width: 0; min-height: 0; }
+    /* docs/STYLE.md is the contract (including "Restraint"). Dark only, by design. */
+    :root {
+      --bg: #070809; --ink: #e9ecef; --ink-2: #9aa3ad; --ink-3: #4a525b; --ink-4: #1a1e23;
+      /* Graph series only (STYLE.md, "Charts: colour for series"): muted hues on the dark ground. */
+      --series-1: #8ab4f8; --series-2: #f28b82; --series-3: #81c995; --series-4: #fdd663; --series-5: #c58af9;
+      --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+      --track: 0.18em; --pad: 24px; --gap: 12px; --side: 320px; --sheet-peek: 56px;
+      --ease: cubic-bezier(.2, .7, .2, 1);
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font: 300 12px/1.45 var(--sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    ::selection { background: var(--ink); color: var(--bg); }
+    [hidden] { display: none !important; }
+
+    /* ---- type roles: primary readout, then two steps quieter for everything else ---- */
+    .lbl { font: 400 10px/1.4 var(--sans); letter-spacing: var(--track); text-transform: uppercase; color: var(--ink-2); }
+    .val { font: 400 12.5px/1.4 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+    .primary { font: 200 34px/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); letter-spacing: -0.02em; white-space: nowrap; }
+    .primary small { font-size: 13px; font-weight: 300; letter-spacing: .04em; color: var(--ink-2); margin-left: 6px; }
+    .second { font: 300 16px/1.2 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+    .note { font: 300 10.5px/1.6 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+    .dim { color: var(--ink-3); }
+    /* Only a lost device blinks (1 Hz, 40..100 %). */
+    .lost { color: var(--ink); animation: blink 1s ease-in-out infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+
+    #app {
+      position: fixed; inset: 0; overflow: hidden; /* content runs to the edges: no frame, no crop marks */
+      display: grid; grid-template-columns: minmax(0, 1fr) var(--side); grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: "head head" "stage side";
+    }
+
+    /* ---- title + credits row (three pairs at most) ---- */
+    #head { grid-area: head; display: flex; align-items: baseline; gap: 18px 64px; padding: 20px var(--pad) 18px; border-bottom: 1px solid var(--ink-3); min-width: 0; }
+    .title { margin: 0 -0.32em 0 0; font: 200 24px/1 var(--sans); letter-spacing: 0.32em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+    #credits { display: flex; flex: 1; flex-wrap: wrap; justify-content: space-between; gap: 6px 48px; margin: 0; min-width: 0; }
+    .credit { display: flex; align-items: baseline; gap: 14px; white-space: nowrap; min-width: 0; }
+    .credit dt { margin: 0; }
+    .credit dd { margin: 0; overflow: hidden; text-overflow: ellipsis; }
+    .sep { color: var(--ink-3); }
+
+    /* ---- stage: twin (and raw video) ---- */
+    #stage { grid-area: stage; display: flex; min-width: 0; min-height: 0; position: relative; }
     #scene { flex: 1 1 0; position: relative; min-width: 0; min-height: 0; overflow: hidden; }
     #scene canvas { display: block; }
-    #side { background: var(--panel); padding: 12px; overflow: auto; border-left: 1px solid var(--line); }
-    #log { grid-column: 2; margin: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 8px 12px; overflow: auto; color: var(--muted); font-size: 11px; white-space: pre; }
-    h1 { font-size: 14px; margin: 0 0 8px; color: var(--accent); }
-    label { display: block; margin: 8px 0 2px; color: var(--muted); }
-    input[type=range] { width: 100%; }
-    select { width: 100%; background: #21262d; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; }
-    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-    .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .big { font-size: 22px; font-weight: 600; }
-    #graph { width: 100%; height: 70px; background: #0b0f14; border: 1px solid var(--line); }
-    .baseline { color: var(--muted); font-size: 11px; }
-    .readout { margin-top: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #0b0f14; }
-    .readout .big { font-size: 18px; }
-    #hud { position: absolute; left: 12px; top: 12px; right: 12px; width: fit-content; max-width: calc(100% - 24px); background: var(--panel); padding: 8px 10px; border-radius: 6px; pointer-events: none; }
-    #hud .alert { color: var(--warn); font-weight: 600; }
-    button { background: #21262d; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; }
-    button.on { border-color: var(--accent); color: var(--accent); }
-    .dev { margin-top: 6px; }
-    .tag { font-size: 10px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
-    .tag.warn { color: var(--warn); border-color: var(--warn); }
+    #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; letter-spacing: .3em; }
+    #key { position: absolute; left: var(--pad); bottom: 20px; display: flex; gap: 20px; pointer-events: none; z-index: 2; color: var(--ink-3); }
+    #key span { display: inline-flex; align-items: center; gap: 8px; }
+    .tag3d { font: 400 9.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); white-space: nowrap; pointer-events: none; padding: 0 0 4px 7px; border-left: 1px solid var(--ink-3); }
+    .tag3d.lost { border-left-color: var(--ink); }
 
-    /* Side-by-side: twin left, raw-camera stand-in right. */
-    #camera { flex: 1 1 0; position: relative; min-width: 0; min-height: 0; background: #000; border-left: 1px solid var(--line); overflow: hidden; }
-    #camera[hidden] { display: none; }
-    #cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    #camPlaceholder { position: absolute; inset: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 2px dashed var(--line); border-radius: 8px; color: var(--muted); text-align: center; padding: 12px; }
-    #camPlaceholder[hidden] { display: none; }
-    #camOverlay { position: absolute; left: 12px; right: 12px; bottom: 12px; background: #000a; padding: 8px 10px; border-radius: 6px; }
-    #camOverlay .big { color: var(--warn); font-size: 18px; }
-    #camBar { position: absolute; right: 12px; top: 12px; width: 140px; }
-    #camTitle { position: absolute; left: 12px; top: 12px; max-width: calc(100% - 190px); box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #000a; padding: 4px 8px; border-radius: 6px; color: var(--muted); }
+    /* ---- side-by-side raw video, halftoned ---- */
+    #camera { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--ink-3); background: var(--bg); }
+    .capbar { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); padding: 0 var(--pad); height: 48px; border-bottom: 1px solid var(--ink-3); min-width: 0; }
+    #camTitle { display: flex; gap: var(--gap); align-items: baseline; white-space: nowrap; overflow: hidden; min-width: 0; }
+    #camTitle .val { overflow: hidden; text-overflow: ellipsis; color: var(--ink-3); }
+    .camview { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; }
+    #halftone { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #cam { position: absolute; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+    #camPlaceholder { position: absolute; left: 0; right: 0; top: 20px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 0 var(--pad); pointer-events: none; }
+    #camPlaceholder .row1 { display: flex; gap: var(--gap); align-items: baseline; }
+    #camOverlay { border-top: 1px solid var(--ink-3); padding: 16px var(--pad) 18px; display: grid; grid-template-columns: auto 1fr; gap: 8px 20px; align-items: baseline; }
+    #camOverlay .second { color: var(--ink); }
+    #res { display: flex; gap: 2px; flex-shrink: 0; }
+    #res button { padding: 5px 6px 4px; font-family: var(--mono); letter-spacing: .06em; }
+
+    /* ---- side panel ---- */
+    #side { grid-area: side; border-left: 1px solid var(--ink-3); overflow: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; background: var(--bg); }
+    .sec { padding: var(--pad); border-bottom: 1px solid var(--ink-3); display: flex; flex-direction: column; gap: var(--gap); }
+    .kv { display: flex; justify-content: space-between; align-items: baseline; gap: var(--gap); min-width: 0; }
+    .readout { gap: 14px; }
+    #graph { display: block; width: 100%; height: 84px; }
+    .graph-key { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+    .graph-key span { display: inline-flex; align-items: center; gap: 8px; }
+    .graph-key i { display: inline-block; width: 16px; height: 1px; }
     .sheet-handle { display: none; }
 
-    /* Narrow screens: stage on top, side panel becomes a bottom sheet. */
+    /* buttons: uppercase text, hairline underline, inverted when active */
+    button { font: 400 10px/1.2 var(--sans); letter-spacing: var(--track); text-transform: uppercase; color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--ink-3); border-radius: 0; padding: 8px 10px 7px; margin: 0; cursor: pointer; transition: background-color .35s, color .35s, border-color .35s; -webkit-tap-highlight-color: transparent; }
+    button:hover { border-bottom-color: var(--ink); }
+    button.on { background: var(--ink); color: var(--bg); border-bottom-color: var(--ink); }
+    button:focus-visible, input:focus-visible { outline: 1px solid var(--ink-2); outline-offset: 3px; }
+    .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap) 16px; }
+    .tog { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-align: left; }
+    .tog .v { font-family: var(--mono); letter-spacing: .08em; }
+    .scen { display: flex; flex-direction: column; gap: 4px; }
+    .scen button { display: flex; justify-content: space-between; align-items: baseline; gap: var(--gap); padding: 10px 10px 9px; border-bottom-color: var(--ink-4); text-align: left; }
+    .scen button:hover { border-bottom-color: var(--ink-3); }
+    .scen button.on { border-bottom-color: var(--ink); }
+    .scen .p { font: 300 10px/1.2 var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink-3); transition: color .35s; }
+    .scen button.on .p { color: var(--bg); }
+
+    /* the one disclosure */
+    #detailsToggle { display: flex; justify-content: space-between; align-items: baseline; width: 100%; padding: var(--pad); border-bottom: 1px solid var(--ink-3); color: var(--ink-2); }
+    #detailsToggle:hover { color: var(--ink); }
+    #detailsToggle .chev { display: inline-block; transition: transform .45s var(--ease); font-family: var(--sans); }
+    #detailsToggle[aria-expanded=true] { color: var(--ink); }
+    #detailsToggle[aria-expanded=true] .chev { transform: rotate(90deg); }
+    #details .sec { background: var(--bg); }
+
+    /* sliders: 1 px track, 2 px fill, square 8 px thumb */
+    .slider { display: flex; flex-direction: column; gap: 4px; }
+    input[type=range] { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 18px; margin: 0; background: transparent; cursor: pointer; --f: 0; }
+    input[type=range]::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(var(--ink), var(--ink)) 0 50% / calc(var(--f) * (100% - 8px) + 4px) 2px no-repeat, linear-gradient(var(--ink-3), var(--ink-3)) 0 50% / 100% 1px no-repeat; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 8px; height: 8px; margin-top: -3px; background: var(--ink); border: 0; border-radius: 0; }
+    input[type=range]::-moz-range-track { height: 1px; background: var(--ink-3); }
+    input[type=range]::-moz-range-progress { height: 2px; background: var(--ink); }
+    input[type=range]::-moz-range-thumb { width: 8px; height: 8px; background: var(--ink); border: 0; border-radius: 0; }
+
+    /* devices */
+    #devices { display: flex; flex-direction: column; gap: var(--gap); }
+    .dev { display: flex; flex-direction: column; gap: 4px; }
+    .dev .name { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+    .dev .name svg { flex-shrink: 0; }
+    .tag { font: 400 9px/1 var(--sans); letter-spacing: var(--track); text-transform: uppercase; color: var(--ink-2); border: 1px solid var(--ink-3); padding: 2px 4px 1px; }
+    .tag.lost { border-color: var(--ink); }
+    #devices:empty::after { content: 'no edge device yet'; font: 300 10.5px/1.6 var(--mono); color: var(--ink-3); }
+
+    #log { margin: 0; height: 132px; overflow: auto; font: 300 10px/1.6 var(--mono); color: var(--ink-3); white-space: pre; scrollbar-width: thin; scrollbar-color: var(--ink-4) transparent; }
+
+    /* ---- narrow: stage on top, the side panel becomes a bottom sheet ---- */
     @media (max-width: 900px) {
-      #app { display: block; position: relative; height: 100dvh; overflow: hidden; }
-      #stage { position: absolute; left: 0; right: 0; top: 0; bottom: var(--sheet-peek); flex-direction: column; }
-      #camera { border-left: 0; border-top: 1px solid var(--line); }
-      #side { position: fixed; left: 0; right: 0; bottom: 0; max-height: 75dvh; box-sizing: border-box; padding: 0 16px calc(12px + env(safe-area-inset-bottom)); background: var(--panel-solid); border-left: 0; border-top: 1px solid var(--line); border-radius: 12px 12px 0 0; transform: translateY(calc(100% - var(--sheet-peek))); transition: transform .2s ease; z-index: 10; }
-      #side.open { transform: none; box-shadow: 0 -8px 24px #0008; }
-      #side:not(.open) { overflow: hidden; }
-      .sheet-handle { display: flex; width: 100%; height: var(--sheet-peek); box-sizing: border-box; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 0; background: transparent; padding: 0; position: sticky; top: 0; background: var(--panel-solid); z-index: 1; }
-      .sheet-handle::before { content: ''; position: absolute; left: 50%; top: 6px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line); }
-      .sheet-handle .big { font-size: 18px; }
-      #side h1, #side > .row.headline { display: none; }
-      #log { display: none; }
-      #hud { font-size: 11px; }
-      #camBar { width: 110px; }
-      #camTitle { max-width: calc(100% - 150px); }
+      :root { --pad: 20px; }
+      #app { inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); display: flex; flex-direction: column; }
+      #head { flex-direction: column; align-items: stretch; gap: 14px; padding: 18px var(--pad) 16px; }
+      .title { font-size: 20px; }
+      #credits { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 16px; }
+      .credit { display: contents; }
+      .credit dd { white-space: nowrap; }
+      #stage { flex: 1 1 auto; flex-direction: column; margin-bottom: var(--sheet-peek); }
+      #camera { border-left: 0; border-top: 1px solid var(--ink-3); }
+      #camTitle .val { display: none; }
+      #camOverlay { padding: 12px var(--pad) 14px; }
+      #key { left: var(--pad); bottom: 14px; gap: 14px; }
+      #side { position: absolute; left: 0; right: 0; bottom: 0; max-height: 80%; border-left: 0; border-top: 1px solid var(--ink-3); overflow: hidden; transform: translateY(calc(100% - var(--sheet-peek))); transition: transform .5s var(--ease); z-index: 10; }
+      #side.open { transform: none; overflow: auto; }
+      .sheet-handle { display: flex; position: sticky; top: 0; z-index: 1; width: 100%; height: var(--sheet-peek); padding: 0 var(--pad); align-items: center; justify-content: space-between; gap: var(--gap); background: var(--bg); border-bottom: 1px solid var(--ink-3); color: var(--ink); }
+      .sheet-handle:hover { border-bottom-color: var(--ink-3); }
+      .sheet-handle .val { letter-spacing: 0; text-transform: none; }
+      .sheet-handle .val.big { font-size: 15px; }
+      .sheet-handle .chev { display: inline-block; color: var(--ink-2); transition: transform .5s var(--ease); }
+      #side.open .sheet-handle .chev { transform: rotate(180deg); }
+      #side .readout { display: none; } /* the handle carries the link and error numbers */
+      input[type=range] { height: 26px; }
     }
+    @media (prefers-reduced-motion: reduce) { .lost { animation: none; } #side { transition: none; } }
   </style>
 </head>
 <body>
   <div id="app">
+    <header id="head">
+      <h1 class="title">MinBand</h1>
+      <dl id="credits">
+        <div class="credit"><dt class="lbl">Edge</dt><dd class="val" id="cEdge">no device</dd></div>
+        <div class="credit"><dt class="lbl">Link</dt><dd class="val" id="cLink">clean</dd></div>
+        <div class="credit"><dt class="lbl">Twin</dt><dd class="val" id="cTwin">0 entities</dd></div>
+      </dl>
+    </header>
+
     <main id="stage">
-      <div id="scene"><div id="hud">connecting…</div></div>
+      <div id="scene">
+        <div id="status" class="lbl">connecting</div>
+        <div id="key" class="lbl" aria-hidden="true">
+          <span><svg width="7" height="15" viewBox="0 0 7 15"><rect x=".5" y=".5" width="6" height="14" rx="3" fill="currentColor"/></svg>person</span>
+          <span><svg width="7" height="7" viewBox="0 0 7 7"><circle cx="3.5" cy="3.5" r="3" fill="currentColor"/></svg>carried</span>
+          <span><svg width="8" height="8" viewBox="0 0 8 8"><rect x=".5" y=".5" width="7" height="7" fill="currentColor"/></svg>static</span>
+          <span><svg width="8" height="8" viewBox="0 0 8 8"><rect x=".5" y=".5" width="7" height="7" fill="none" stroke="currentColor" stroke-dasharray="1 2"/></svg>stale</span>
+        </div>
+      </div>
       <section id="camera" hidden aria-label="raw video stand-in">
-        <video id="cam" autoplay muted playsinline></video>
-        <div id="camPlaceholder" hidden><b>camera unavailable</b><span id="camReason"></span><span class="baseline">stand-in for the drone's raw video feed</span></div>
-        <div id="camTitle">raw video (laptop camera stand-in)</div>
-        <div id="camBar">
-          <select id="res" aria-label="video quality">
-            <option value="360">360p</option>
-            <option value="480">480p</option>
-            <option value="720" selected>720p</option>
-            <option value="1080">1080p</option>
-          </select>
+        <div class="capbar">
+          <div id="camTitle"><span class="lbl">Raw video</span><span class="val">laptop camera, stand-in for the drone feed</span></div>
+          <div id="res" role="group" aria-label="video quality">
+            <button data-res="360">360p</button><button data-res="480">480p</button><button data-res="720" class="on">720p</button><button data-res="1080">1080p</button>
+          </div>
+        </div>
+        <div class="camview">
+          <canvas id="halftone"></canvas>
+          <video id="cam" autoplay muted playsinline></video>
+          <div id="camPlaceholder" hidden><div class="row1"><span class="lbl">Raw video</span><span class="val">unavailable</span></div><span class="note" id="camReason"></span></div>
         </div>
         <div id="camOverlay">
-          <div>raw video at this quality: <span class="big" id="rawRate">1.50 Mbps</span></div>
-          <div class="baseline" id="rawVs"></div>
+          <span class="lbl">Raw video at this quality</span><span class="second" id="rawRate">1.50 Mbps</span>
+          <span class="lbl">Twin right now</span><span class="val" id="rawVs">idle</span>
         </div>
       </section>
     </main>
+
     <aside id="side">
-      <button id="sheetToggle" class="sheet-handle" aria-expanded="false"><span>link in</span><span class="big" id="sheetBps">0 bps</span><span class="baseline" id="sheetErr">controls ▴</span></button>
-      <h1>MinBand twin</h1>
-      <div class="row headline"><span>link in</span><span class="big" id="bps">0 bps</span></div>
-      <canvas id="graph"></canvas>
-      <div class="baseline" id="baselines"></div>
-      <div class="readout">
-        <div class="row"><span>twin error</span><span class="big" id="twinErr">–</span></div>
-        <div class="baseline" id="twinErrDetail">no ground truth uploaded</div>
+      <button id="sheetToggle" class="sheet-handle" aria-expanded="false"><span class="lbl">Link</span><span class="val big" id="sheetBps">0.0 kbps</span><span class="kv"><span class="lbl">Err</span><span class="val" id="sheetErr">–</span></span><span class="chev">▴</span></button>
+      <section class="sec readout">
+        <div class="headline">
+          <div class="lbl">Link in</div>
+          <div class="primary" id="bps">0.0<small>kbps</small></div>
+        </div>
+        <div class="kv"><span class="lbl">Twin error</span><span class="second" id="twinErr">–</span></div>
+      </section>
+      <section class="sec">
+        <div class="kv"><span class="lbl">Scenario</span><span class="val dim" id="scenarioName">clean</span></div>
+        <div class="scen" id="scenario" role="group" aria-label="link scenario">
+          <button data-scenario="clean">Clean<span class="p">no impairment</span></button>
+          <button data-scenario="contested">Contested<span class="p">50 kbps · 300 ms · 5%</span></button>
+          <button data-scenario="jammed">Jammed<span class="p">2 kbps · 800 ms · 30%</span></button>
+          <button data-scenario="blackout">Blackout<span class="p">10 s · 100% loss</span></button>
+        </div>
+      </section>
+      <button id="detailsToggle" aria-expanded="false" aria-controls="details"><span>Details</span><span class="chev">▸</span></button>
+      <div id="details" hidden>
+        <section class="sec">
+          <div class="lbl">Bytes per second · 10 s · log</div>
+          <canvas id="graph" aria-label="bytes per second, last 10 s, log scale"></canvas>
+          <div class="graph-key lbl"><span><i style="background: var(--series-1)"></i>link in</span><span><i style="background: var(--series-4)"></i>sent by edge</span><span><i style="background: linear-gradient(90deg, var(--ink-2) 50%, transparent 50%) 0 0 / 6px 1px"></i>cap · H.264</span></div>
+          <div class="note" id="baselines"></div>
+          <div class="note" id="twinErrDetail">twin error: no ground truth uploaded</div>
+        </section>
+        <section class="sec">
+          <div class="lbl">Link controls</div>
+          <label class="slider" for="capSlider"><span class="kv"><span class="lbl">Bandwidth cap</span><span class="val" id="bpsv">off</span></span><input id="capSlider" type="range" min="0" max="200" value="0" /></label>
+          <label class="slider" for="delaySlider"><span class="kv"><span class="lbl">Latency</span><span class="val" id="delayv">0 ms</span></span><input id="delaySlider" type="range" min="0" max="2000" step="50" value="0" /></label>
+          <label class="slider" for="lossSlider"><span class="kv"><span class="lbl">Packet loss</span><span class="val" id="lossv">0%</span></span><input id="lossSlider" type="range" min="0" max="100" value="0" /></label>
+          <label class="slider" for="budgetSlider"><span class="kv"><span class="lbl">Edge byte budget</span><span class="val" id="budgetv">unlimited</span></span><input id="budgetSlider" type="range" min="0" max="200" value="0" /></label>
+          <div class="toggles"><button id="impair" class="tog" aria-pressed="false"><span>Impairment</span><span class="v">off</span></button></div>
+        </section>
+        <section class="sec">
+          <div class="lbl">View</div>
+          <div class="toggles">
+            <button id="fusion" class="tog on" aria-pressed="true"><span>Fusion</span><span class="v">on</span></button>
+            <button id="ghosts" class="tog" aria-pressed="false"><span>Ghosts</span><span class="v">off</span></button>
+            <button id="sbs" class="tog" aria-pressed="false"><span>Side by side</span><span class="v">off</span></button>
+          </div>
+        </section>
+        <section class="sec">
+          <div class="lbl">Edge devices</div>
+          <div id="devices"></div>
+        </section>
+        <section class="sec">
+          <div class="lbl">Log</div>
+          <pre id="log" aria-label="server log"></pre>
+        </section>
       </div>
-      <label for="scenario">scenario</label>
-      <select id="scenario">
-        <option value="clean">clean</option>
-        <option value="contested">contested (50 kbps, 300 ms, 5%)</option>
-        <option value="jammed">jammed (2 kbps, 800 ms, 30%)</option>
-        <option value="blackout">blackout 10 s</option>
-        <option value="custom" disabled>custom</option>
-      </select>
-      <label>bandwidth cap <span id="bpsv">off</span></label>
-      <input id="capSlider" type="range" min="0" max="200" value="0" />
-      <label>latency <span id="delayv">0 ms</span></label>
-      <input id="delaySlider" type="range" min="0" max="2000" step="50" value="0" />
-      <label>packet loss <span id="lossv">0%</span></label>
-      <input id="lossSlider" type="range" min="0" max="100" value="0" />
-      <label>edge byte budget <span id="budgetv">unlimited</span></label>
-      <input id="budgetSlider" type="range" min="0" max="200" value="0" />
-      <div class="buttons">
-        <button id="impair">impairment: off</button>
-        <button id="fusion" class="on">fusion: on</button>
-        <button id="ghosts">ghosts</button>
-        <button id="sbs">side-by-side</button>
-      </div>
-      <div id="devices" style="margin-top:12px"></div>
     </aside>
-    <pre id="log"></pre>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

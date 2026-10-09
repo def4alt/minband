@@ -27,6 +27,33 @@ npm run typecheck
 Paths given to `npm run ...` resolve against the directory you ran npm from. Outputs go to
 `runs/` at the repo root (override with `MINBAND_RUNS=/some/dir`).
 
+## Charts
+
+`npm run charts` writes two self-contained SVGs (no external fonts, scripts or CSS) in the
+product's visual language ([docs/STYLE.md](../../docs/STYLE.md)). They are **dark only** by
+design: near-black ground, hairline axes, faint grid, 1 px traces, uppercase letter-spaced
+labels and tabular numerals; there is no light variant and no `prefers-color-scheme` switch.
+Axes, grid and labels are monochrome; series are told apart by colour, one muted hue per
+scenario, fixed by name so a scenario has the same hue in both charts:
+
+| Scenario | Hue |
+|---|---|
+| `static` | `#8ab4f8` blue |
+| `one_walker` | `#f28b82` red |
+| `one_walker_noisy` | `#81c995` green |
+| `three_walkers` | `#fdd663` yellow |
+| `crowd` | `#c58af9` purple |
+
+Other scenario names (e.g. phone logs) take the remaining hues (`#78d9ec`, `#fcad70`) in order.
+
+- `fidelity_vs_bytes.svg`: dots are θ sweep points, the ringed dot is the default θ_pos;
+  vertical reference lines are dashed in `--ink-2`: H.264 with long dashes, naive 30 Hz metadata
+  with short ones.
+- `resilience.svg`: state repair on = solid trace with filled dots, repair off = dashed trace
+  with hollow dots, in the scenario's hue.
+
+Every point carries a `<title>` tooltip with the exact values.
+
 ## Real phone logs
 
 Export `gt-<unix>.csv` from the phone (Files app), put it under `runs/phone/`, then

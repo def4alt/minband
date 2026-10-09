@@ -24,7 +24,10 @@ targets:
         NSCameraUsageDescription: "MinBand tracks objects with the camera and ARKit."
         NSLocalNetworkUsageDescription: "MinBand streams entity updates to the laptop twin."
         UIRequiredDeviceCapabilities: [arkit]
-        UILaunchScreen: {}
+        # Near-black launch screen (docs/STYLE.md --bg) and dark system UI: no light theme.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIUserInterfaceStyle: Dark
         # Perception pipeline: overlay and Vision orientation assume portrait.
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIStatusBarHidden: true

@@ -28,6 +28,11 @@ Light theme is not supported; the product is dark by design.
   Grid helper lines, if any, are `--ink-4` and sparse.
 - Class is conveyed by silhouette, not colour: person = tall capsule, carried object = small
   sphere, static object = box. Device is conveyed by line style: solid, dashed, dotted.
+- **Entities are solid, not wire** (decided 2026-10-09). Tracked objects are filled, matte
+  monochrome meshes: `--ink` at 85 to 100 % with soft hemispheric lighting so they read as
+  volumes against the line terrain. Fresh = bright solid; stale = the same solid fading toward
+  `--ink-3`, then a dotted outline, then gone. Wire is for the environment (terrain, frustums,
+  trails, axes), fill is for things the twin believes exist. That contrast is the point.
 
 ## Type
 
@@ -43,8 +48,8 @@ Light theme is not supported; the product is dark by design.
 ## Surfaces and controls
 
 - No cards, no rounded corners, no drop shadows, no filled buttons.
-- Panels are separated by 1 px hairlines in `--ink-3`. A page or screen has a 1 px inset frame
-  with small `+` crop marks in the four corners (see poster).
+- Panels are separated by 1 px hairlines in `--ink-3`. No inset frame around the page or
+  screen and no `+` crop marks (dropped 2026-10-09); content runs to the edges.
 - Buttons are uppercase text with a hairline underline; active state inverts (ink background,
   bg text) or shows a leading `▸`. Toggles read as `FUSION  ON`.
 - Sliders: 1 px track in `--ink-3`, 2 px filled portion in `--ink`, square 8 px thumb.
@@ -65,3 +70,32 @@ Light theme is not supported; the product is dark by design.
   mesh (LiDAR) or feature points as white wires, plus the marker axes. This is the stage mode.
 - HUD at the top in the credits layout: `ORIGIN  locked · LINK  1.2 kbps · TRACKS  3 · SEQ  412`.
   Controls at the bottom as uppercase text buttons separated by hairlines.
+
+## Restraint (added 2026-10-09)
+
+The product must be usable first. Less on screen, not more.
+
+- **One primary readout per surface.** Viewer: bytes per second on the link. iOS: link state and
+  track count. Everything else is secondary and visually quieter by two steps (size and tone).
+- **Progressive disclosure.** The default view shows the twin, the link readout, the scenario
+  selector and the twin-error number. Sliders, device statistics, the packet log, the bytes
+  graph, ghosts and the side-by-side toggle live behind a single `DETAILS` disclosure (collapsed
+  by default, remembered per browser). On iOS the HUD shows four items at most; detector rate,
+  theta scale, wire bytes and sequence number go behind a long press or a `DETAILS` toggle.
+- **Numbers are rounded to what a human needs:** kbps with one decimal, error in whole cm, no
+  raw counters in the default view. Counters (deltas, keyframes, gaps, nacks) only in details.
+- **Scene density caps.** Trails at most 3 s. One contour layer, not two, and it sits at
+  `--ink-4` so entities are the brightest thing on screen. Velocity arrows only for entities
+  moving faster than 0.3 m/s. No per-entity text labels in the 3D view by default; hover or tap
+  shows one. Ghosts off by default.
+- **Whitespace is part of the design.** Panels have 24 px padding, rows have 12 px gaps, and the
+  credits row has at most three pairs. Nothing blinks except a lost device.
+- **Motion is informative only.** No idle animation on the terrain, no pulsing, no scanlines.
+
+## Charts: colour for series (added 2026-10-09)
+
+Exception to monochrome: in the eval charts and the viewer's graphs, series are told apart by
+colour, not by dash pattern. Use a small muted categorical palette on the dark background,
+one hue per scenario, consistent across every chart: e.g. `#8ab4f8` (blue), `#f28b82` (red),
+`#81c995` (green), `#fdd663` (yellow), `#c58af9` (purple). Lines stay 1 px; axes, grid and
+labels stay monochrome. Reference lines (baselines, caps) stay dashed in `--ink-2`.

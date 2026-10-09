@@ -29,8 +29,22 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     @Published var detectorStatus = "loading model"
     @Published var depthMode = "-"               // lidar | planes
     @Published var status = ""                   // tracking state / errors
+    // UI only (no effect on perception or sync):
+    @Published private(set) var wireframe = false        // stage mode, see setWireframe(_:)
+    @Published var featurePoints = 0             // ARFrame.rawFeaturePoints count, 2 Hz
+    @Published var meshAnchors = 0               // ARMeshAnchor count (scene reconstruction), 2 Hz
+    @Published var liftMarks: [LiftMark] = []    // lifted 3D points of tracked boxes, in the view
+    @Published var arUnsupported = false         // start() refused: no world tracking (simulator)
+    @Published var link: LinkState = .off        // from datagrams received from the server, 2 Hz
+
+    /// LiDAR scene reconstruction, used by the WIREFRAME stage mode.
+    static let supportsMesh = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
 
     static let detectInterval: TimeInterval = 1.0 / 12
+    /// No datagram from the server for this long (after at least one) = link lost. The server acks
+    /// every delivered datagram (at most every 100 ms) and an acked edge sends at least a Hello
+    /// refresh every 5 s, so silence beyond 7 s means the server or the network is gone.
+    static let linkLostAfter: TimeInterval = 7
     static let trackInterval: TimeInterval = 1.0 / 30
     static let poseInterval: TimeInterval = 0.5
     static let statsInterval: TimeInterval = 0.5
@@ -64,6 +78,9 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     private var datagramsSinceStats = 0
     private var lastTrackCount = 0
     private var lastCamera: simd_float4x4?
+    private var lastReceive: TimeInterval = 0    // systemUptime of the last datagram from the server
+    /// main only: the configuration the session runs, re-run with changes by setWireframe(_:).
+    private var runningConfig: ARWorldTrackingConfiguration?
 
     private let viewportLock = NSLock()
     private var _viewport = CGSize(width: 390, height: 844)
@@ -90,6 +107,7 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
     func start(host: String) {
         guard ARWorldTrackingConfiguration.isSupported else {
             status = "ARKit world tracking is not supported on this device"
+            arUnsupported = true
             return
         }
         let config = ARWorldTrackingConfiguration()
@@ -99,6 +117,8 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         config.detectionImages = ARReferenceImage.referenceImages(inGroupNamed: "Markers", bundle: nil) ?? []
         config.maximumNumberOfTrackedImages = 1   // keep refining the marker pose while visible
         if config.detectionImages.isEmpty { status = "no Markers AR resource group in the bundle" }
+        if wireframe, Pipeline.supportsMesh { config.sceneReconstruction = .mesh }
+        runningConfig = config
 
         let (h, port) = UdpTransport.parse(host)
         arQueue.sync {
@@ -107,8 +127,12 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
             sessionStart = 0
             lastDetectionTime = 0; lastTrackTime = 0; lastPoseTime = 0; lastStatsTime = 0
             framesSinceStats = 0; detectionsSinceStats = 0; datagramsSinceStats = 0; sentBytesAtStats = 0
+            lastReceive = 0
             let t = UdpTransport(host: h, port: port) { [weak self] bytes in
-                self?.arQueue.async { self?.edge?.onDatagram(bytes) }
+                self?.arQueue.async {
+                    self?.lastReceive = ProcessInfo.processInfo.systemUptime
+                    self?.edge?.onDatagram(bytes)
+                }
             }
             transport = t
             edge = EdgeBridge(deviceId: DeviceIdentity.id, sessionNonce: UInt32.random(in: 1...UInt32.max))
@@ -117,6 +141,7 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         }
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
         running = true
+        link = .waiting
         originLocked = false; originSource = "none"
         depthMode = lidar ? "lidar" : "planes"
     }
@@ -129,8 +154,26 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
             transport = nil; edge = nil; groundTruth = nil
         }
         running = false
+        link = .off
+        runningConfig = nil
         detections = []
+        liftMarks = []
         trackCount = 0
+    }
+
+    /// WIREFRAME stage mode on/off. The view hides the camera and draws the reconstruction mesh
+    /// and feature points; here only LiDAR scene reconstruction is switched, by re-running the
+    /// same configuration without reset options, so tracking, anchors, the locked origin and the
+    /// edge session all carry on. Without LiDAR (or while stopped) this only flips the flag.
+    func setWireframe(_ on: Bool) {
+        wireframe = on
+        guard running, Pipeline.supportsMesh, let current = runningConfig,
+              let config = current.copy() as? ARWorldTrackingConfiguration else { return }
+        let mode: ARConfiguration.SceneReconstruction = on ? .mesh : []
+        guard config.sceneReconstruction != mode else { return }
+        config.sceneReconstruction = mode
+        runningConfig = config
+        session.run(config)
     }
 
     /// "origin: set here" fallback: camera position dropped to the floor plane, Y up.
@@ -183,7 +226,7 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
             send(edge.pose(frame.camera.transform, tick: tick))
         }
 
-        if ts - lastStatsTime >= Pipeline.statsInterval { publishStats(now: ts, edge: edge) }
+        if ts - lastStatsTime >= Pipeline.statsInterval { publishStats(now: ts, edge: edge, frame: frame) }
     }
 
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
@@ -256,16 +299,18 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
             guard let self else { return }
             let dets = self.detector?.detect(frame) ?? []
             var trackIds = [UInt32?](repeating: nil, count: dets.count)
+            var marks: [LiftMark] = []
             if locked {
                 let points = Lift3D.lift(dets, frame: frame, session: self.session)
                 let ids = self.tracker.update(points, time: frame.timestamp)
                 for (p, id) in zip(points, ids) where dets.indices.contains(p.detectionIndex) {
                     trackIds[p.detectionIndex] = id
                 }
+                marks = Pipeline.liftMarks(points, ids: ids, frame: frame, viewport: viewport)
             }
             let boxes = Pipeline.overlay(dets, trackIds: trackIds, frame: frame, viewport: viewport)
             self.arQueue.async { self.detecting = false; self.detectionsSinceStats += 1 }
-            DispatchQueue.main.async { if self.running { self.detections = boxes } }
+            DispatchQueue.main.async { if self.running { self.detections = boxes; self.liftMarks = marks } }
         }
     }
 
@@ -279,6 +324,24 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
 
+    /// Lifted points (marker frame) of boxes that fed a confirmed track -> normalized view points,
+    /// for the overlay's `+` marks. Display only; points behind the camera are skipped.
+    static func liftMarks(_ points: [WorldPoint], ids: [UInt32?], frame: ARFrame, viewport: CGSize) -> [LiftMark] {
+        guard viewport.width > 0, viewport.height > 0 else { return [] }
+        let markerToWorld = Origin.shared.markerTransform
+        let worldToCamera = frame.camera.transform.inverse
+        var out: [LiftMark] = []
+        for (p, id) in zip(points, ids) {
+            guard let id else { continue }
+            let w = markerToWorld * SIMD4<Float>(p.pos, 1)
+            guard (worldToCamera * w).z < 0 else { continue }
+            let s = frame.camera.projectPoint(SIMD3(w.x, w.y, w.z), orientation: .portrait, viewportSize: viewport)
+            out.append(LiftMark(id: p.detectionIndex, trackId: id,
+                                point: CGPoint(x: s.x / viewport.width, y: s.y / viewport.height)))
+        }
+        return out
+    }
+
     private func publishOrigin() {
         let o = Origin.shared
         let locked = o.isLocked
@@ -286,7 +349,7 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         DispatchQueue.main.async { self.originLocked = locked; self.originSource = src }
     }
 
-    private func publishStats(now: TimeInterval, edge: EdgeBridge) {
+    private func publishStats(now: TimeInterval, edge: EdgeBridge, frame: ARFrame) {
         let dt = max(1e-3, now - lastStatsTime)
         let s = edge.stats()
         let sent = transport?.sentBytes ?? 0
@@ -294,12 +357,31 @@ final class Pipeline: NSObject, ObservableObject, ARSessionDelegate {
         let fps = Double(framesSinceStats) / dt
         let dhz = Double(detectionsSinceStats) / dt
         let count = lastTrackCount
+        let points = frame.rawFeaturePoints?.points.count ?? 0
+        let meshes = frame.anchors.reduce(0) { $0 + ($1 is ARMeshAnchor ? 1 : 0) }
+        let link: LinkState = lastReceive == 0 ? .waiting
+            : ProcessInfo.processInfo.systemUptime - lastReceive > Pipeline.linkLostAfter ? .lost : .up
         lastStatsTime = now; framesSinceStats = 0; detectionsSinceStats = 0
         sentBytesAtStats = sent; datagramsSinceStats = 0
         DispatchQueue.main.async {
             self.trackCount = count; self.seq = s.seq; self.thetaScale = s.thetaScale
             self.bytesPerSec = s.bytesPerSecEstimate; self.wireBytesPerSec = wire
             self.fps = fps; self.detectHz = dhz
+            self.featurePoints = points; self.meshAnchors = meshes
+            if self.running { self.link = link }
         }
     }
 }
+
+/// A box that fed a confirmed track, with its lifted 3D point projected back into the view
+/// (normalized view coordinates, origin top-left, like `OverlayBox.rect`). `id` is the box index.
+struct LiftMark: Identifiable {
+    let id: Int
+    let trackId: UInt32
+    let point: CGPoint
+}
+
+/// What the operator needs to know about the UDP link. `waiting`: started, nothing heard from the
+/// server yet (the edge is sending Hello). `up`: the server answered within `linkLostAfter`.
+/// `lost`: it answered before but has been silent since.
+enum LinkState { case off, waiting, up, lost }

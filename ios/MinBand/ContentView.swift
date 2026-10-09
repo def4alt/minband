@@ -1,123 +1,127 @@
 import SwiftUI
 import UIKit
 
-/// Camera preview with detection overlays, link status, and the server address field.
+/// One screen, poster layout (docs/STYLE.md): the camera (or, in WIREFRAME, the stage scene; or,
+/// while stopped, a contour terrain) full bleed; the `MINBAND` wordmark and one credits row
+/// (LINK, TRACKS, ORIGIN, host) at the top; detections as corner ticks; hairline-separated text
+/// controls at the bottom. No frame: content runs to the edges, bands are split by hairlines.
+/// Everything secondary is behind `DETAILS` (collapsed by default, remembered).
 struct ContentView: View {
     @StateObject private var pipeline = Pipeline()
     @AppStorage("host") private var host = "192.168.1.10"
+    @AppStorage("details") private var details = false
     @State private var share: ShareItem?
-    @State private var shareError = false
+    @State private var notice: String?
+    @State private var noticeSerial = 0
+    @State private var detectionsAt = Date.distantPast
 
     var body: some View {
+        let hud = hudState
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+            stage
+            VStack(spacing: 0) {
+                // HUD band on a plain bg ground (top edge to its hairline): text never sits on the
+                // camera and detection ticks never cross it.
+                VStack(spacing: 0) {
+                    TopHUD(state: hud, details: $details)
+                    let lines = noticeLines(hud)
+                    if !lines.isEmpty { NoticeStack(lines: lines).padding(.top, 18) }
+                }
+                .padding(.bottom, 20)
+                .background(Theme.bg.ignoresSafeArea(edges: .top))
+                Hairline()   // HUD | camera area
+                // Centre notices sit in the "sky" above the standby terrain's ridge line. A ZStack,
+                // not a Group: it must exist (and take the flexible height) even when empty.
+                ZStack {
+                    if pipeline.arUnsupported {
+                        UnsupportedNotice()
+                    } else if !hud.running && !details {
+                        StandbyHint()
+                    }
+                }
+                .padding(.top, 40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                BottomBar(host: $host,
+                          running: pipeline.running,
+                          wireframe: pipeline.wireframe,
+                          manualOrigin: pipeline.originSource == "manual",
+                          onStartStop: startStop,
+                          onOriginHere: { pipeline.setOriginHere() },
+                          onWireframe: { pipeline.setWireframe(!pipeline.wireframe) },
+                          onShareLog: shareLog)
+            }
+            .padding(.top, 2)
+        }
+        .animation(Theme.fade, value: pipeline.running)
+        .animation(Theme.fade, value: pipeline.wireframe)
+        .animation(Theme.fade, value: pipeline.arUnsupported)
+        .sheet(item: $share) { ActivityView(items: [$0.url]) }
+        .onReceive(pipeline.$detections) { _ in detectionsAt = .now }
+    }
+
+    // MARK: layers
+
+    /// Full-screen layers in the AR view's coordinate space (the overlay maps boxes for it).
+    private var stage: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                ARViewContainer(pipeline: pipeline, originKey: "\(pipeline.originSource)-\(pipeline.originLocked)")
-                DetectionOverlay(boxes: pipeline.detections, size: geo.size)
+                ARViewContainer(pipeline: pipeline, wireframe: pipeline.wireframe)
+                if !pipeline.running && !isDemo { ContourField().transition(.opacity) }
+                TimelineView(.periodic(from: .now, by: 0.25)) { tl in
+                    DetectionOverlay(boxes: boxes, marks: marks,
+                                     stale: !isDemo && tl.date.timeIntervalSince(detectionsAt) > DetectionOverlay.staleAfter,
+                                     showConfidence: details)
+                }
             }
             .onAppear { pipeline.viewportSize = geo.size }
             .onChange(of: geo.size) { _, s in pipeline.viewportSize = s }
         }
         .ignoresSafeArea()
-        .overlay(alignment: .top) { statusBar }
-        .overlay(alignment: .bottom) { controls }
-        .sheet(item: $share) { ActivityView(items: [$0.url]) }
-        .alert("No ground-truth log yet", isPresented: $shareError) { Button("OK", role: .cancel) {} }
     }
 
-    private var statusBar: some View {
-        VStack(spacing: 2) {
-            Text(originText).font(.caption.bold())
-            Text("\(pipeline.detectorStatus) · depth \(pipeline.depthMode)").font(.caption2)
-            if !pipeline.status.isEmpty { Text(pipeline.status).font(.caption2).foregroundStyle(.yellow) }
+    // MARK: actions
+
+    private func startStop() {
+        if pipeline.running { pipeline.stop() } else { pipeline.start(host: host) }
+    }
+
+    private func shareLog() {
+        if pipeline.running { pipeline.flushLog() }
+        if let url = GroundTruthLog.latest() { share = ShareItem(url: url) } else { flash("no ground-truth log yet") }
+    }
+
+    /// Transient feedback in the notice stack (replaces a system alert).
+    private func flash(_ text: String) {
+        noticeSerial += 1
+        let serial = noticeSerial
+        notice = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { if noticeSerial == serial { notice = nil } }
+    }
+
+    // MARK: state
+
+    private func noticeLines(_ hud: HUDState) -> [NoticeStack.Line] {
+        var out: [NoticeStack.Line] = []
+        if !pipeline.status.isEmpty, !pipeline.arUnsupported {
+            out.append(.init(id: "status", text: pipeline.status, strong: true))
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .padding(.top, 4)
+        if let notice { out.append(.init(id: "notice", text: notice, strong: false)) }
+        if !hud.running, let e = hud.detectorError { out.append(.init(id: "detector", text: e, strong: false)) }
+        return out
     }
 
-    private var controls: some View {
-        VStack(spacing: 8) {
-            Text(statsText).font(.caption.monospaced()).lineLimit(2).minimumScaleFactor(0.7)
-            HStack {
-                TextField("server host[:port]", text: $host)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numbersAndPunctuation)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .disabled(pipeline.running)
-                Button(pipeline.running ? "Stop" : "Start") {
-                    pipeline.running ? pipeline.stop() : pipeline.start(host: host)
-                }.buttonStyle(.borderedProminent)
-            }
-            HStack {
-                Button("origin: set here") { pipeline.setOriginHere() }
-                    .buttonStyle(.bordered).disabled(!pipeline.running)
-                Spacer()
-                Button("share log") {
-                    if pipeline.running { pipeline.flushLog() }
-                    if let url = GroundTruthLog.latest() { share = ShareItem(url: url) } else { shareError = true }
-                }.buttonStyle(.bordered)
-            }
-        }
-        .padding()
-        .background(.ultraThinMaterial)
-    }
-
-    private var originText: String {
-        switch pipeline.originSource {
-        case "marker": return "origin: marker"
-        case "manual": return "origin: manual (set here)"
-        default: return pipeline.running ? "show the marker" : "stopped"
-        }
-    }
-
-    private var statsText: String {
-        String(format: "%d tracks  %d B/s (wire %d)  seq %u  θ×%.2f  %.0f fps  det %.0f Hz",
-               pipeline.trackCount, pipeline.bytesPerSec, pipeline.wireBytesPerSec, pipeline.seq,
-               pipeline.thetaScale, pipeline.fps, pipeline.detectHz)
-    }
-}
-
-/// 2D boxes with class label, confidence and track id (if the detection fed a confirmed track).
-struct DetectionOverlay: View {
-    let boxes: [OverlayBox]
-    let size: CGSize
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(boxes) { b in
-                let r = CGRect(x: b.rect.minX * size.width, y: b.rect.minY * size.height,
-                               width: b.rect.width * size.width, height: b.rect.height * size.height)
-                let color = DetectionOverlay.color(b.classId)
-                // Absolute placement: offsets inside a top-leading ZStack.
-                Rectangle()
-                    .stroke(color, lineWidth: b.trackId == nil ? 1.5 : 3)
-                    .frame(width: max(1, r.width), height: max(1, r.height))
-                    .offset(x: r.minX, y: r.minY)
-                Text(label(b))
-                    .font(.caption2.monospaced().bold())
-                    .padding(.horizontal, 3)
-                    .background(color.opacity(0.8))
-                    .foregroundStyle(.black)
-                    .fixedSize()
-                    .offset(x: r.minX, y: max(0, r.minY - 16))
-            }
-        }
-        .frame(width: size.width, height: size.height, alignment: .topLeading)
-        .allowsHitTesting(false)
-    }
-
-    private func label(_ b: OverlayBox) -> String {
-        let id = b.trackId.map { " #\($0)" } ?? ""
-        return "\(TrackedClass.name(b.classId))\(id) \(Int((b.conf * 100).rounded()))%"
-    }
-
-    static func color(_ cls: UInt8) -> Color {
-        switch cls {
-        case TrackedClass.person: return .green
-        case TrackedClass.chair, TrackedClass.tv, TrackedClass.laptop: return .orange
-        default: return .cyan
-        }
-    }
+    #if DEBUG
+    private var isDemo: Bool { DemoMode.isOn }
+    private var hudState: HUDState { DemoMode.isOn ? DemoMode.hud : HUDState(pipeline, host: host) }
+    private var boxes: [OverlayBox] { DemoMode.isOn ? DemoMode.boxes : pipeline.detections }
+    private var marks: [LiftMark] { DemoMode.isOn ? DemoMode.marks : pipeline.liftMarks }
+    #else
+    private var isDemo: Bool { false }
+    private var hudState: HUDState { HUDState(pipeline, host: host) }
+    private var boxes: [OverlayBox] { pipeline.detections }
+    private var marks: [LiftMark] { pipeline.liftMarks }
+    #endif
 }
 
 struct ShareItem: Identifiable {
@@ -129,7 +133,9 @@ struct ShareItem: Identifiable {
 struct ActivityView: UIViewControllerRepresentable {
     let items: [Any]
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        vc.overrideUserInterfaceStyle = .dark
+        return vc
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
