@@ -1,11 +1,26 @@
 # tools
 
 - `link.sh` - macOS dummynet shaping of UDP :7777 (`sudo tools/link.sh set 8Kbit/s 150ms 0.05`).
+- `golden-aarch64.sh` - the core's tests, golden vectors included, cross-compiled for aarch64
+  Linux and run under qemu-user: the Pi 5's architecture without a Pi. [Below](#golden-vectors-on-aarch64-golden-aarch64sh).
 - `build-ios.sh` - cross-compile the core for iOS and build the XCFramework.
 - `eval/` (M7) - offline evaluation. Replays ground-truth logs (synthetic, or `gt-*.csv` from the
   phone) through the WASM `Edge` and `Receiver` in-process over a simulated lossy link, sweeps the
   thresholds, computes the baselines and renders the presentation charts. No server, no sockets.
   Details and methodology: [eval/README.md](eval/README.md).
+
+## Golden vectors on aarch64 (golden-aarch64.sh)
+
+```bash
+tools/golden-aarch64.sh                  # Linux host: cargo test --target aarch64-unknown-linux-gnu,
+tools/golden-aarch64.sh --test golden    # run under qemu-aarch64; extra args go to cargo test
+```
+
+Needs `rustup target add aarch64-unknown-linux-gnu` and `apt install gcc-aarch64-linux-gnu
+libc6-dev-arm64-cross qemu-user`. Linker and runner come from cargo's
+`CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_{LINKER,RUNNER}` variables for that run only; no
+`.cargo/config` change. On the Pi itself (any aarch64 Linux) the script just runs `cargo test`,
+which is all §4 of the plan asks.
 
 ## eval quick start
 
