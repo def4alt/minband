@@ -1,13 +1,80 @@
 # tools
 
 - `link.sh` - macOS dummynet shaping of UDP :7777 (`sudo tools/link.sh set 8Kbit/s 150ms 0.05`).
+- `pi-link.sh` - the Raspberry Pi 5 link box ([HACKATHON_PLAN §3](../docs/HACKATHON_PLAN.md#3-raspberry-pi-5-link-box)):
+  hotspot and static Ethernet setup, tc/netem link profiles on UDP :7777, the `contested` loop,
+  status, clear. [Below](#pi-5-link-box-pi-linksh).
 - `golden-aarch64.sh` - the core's tests, golden vectors included, cross-compiled for aarch64
   Linux and run under qemu-user: the Pi 5's architecture without a Pi. [Below](#golden-vectors-on-aarch64-golden-aarch64sh).
+- `test/` - plain-bash tests for `pi-link.sh`.
 - `build-ios.sh` - cross-compile the core for iOS and build the XCFramework.
 - `eval/` (M7) - offline evaluation. Replays ground-truth logs (synthetic, or `gt-*.csv` from the
   phone) through the WASM `Edge` and `Receiver` in-process over a simulated lossy link, sweeps the
   thresholds, computes the baselines and renders the presentation charts. No server, no sockets.
   Details and methodology: [eval/README.md](eval/README.md).
+
+## Pi 5 link box (pi-link.sh)
+
+Runs on the Pi (Raspberry Pi OS Bookworm, NetworkManager). Phone -> Pi hotspot (`wlan0`) -> Pi ->
+Ethernet (`eth0`) -> laptop; the Pi shapes MinBand's UDP port in both directions.
+
+```bash
+sudo raspi-config nonint do_wifi_country KR             # once; 5 GHz AP mode needs the country
+sudo tools/pi-link.sh setup --password '<8+ chars>'     # hotspot minband-link (5 GHz; --band bg for 2.4)
+                                                        # + eth0 192.168.77.1/24; laptop 192.168.77.2/24
+sudo tools/pi-link.sh lora        # apply a profile; prints the laptop's budget command, e.g.
+                                  #   curl 'http://192.168.77.2:8080/api/budget?bps=1500'
+tools/pi-link.sh status           # profile, contested loop, qdiscs and counters
+sudo tools/pi-link.sh clear       # back to the default qdiscs
+tools/pi-link.sh --dry-run hf     # print the exact tc commands (anywhere, no root)
+```
+
+| Profile | netem on UDP :7777, both directions | Edge budget, bit/s |
+|---|---|---:|
+| `clean` | pass-through (`limit 1000`); same tree, so `status` still counts | 0 (unlimited) |
+| `degraded` | `rate 64kbit delay 20ms loss 2% limit 20` | 0 |
+| `hf` | `rate 9600bit delay 500ms loss 1% limit 8` | 8000 |
+| `lora` | `rate 2kbit delay 300ms loss 10% limit 4` | 1500 |
+| `telemetry` | `rate 600bit delay 50ms loss 5% limit 4` | 450 |
+| `contested` | `lora`, alternating with random 1-5 s blackouts (background loop, pidfile `/run/minband-pi-link/contested.pid`; any other profile or `clear` stops it) | 1500 |
+| `blackout` | `loss 100%` | unchanged |
+
+After each profile the script also prints `curl '.../api/link?profile=external&as=<profile>'`, for
+a server that has `/api/link`.
+
+- **Tree.** Per device a `prio` root with 4 bands. The default priomap only uses bands 1:1-1:3, so
+  band 1:4 (netem) gets nothing but the u32 filter's matches: UDP dport 7777 on `eth0` egress
+  (uplink), UDP sport 7777 on `wlan0` egress (downlink acks). SSH and everything else stay
+  unshaped. Switching profiles deletes and re-adds the root qdisc, which does not take the link
+  down; the kernel test checks that an open TCP connection survives every switch. The `contested`
+  loop only changes the 1:4 leaf (`tc qdisc change`), never the root.
+- **Bytes.** Each rate is followed by `-14`, netem's per-packet overhead: at the qdisc a datagram
+  still carries its 14 B Ethernet header, so without it netem would count payload + 42 B where the
+  server and `tools/eval` count payload + 28 B. `L2_OVERHEAD=0` counts the header.
+- **Queue.** netem's `limit` also counts packets waiting out the delay, so it caps datagrams in
+  flight. `hf` is the one profile where that binds before the rate: 8 per 500 ms is 16
+  datagrams/s, and 9600 bit/s carries 16 datagrams/s of 75 B, so smaller datagrams at a higher
+  count (a one-update delta is ~59 B; many devices in the drones-per-link run) are tail-dropped on
+  top of the 1 % loss. Raise its `limit` if that run shows drops the rate does not explain.
+- **Kernel.** netem needs the `sch_netem` module; Raspberry Pi OS ships it (`modinfo sch_netem`).
+- **Settings.** `UP_DEV`, `DOWN_DEV`, `PORT`, `SERVER`, setup's `SSID`/`PASSWORD`/`BAND`/`COUNTRY`,
+  `CONTESTED_UP`/`CONTESTED_DOWN` and more: `tools/pi-link.sh --help`.
+
+Tests:
+
+```bash
+tools/test/pi-link.test.sh               # dry-run golden: exact tc commands of every profile, both
+                                         # directions, budgets, contested, setup, overrides (no root)
+sudo tools/test/pi-link-kernel.test.sh   # real kernel, on lo: tc -s counters prove UDP to/from :7777
+                                         # lands in 1:4 and other UDP and TCP do not; contested loop
+                                         # start/stop, status, clear; TCP survives profile switches
+```
+
+The kernel test puts `pfifo` where netem goes (test hook `LEAF_QDISC_OVERRIDE`), and on kernels
+without `sch_prio` an `htb` root with the same handles (`ROOT_QDISC_OVERRIDE=htb`): the dev
+container's kernel has neither module. On the Pi it uses `prio` and also applies the real `lora`
+netem to `lo` and reads it back. So netem itself and `nmcli` are verified only on the Pi; every
+netem argument list does parse in iproute2 6.1 (Bookworm's version).
 
 ## Golden vectors on aarch64 (golden-aarch64.sh)
 
