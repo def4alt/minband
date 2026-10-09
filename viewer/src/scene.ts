@@ -1,13 +1,17 @@
 // The world twin (docs/STYLE.md). Wire is the environment: one procedural contour field at --ink-4,
 // device frustums, trails and axes as 1 px lines (device = line style). Fill is what the twin
 // believes exists: entities are matte monochrome solids under soft hemispheric light (class =
-// silhouette: person capsule, carried sphere, static box). Staleness decays: bright solid -> the
-// same solid fading toward --ink-3 -> dotted outline -> gone. Restraint: entities are the brightest
+// silhouette: dismount capsule, carried sphere, static box). Trust decays in steps: live = bright
+// solid -> coasting (the device missed its heartbeat) = the same solid at --ink-2 -> stale = fading
+// toward --ink-3 -> dotted outline -> gone. Each entity stands on a hairline ground ring whose
+// radius is its honest error `ce` (V2): theta while the heartbeat holds, widening at the class max
+// speed while coasting, snapping back on the next keyframe. Restraint: entities are the brightest
 // thing on screen, trails last 3 s, labels appear only on hover or tap, the terrain never moves on
 // its own, and only a lost device blinks.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { fmtRadius } from './link';
 import type { GlobalEntity, Snapshot } from './types';
 
 // ---- tokens (single source: the CSS variables in index.html) ----------------------------------
@@ -30,11 +34,12 @@ export const LINE_STYLES = [
 ] as const;
 
 type Kind = 'person' | 'carried' | 'static';
-// COCO ids. Person = capsule, things people carry = small sphere, everything else = box.
+// COCO ids. Person = capsule, things people carry = small sphere, everything else = box. Class 0 is
+// shown as "dismount" (the military term); the wire and the code keep COCO's person.
 const CARRIED = new Set([24, 25, 26, 27, 28, 39, 40, 41, 42, 43, 44, 64, 65, 67, 73, 76, 79]);
 const kindOf = (cls: number): Kind => (cls === 0 ? 'person' : CARRIED.has(cls) ? 'carried' : 'static');
 const CLASS_NAME: Record<number, string> = {
-  0: 'person', 24: 'backpack', 25: 'umbrella', 26: 'handbag', 28: 'suitcase', 39: 'bottle', 41: 'cup',
+  0: 'dismount', 24: 'backpack', 25: 'umbrella', 26: 'handbag', 28: 'suitcase', 39: 'bottle', 41: 'cup',
   56: 'chair', 57: 'couch', 58: 'plant', 59: 'bed', 60: 'table', 62: 'tv', 63: 'laptop', 67: 'phone', 73: 'book',
 };
 const className = (cls: number) => CLASS_NAME[cls] ?? `class ${cls}`;
@@ -126,6 +131,9 @@ function terrainHeight(x: number, z: number): number {
   return Math.max(0, swell) + ridge;
 }
 
+/** Height of the drawn contour field, for things that lie on it (rings). Zero in the flat basin. */
+const groundAt = (x: number, z: number) => Math.hypot(x, z) < 6 ? 0 : terrainHeight(x, z) - 0.004;
+
 function buildTerrain(): THREE.LineSegments {
   const S = 104, N = 104, st = S / N, W = N + 1;
   const X = (i: number) => -S / 2 + i * st;
@@ -162,31 +170,50 @@ function frustumGeo(): THREE.BufferGeometry {
 }
 
 // ---- entities --------------------------------------------------------------------------------
+/** Ring line style by trust: live solid, coasting dashed, stale dotted (never a device's style). */
+type RingStyle = 'live' | 'coasting' | 'stale';
 interface Ent {
   gid: string; cls: number; kind: Kind;
   group: THREE.Group; body: THREE.Group;
   solid: THREE.Mesh; outline: THREE.LineSegments;
   arrow: THREE.LineSegments; drop: THREE.Line; trail: THREE.Line; trailStyle: number;
+  ring: THREE.Line; ringTicks: THREE.LineSegments;
+  /** Displayed radius (eases up, snaps down), the server's `ce` it chases (null: no ring), and the last geometry built. */
+  ringR: number; ringTarget: number | null; ringStyle: RingStyle; ringKey: string;
   label: CSS2DObject; labelText: string; labelOpacity: number;
   pts: { p: THREE.Vector3; t: number }[];
+  coasting: boolean; coastSince: number | null;
   staleSince: number | null; dying: boolean;
   a: Record<Channel, number>;
 }
 // `tone` is 0 for --ink (fresh) .. 1 for --ink-3 (about to lose its body).
-type Channel = 'solid' | 'tone' | 'outline' | 'arrow' | 'drop' | 'trail';
-const CHANNELS: Channel[] = ['solid', 'tone', 'outline', 'arrow', 'drop', 'trail'];
+type Channel = 'solid' | 'tone' | 'outline' | 'arrow' | 'drop' | 'trail' | 'ring';
+const CHANNELS: Channel[] = ['solid', 'tone', 'outline', 'arrow', 'drop', 'trail', 'ring'];
 const TRAIL_MS = 3000, TRAIL_MAX = 120;
 const ARROW_MIN = 0.3; // m/s
 // Decay schedule, seconds since the entity went stale: solid fading to --ink-3, then dotted outline, then gone.
 const SOLID_S = 3, OUTLINE_S = 8;
+/** Coasting tone: the solid at about --ink-2, between live and the stale fade. */
+const COAST_TONE = 0.4;
+
+// V2 rings. Up to RING_FULL_R a ring is drawn at its full channel opacity; beyond, it fades as
+// sqrt(RING_FULL_R / r) down to RING_FLOOR, so a dozen blackout rings stay quieter than the solids.
+// Past RING_MAX_R (the flat basin and the first swells) the ring stops growing on screen and four
+// short outward ticks say it is larger; the tag gives the real radius. Rings lie on the contour
+// field, so a wide one climbs the swells instead of cutting through them.
+const RING_N = 128, RING_FULL_R = 1.5, RING_FLOOR = 0.3, RING_MAX_R = 12, RING_TICK = 0.7;
 
 function targets(e: Ent, now: number): Record<Channel, number> {
-  const zero = { solid: 0, tone: 1, outline: 0, arrow: 0, drop: 0, trail: 0 };
+  const zero = { solid: 0, tone: 1, outline: 0, arrow: 0, drop: 0, trail: 0, ring: 0 };
   if (e.dying) return zero;
-  if (e.staleSince === null) return { solid: 0.95, tone: 0, outline: 0, arrow: 0.7, drop: 0.5, trail: 0.6 };
+  if (e.staleSince === null) {
+    // Coasting: dimmer, the velocity is a guess now (arrow down), the ring carries the message.
+    if (e.coasting) return { solid: 0.92, tone: COAST_TONE, outline: 0, arrow: 0.25, drop: 0.4, trail: 0.35, ring: 1 };
+    return { solid: 0.95, tone: 0, outline: 0, arrow: 0.7, drop: 0.5, trail: 0.6, ring: 0.5 };
+  }
   const s = (now - e.staleSince) / 1000;
-  if (s < SOLID_S) return { solid: 0.88, tone: s / SOLID_S, outline: 0, arrow: 0, drop: 0.3, trail: 0.3 };
-  if (s < OUTLINE_S) return { solid: 0, tone: 1, outline: 0.75, arrow: 0, drop: 0.2, trail: 0.12 };
+  if (s < SOLID_S) return { solid: 0.88, tone: COAST_TONE + (1 - COAST_TONE) * s / SOLID_S, outline: 0, arrow: 0, drop: 0.3, trail: 0.3, ring: 0.7 };
+  if (s < OUTLINE_S) return { solid: 0, tone: 1, outline: 0.75, arrow: 0, drop: 0.2, trail: 0.12, ring: 0.45 };
   return zero;
 }
 
@@ -236,8 +263,10 @@ export class TwinScene {
       const w = container.clientWidth, h = container.clientHeight;
       this.renderer.setSize(w, h); this.labels.setSize(w, h);
       this.camera.aspect = w / Math.max(h, 1);
-      // Keep the twin framed on narrow, tall stages: widen the vertical fov.
-      this.camera.fov = this.camera.aspect < 1 ? 40 + 22 * (1 - this.camera.aspect) : 40;
+      // Keep the twin framed on narrow, tall stages (phones, STAGE beside the panels): widen the
+      // vertical fov until the horizontal one holds about 44 degrees, up to 58.
+      const a = this.camera.aspect, fit = (2 * Math.atan(Math.tan((22 * Math.PI) / 180) / Math.max(a, 0.1)) * 180) / Math.PI;
+      this.camera.fov = Math.max(a < 1 ? 40 + 22 * (1 - a) : 40, Math.min(58, fit));
       this.camera.updateProjectionMatrix();
     };
     new ResizeObserver(resize).observe(container); resize();
@@ -279,6 +308,14 @@ export class TwinScene {
     return best;
   }
 
+  /** Where an entity's body is on screen (CSS px in the scene container), or null. For e2e tests. */
+  screenOf(gid: string): { x: number; y: number } | null {
+    const e = this.entities.get(gid);
+    if (!e) return null;
+    const v = new THREE.Vector3().setFromMatrixPosition(e.body.matrixWorld).project(this.camera);
+    return { x: (v.x * 0.5 + 0.5) * this.container.clientWidth, y: (-v.y * 0.5 + 0.5) * this.container.clientHeight };
+  }
+
   /** Stable line style per device for its lifetime in this view (0 solid, 1 dashed, 2 dotted). */
   styleOf(key: string): number {
     let s = this.styles.get(key);
@@ -307,6 +344,7 @@ export class TwinScene {
       // Opaque while fully present (correct depth), blended only while fading.
       (e.solid.material as THREE.Material).transparent = e.a.solid < 0.94;
       set(e.arrow, e.a.arrow); set(e.drop, e.a.drop); set(e.trail, e.a.trail);
+      this.updateRing(e, dt);
       const lo = e === focus && !e.dying ? 1 : 0;
       if (lo !== e.labelOpacity) { e.labelOpacity = lo; e.label.visible = lo > 0; }
     }
@@ -324,6 +362,44 @@ export class TwinScene {
     this.labels.render(this.scene, this.camera);
     requestAnimationFrame(this.loop);
   };
+
+  /** V2: radius from `ce`, line style from trust, opacity from the channel and the radius. */
+  private updateRing(e: Ent, dt: number) {
+    const target = e.ringTarget;
+    if (target === null) { e.ring.visible = false; e.ringTicks.visible = false; return; }
+    // A refresh resets the error, so shrinking snaps; growth eases (~0.2 s) so a jump in ce reads as growth.
+    if (e.ringR < 0 || target < e.ringR) e.ringR = target; else e.ringR += (target - e.ringR) * (1 - Math.exp(-dt / 0.12));
+    const r = Math.min(e.ringR, RING_MAX_R), clipped = e.ringR > RING_MAX_R;
+    const op = e.a.ring * (r <= RING_FULL_R ? 1 : Math.max(RING_FLOOR, Math.sqrt(RING_FULL_R / r)));
+    const rm = e.ring.material as THREE.LineDashedMaterial, tm = e.ringTicks.material as THREE.Material;
+    rm.opacity = op; e.ring.visible = op > 0.004 && r > 0.01;
+    tm.opacity = op; e.ringTicks.visible = e.ring.visible && clipped;
+    if (!e.ring.visible) return;
+    const cx = e.body.position.x, cz = e.body.position.z;
+    const key = `${cx.toFixed(3)} ${cz.toFixed(3)} ${r.toFixed(3)} ${e.ringStyle}`;
+    if (key === e.ringKey) return;
+    e.ringKey = key;
+    const p = e.ring.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i <= RING_N; i++) {
+      const a = (i / RING_N) * Math.PI * 2, x = cx + r * Math.cos(a), z = cz + r * Math.sin(a);
+      p.setXYZ(i, x, groundAt(x, z) + 0.02, z);
+    }
+    p.needsUpdate = true; e.ring.computeLineDistances();
+    // A fixed number of dashes or dots around the ring at any size.
+    const c = 2 * Math.PI * r;
+    if (e.ringStyle === 'live') { rm.dashSize = c; rm.gapSize = 0; }
+    else if (e.ringStyle === 'coasting') { rm.dashSize = 0.55 * c / 48; rm.gapSize = 0.45 * c / 48; }
+    else { rm.dashSize = 0.15 * c / 96; rm.gapSize = 0.85 * c / 96; }
+    if (clipped) {
+      const t = e.ringTicks.geometry.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4, ca = Math.cos(a), sa = Math.sin(a);
+        const x0 = cx + r * ca, z0 = cz + r * sa, x1 = cx + (r + RING_TICK) * ca, z1 = cz + (r + RING_TICK) * sa;
+        t.setXYZ(2 * i, x0, groundAt(x0, z0) + 0.02, z0); t.setXYZ(2 * i + 1, x1, groundAt(x1, z1) + 0.02, z1);
+      }
+      t.needsUpdate = true;
+    }
+  }
 
   private isLive(o: object): boolean {
     for (const e of this.entities.values()) if (e === o) return true;
@@ -349,12 +425,19 @@ export class TwinScene {
     const el = document.createElement('div'); el.className = 'tag3d';
     const label = new CSS2DObject(el); label.center.set(0, 1); label.position.set(0.06, K.half + 0.12, 0); label.visible = false;
     body.add(label);
-    group.add(body, drop, trail);
+    // Ring vertices are world positions draped on the terrain, rebuilt as the entity moves or the radius changes.
+    const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array((RING_N + 1) * 3), 3));
+    const ring = new THREE.Line(rg, new THREE.LineDashedMaterial({ ...additive, color: INK, opacity: 0, dashSize: 1, gapSize: 0 }));
+    const kg = new THREE.BufferGeometry(); kg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
+    const ringTicks = new THREE.LineSegments(kg, lineMat(0, 0));
+    ring.frustumCulled = false; ringTicks.frustumCulled = false; ring.visible = false; ringTicks.visible = false;
+    group.add(body, drop, trail, ring, ringTicks);
     this.scene.add(group);
     return {
       gid: g.gid, cls: g.class, kind, group, body, solid, outline, arrow, drop, trail, trailStyle: 0,
-      label, labelText: '', labelOpacity: 0, pts: [], staleSince: null, dying: false,
-      a: { solid: 0, tone: 0, outline: 0, arrow: 0, drop: 0, trail: 0 },
+      ring, ringTicks, ringR: -1, ringTarget: null, ringStyle: 'live', ringKey: '',
+      label, labelText: '', labelOpacity: 0, pts: [], coasting: false, coastSince: null, staleSince: null, dying: false,
+      a: { solid: 0, tone: 0, outline: 0, arrow: 0, drop: 0, trail: 0, ring: 0 },
     };
   }
 
@@ -363,13 +446,18 @@ export class TwinScene {
   private dispose(e: Ent) {
     e.label.removeFromParent(); // CSS2DObject removes its element on 'removed'
     this.scene.remove(e.group);
-    for (const o of [e.solid, e.outline, e.arrow, e.drop, e.trail]) (o.material as THREE.Material).dispose();
-    e.arrow.geometry.dispose(); e.drop.geometry.dispose(); e.trail.geometry.dispose();
+    for (const o of [e.solid, e.outline, e.arrow, e.drop, e.trail, e.ring, e.ringTicks]) (o.material as THREE.Material).dispose();
+    for (const o of [e.arrow, e.drop, e.trail, e.ring, e.ringTicks]) o.geometry.dispose();
   }
 
   private updateEntity(e: Ent, g: GlobalEntity, style: number, now: number) {
     const K = kinds()[e.kind];
     if (g.stale) e.staleSince ??= now; else e.staleSince = null;
+    // Coasting (S15): every source device missed its heartbeat. Older servers do not send it (no ring either).
+    e.coasting = !!g.coasting && !g.stale;
+    if (g.coasting || g.stale) e.coastSince ??= now; else e.coastSince = null;
+    e.ringTarget = typeof g.ce === 'number' && Number.isFinite(g.ce) && g.ce >= 0 ? g.ce : null;
+    e.ringStyle = g.stale ? 'stale' : e.coasting ? 'coasting' : 'live';
     const [x, y0, z] = g.pos;
     e.body.position.set(x, y0 + K.half, z);
     const dp = e.drop.geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -401,8 +489,12 @@ export class TwinScene {
     e.trail.geometry.computeBoundingSphere();
     if (style) e.trail.computeLineDistances();
 
-    const state = e.staleSince === null ? (len > ARROW_MIN ? `${len.toFixed(1)} m/s` : 'still') : `stale ${((now - e.staleSince) / 1000).toFixed(0)} s`;
-    const text = `${className(g.class)} · ${g.gid} · ${state}`;
+    const secs = (t: number) => `${((now - t) / 1000).toFixed(0)} s`;
+    const state = e.staleSince !== null ? `stale ${secs(e.staleSince)}` : e.coasting && e.coastSince !== null ? `coasting ${secs(e.coastSince)}`
+      : len > ARROW_MIN ? `${len.toFixed(1)} m/s` : 'still';
+    const err = e.ringTarget !== null ? ` · ±${fmtRadius(e.ringTarget)}` : '';
+    // Second line: the grid reference (S3) when the server has a geodetic anchor.
+    const text = `${className(g.class)} · ${g.gid} · ${state}${err}${g.geo?.mgrs ? `\n${g.geo.mgrs}` : ''}`;
     if (text !== e.labelText) { e.labelText = text; e.label.element.textContent = text; }
   }
 
@@ -464,7 +556,7 @@ export class TwinScene {
         this.scene.add(group); f = { group, line, label, style, silent: false }; this.frustums.set(dk, f);
       }
       f.silent = d.silent;
-      const text = `${d.provisional ? `dev ? · ${d.addr}` : `dev ${d.deviceId}`}${d.silent ? ' · lost' : ''}`;
+      const text = `${d.provisional ? `dev ? · ${d.addr}` : `dev ${d.deviceId}`}${d.silent ? ' · lost' : d.coasting ? ' · coasting' : ''}`;
       if (f.label.element.textContent !== text) f.label.element.textContent = text;
       f.label.element.classList.toggle('lost', d.silent);
       if (d.pose) { f.group.position.set(...d.pose.pos); f.group.quaternion.set(...d.pose.quat); f.group.visible = true; } else f.group.visible = false;
