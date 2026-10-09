@@ -105,6 +105,14 @@ const KF_PART_MIN_TICKS: u32 = TICK_HZ / 10;
 /// queued behind it) without paying a 39 B header per entity at the lowest rates (3 entities per
 /// part at 600 bit/s, 10 at 1500, a full datagram from ~5 kbit/s).
 const KF_PART_LINK_S: usize = 2;
+/// Budget controller: aim at this share of the budget (percent), leaving room for keyframes,
+/// spawns and despawns, which it cannot throttle.
+const CTRL_TARGET_PERCENT: i64 = 90;
+/// Bucket units per bit on the link: TICK_HZ x 10, so the drain per tick (budget x 0.9 / TICK_HZ)
+/// is an integer.
+const DEBT_PER_BIT: i64 = TICK_HZ as i64 * 10;
+/// A one-update Delta on the wire (68 B): the band holds at least two.
+const CTRL_DATAGRAM_BITS: i64 = 68 * 8;
 /// `pose()` slack: callers time poses on their own clock (iOS: frame timestamps), so a call one
 /// frame early still counts as due.
 const POSE_SLACK_TICKS: u32 = TICK_HZ / 30;
@@ -141,9 +149,15 @@ pub struct Edge {
     /// (id, tick) of the last repair sent per id, to ignore repeat nacks within a round trip.
     last_repair: Vec<(u32, u32)>,
     theta_scale: f32,
+    /// Start of the budget controller's current decision interval.
     window_start: u32,
-    /// Bytes on the link (payload + UDP/IP header) since `window_start`.
-    window_bytes: u64,
+    /// Leaky bucket against the budget, in bits x TICK_HZ x 10 on the link (payload + UDP/IP
+    /// header): every datagram adds its bits, the budget drains it at `CTRL_TARGET` of its rate.
+    debt: i64,
+    /// `debt` at the previous decision: rising means the edge is still spending above target.
+    debt_prev: i64,
+    /// Tick up to which the bucket has been drained.
+    debt_tick: u32,
     stats: EdgeStats,
 }
 
@@ -168,7 +182,9 @@ impl Edge {
             last_repair: Vec::new(),
             theta_scale: 1.0,
             window_start: 0,
-            window_bytes: 0,
+            debt: 0,
+            debt_prev: 0,
+            debt_tick: 0,
             stats: EdgeStats { theta_scale: 1.0, ..Default::default() },
         };
         e.apply_cadence();
@@ -195,6 +211,8 @@ impl Edge {
     /// next `Ack` overrides it: the server's budget is authoritative once it acks.
     pub fn set_budget(&mut self, bps: u32) {
         self.cfg.budget_bps = bps;
+        self.debt = 0;
+        self.debt_prev = 0;
         self.apply_cadence();
     }
 
@@ -463,27 +481,41 @@ impl Edge {
         let b = encode(&msg);
         self.stats.bytes_total += b.len() as u64;
         // The controller targets what the link carries: payload plus the UDP/IP header.
-        self.window_bytes += (b.len() + UDP_IP_OVERHEAD) as u64;
+        self.debt += ((b.len() + UDP_IP_OVERHEAD) * 8) as i64 * DEBT_PER_BIT;
         b
     }
 
-    /// Budget controller: every half second compare throughput with the budget and scale thresholds.
+    /// Budget controller. A leaky bucket integrates spending against `CTRL_TARGET` of the budget;
+    /// every half second the thresholds widen (x1.25) while the debt is over the band and still
+    /// rising, and narrow (x0.9) while the credit is over the band and not rising. A fixed 0.5 s
+    /// rate window cannot do this at low budgets: one 68 B datagram in it reads 1088 bit/s, over a
+    /// 1000 bit/s budget, so the scale ratcheted up on every packet and the link sat mostly idle.
+    /// The band holds at least two datagrams, the trend gate stops wind-up, and the bucket is
+    /// clamped so neither a long overload nor a long quiet spell is paid back for long.
     fn account(&mut self, now: u32) {
-        let window = TICK_HZ / 2;
-        if now.wrapping_sub(self.window_start) < window {
+        let budget = self.cfg.budget_bps as i64;
+        let dt = now.wrapping_sub(self.debt_tick);
+        self.debt_tick = now;
+        if budget == 0 {
+            self.debt = 0;
+            self.debt_prev = 0;
             return;
         }
-        if self.cfg.budget_bps > 0 {
-            let bps = self.window_bytes * 8 * (TICK_HZ as u64) / (window as u64);
-            if bps > self.cfg.budget_bps as u64 {
-                self.theta_scale *= 1.25;
-            } else if bps < (self.cfg.budget_bps as u64) * 7 / 10 {
-                self.theta_scale *= 0.9;
-            }
-            self.theta_scale = self.theta_scale.clamp(self.cfg.theta_scale_min, self.cfg.theta_scale_max);
+        let dt = if dt < u32::MAX / 2 { dt.min(10 * TICK_HZ) } else { 0 } as i64;
+        let band = (budget / 2).max(2 * CTRL_DATAGRAM_BITS) * DEBT_PER_BIT;
+        self.debt = (self.debt - budget * CTRL_TARGET_PERCENT / 10 * dt).clamp(-2 * band, 4 * band);
+        if now.wrapping_sub(self.window_start) < TICK_HZ / 2 {
+            return;
         }
+        let rising = self.debt >= self.debt_prev;
+        if self.debt > band && rising {
+            self.theta_scale *= 1.25;
+        } else if self.debt < -band && self.debt <= self.debt_prev {
+            self.theta_scale *= 0.9;
+        }
+        self.theta_scale = self.theta_scale.clamp(self.cfg.theta_scale_min, self.cfg.theta_scale_max);
+        self.debt_prev = self.debt;
         self.window_start = now;
-        self.window_bytes = 0;
     }
 }
 
@@ -724,8 +756,8 @@ mod tests {
     }
 
     /// One delta per tick (35 B payload): ~34 kbit/s of payload, ~61 kbit/s on the link. At a
-    /// 45 kbit/s budget the payload alone sits in the dead band (70-100 %); only header
-    /// accounting sees the overrun.
+    /// 45 kbit/s budget the payload alone is under the controller's 90 % target (it would narrow);
+    /// only header accounting sees the overrun.
     #[test]
     fn controller_counts_the_udp_ip_header() {
         let budget = 45_000;
@@ -733,18 +765,63 @@ mod tests {
         let hello = e.tick(&[], 0);
         e.on_datagram(&ack(budget));
         let (mut payload, mut wire) = (hello[0].len(), hello[0].len() + UDP_IP_OVERHEAD);
-        for now in 1..=TICK_HZ / 2 {
+        for now in 1..=2 * TICK_HZ {
             let jump = Track { id: 1, class: PERSON, pos: [0.5 * (now % 2) as f32, 0.0, 0.0], vel: [0.0; 3], conf: 200 };
             for d in e.tick(&[jump], now) {
                 payload += d.len();
                 wire += d.len() + UDP_IP_OVERHEAD;
             }
         }
-        let (payload_bps, wire_bps) = (payload as u32 * 16, wire as u32 * 16); // half a second
-        assert!(payload_bps > budget * 7 / 10 && payload_bps < budget, "payload alone: {payload_bps} bit/s");
+        let (payload_bps, wire_bps) = (payload as u32 * 4, wire as u32 * 4); // two seconds
+        assert!(payload_bps > budget * 7 / 10 && payload_bps < budget * 9 / 10, "payload alone: {payload_bps} bit/s");
         assert!(wire_bps > budget, "on the link: {wire_bps} bit/s");
-        assert_eq!(e.stats().theta_scale, 1.25, "controller saw the header");
+        assert!(e.stats().theta_scale > 1.2, "controller saw the header: {}", e.stats().theta_scale);
         assert_eq!(e.stats().bytes_total, payload as u64, "bytes_total stays payload only");
+    }
+
+    /// `n` people circling at 1.2 m/s on 3 m circles (continuous turning: a delta every ~0.6 s each
+    /// at θ 0.15), each in its own phase.
+    fn circlers(n: u32, now: u32) -> Vec<Track> {
+        (0..n)
+            .map(|i| {
+                let a = now as f64 / TICK_HZ as f64 * 0.4 + i as f64 * 1.3;
+                let c = [i as f64 * 8.0, 0.0];
+                let pos = [(c[0] + 3.0 * a.cos()) as f32, 0.0, (c[1] + 3.0 * a.sin()) as f32];
+                let vel = [(-1.2 * a.sin()) as f32, 0.0, (1.2 * a.cos()) as f32];
+                Track { id: 1 + i, class: PERSON, pos, vel, conf: 230 }
+            })
+            .collect()
+    }
+
+    /// The controller holds the budget on average without over-throttling: with a scene that would
+    /// overrun the budget at θ 0.15, the long-run rate on the link sits at 70-100 % of the budget
+    /// and the threshold settles instead of ratcheting to the max. (The fixed 0.5 s window read one
+    /// 68 B datagram as 1088 bit/s and left a 1000 bit/s link at 38 %.)
+    #[test]
+    fn controller_holds_low_budgets_on_average() {
+        for (budget, walkers) in [(450u32, 1u32), (1000, 2), (1500, 2), (8000, 12)] {
+            let mut e = Edge::new(1, 42, EdgeConfig::default());
+            e.tick(&[], 0);
+            e.on_datagram(&ack(budget));
+            let (warmup, end) = (60 * TICK_HZ, 240 * TICK_HZ);
+            let (mut bits, mut scales) = (0u64, Vec::new());
+            for now in 1..end {
+                for d in e.tick(&circlers(walkers, now), now) {
+                    if now >= warmup {
+                        bits += ((d.len() + UDP_IP_OVERHEAD) * 8) as u64;
+                    }
+                }
+                if now >= warmup && now % (TICK_HZ / 2) == 0 {
+                    scales.push(e.stats().theta_scale);
+                }
+            }
+            let bps = bits * TICK_HZ as u64 / (end - warmup) as u64;
+            let mean_scale = scales.iter().sum::<f32>() / scales.len() as f32;
+            let at_max = scales.iter().filter(|s| **s >= e.cfg.theta_scale_max).count();
+            assert!(bps >= budget as u64 * 3 / 4 && bps <= budget as u64, "budget {budget}: {bps} bit/s, theta scale {mean_scale}");
+            assert!(at_max == 0, "budget {budget}: theta at the max in {at_max} of {} samples", scales.len());
+            assert!(mean_scale > e.cfg.theta_scale_min && mean_scale < e.cfg.theta_scale_max, "budget {budget}: regulating, not pinned ({mean_scale})");
+        }
     }
 
     fn statics(n: u32) -> Vec<Track> {
