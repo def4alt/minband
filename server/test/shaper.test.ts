@@ -134,6 +134,25 @@ test('setFor: timed override reverts; an explicit change ends it early', () => {
   assert.deepEqual([s.config.loss, s.config.delayMs], [0.05, 800]);
 });
 
+test('queue: at most `queue` datagrams in the delay line, like netem limit; 0 = unbounded', () => {
+  const { s, clock } = mk();
+  s.set({ enabled: true, delayMs: 300, queue: 4 });
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map(() => s.offer(20, () => {})), [true, true, true, true, false, false]);
+  assert.deepEqual([s.counters.droppedQueue, s.counters.dropped, s.counters.inFlight], [2, 2, 4]);
+  clock.advance(300); // the four leave the line
+  assert.equal(s.counters.inFlight, 0);
+  assert.equal(s.offer(20, () => {}), true);
+  s.set({ queue: 0 });
+  assert.ok(Array.from({ length: 50 }, () => s.offer(20, () => {})).every(Boolean));
+  // Lost before the queue (like netem): a loss drop does not count as a queue drop.
+  const { s: s2 } = mk(() => 0);
+  s2.set({ enabled: true, delayMs: 300, queue: 1, loss: 0.5 });
+  s2.offer(20, () => {});
+  assert.deepEqual([s2.counters.droppedLoss, s2.counters.droppedQueue], [1, 0]);
+  assert.deepEqual(sanitizeShaper({ queue: '8' }).ok, { queue: 8 });
+  assert.equal(sanitizeShaper({ queue: '-1' }).errors.length, 1);
+});
+
 test('sanitizeShaper validates ranges and booleans', () => {
   assert.deepEqual(sanitizeShaper({ bps: '2000', loss: '0.3', enabled: '1', delayMs: '0', burstSec: '0.5' }).ok, { bps: 2000, loss: 0.3, enabled: true, delayMs: 0, burstSec: 0.5 });
   const bad = sanitizeShaper({ loss: '30', bps: '-1', enabled: 'maybe', burstSec: '0' });

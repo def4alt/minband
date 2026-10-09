@@ -3,13 +3,16 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { sanitizeShaper } from './shaper.js';
 import { anchorFromQuery, anchorInfo } from './geo.js';
 import { currentCotEvents, eventsXml, type CotOptions } from './cot.js';
+import { linkError } from './link.js';
 import type { World } from './world.js';
 
 export const MAX_GT_BYTES = 64 * 1024 * 1024;
 
 const ENDPOINTS = [
   'GET  /api/metrics',
-  'GET  /api/shaper?enabled=0|1&bps=&delayMs=&loss=0..1&burstSec=&revertAfterMs=',
+  'GET  /api/shaper?enabled=0|1&bps=&delayMs=&loss=0..1&burstSec=&queue=&revertAfterMs=',
+  'GET  /api/link?profile=clean|degraded|hf|lora|telemetry|contested|blackout|external&as=<profile>',
+  'GET  /api/baseline-a',
   'GET  /api/budget?bps=',
   'GET  /api/fusion?enabled=0|1',
   'GET  /api/geo?lat=&lon=&heading=&alt= | ?mgrs=&heading= | ?clear=1',
@@ -61,7 +64,7 @@ export function createApi(world: World, opts: { cot?: CotOptions } = {}) {
         case '/api/shaper': {
           const { revertAfterMs, ...rest } = q;
           const { ok, errors } = sanitizeShaper(rest);
-          const unknown = Object.keys(rest).filter(k => !['bps', 'delayMs', 'loss', 'burstSec', 'enabled'].includes(k));
+          const unknown = Object.keys(rest).filter(k => !['bps', 'delayMs', 'loss', 'burstSec', 'queue', 'enabled'].includes(k));
           if (unknown.length) errors.push(`unknown parameter(s): ${unknown.join(', ')}`);
           let revert: number | undefined;
           if (revertAfterMs !== undefined) {
@@ -69,10 +72,26 @@ export function createApi(world: World, opts: { cot?: CotOptions } = {}) {
             if (!Number.isFinite(revert) || revert <= 0 || revert > 3_600_000) errors.push('revertAfterMs must be in (0, 3600000]');
           }
           if (errors.length) { send(res, 400, { error: errors.join('; ') }); return; }
-          if (Object.keys(ok).length) {
-            if (revert !== undefined) world.shaper.setFor(ok, revert); else world.shaper.set(ok);
-          }
+          if (Object.keys(ok).length) world.link.manual(ok, revert); // by hand: profile 'custom' unless timed
           send(res, 200, shaperState(world));
+          return;
+        }
+        case '/api/link': {
+          const { profile, as, ...rest } = q;
+          const unknown = Object.keys(rest);
+          if (unknown.length) { send(res, 400, { error: `unknown parameter(s): ${unknown.join(', ')}` }); return; }
+          if (profile === undefined && as !== undefined) { send(res, 400, { error: 'as needs profile=external' }); return; }
+          if (profile !== undefined) {
+            const err = linkError(profile, as);
+            if (err) { send(res, 400, { error: err }); return; }
+            world.link.apply(profile, as);
+          }
+          send(res, 200, world.linkView());
+          return;
+        }
+        case '/api/baseline-a': {
+          const table = world.baselineA.get(true);
+          send(res, 200, { baselineA: table, file: world.baselineA.file, error: world.baselineA.error });
           return;
         }
         case '/api/budget': {

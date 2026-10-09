@@ -14,14 +14,19 @@
 // Acks are only generated for datagrams that got through the shaper, so an emulated blackout
 // also silences the downlink, and a Hello dropped by the shaper does not get the edge acked (an
 // acked edge stops sending Hello, and the server would never learn its device_id).
+//
+// Packet events (V3): every datagram arriving at the socket (dropped by the shaper or not) and
+// every ack sent is queued as a PacketEvent and drained into the next snapshot.
 import { WasmReceiver } from 'minband-core';
 import { ClockOffset } from './clock.js';
 import { Fusion } from './fusion.js';
 import { Shaper, UDP_IP_OVERHEAD } from './shaper.js';
 import { peek, type Peek } from './peek.js';
+import { Link, NO_AIRTIME, airtimeMs, type LinkDeps } from './link.js';
+import { BaselineA } from './baseline.js';
 import { SnapshotRing, evaluateTwin, parseGroundTruthCsv, summarize, type TwinEvaluation } from './groundtruth.js';
 import { anchorView, geoPoint, type GeoAnchor } from './geo.js';
-import type { DeviceView, EntityView, PoseView, Snapshot, TwinError } from './types.js';
+import type { AirtimeModel, DeviceView, EntityView, LinkView, PacketEvent, PoseView, Snapshot, TwinError } from './types.js';
 import { TICK_HZ } from './types.js';
 
 export const DEVICE_SILENT_MS = 5_000;
@@ -32,18 +37,33 @@ export const ADOPT_WINDOW_MS = 5_000;
 export const ADOPT_TICK_TOLERANCE = TICK_HZ;
 const RATE_WINDOW_MS = 2_000;
 const LOG_LINES = 200;
-const BASELINES = { h264_720p_bps: 1_500_000, h264_480p_bps: 500_000, naiveMetadataBps: 0 };
+/** Packet events kept between snapshots (oldest dropped first). */
+export const MAX_PACKETS = 2_000;
+/** Until core's peek_json lands, Peek has no `ids`. */
+type PeekIds = Peek & { ids?: number[] };
 
 /** Sliding-window byte/message counter. */
 export class RateWindow {
   private t: number[] = []; private b: number[] = []; private head = 0; private sum = 0;
   constructor(readonly windowMs = RATE_WINDOW_MS) {}
   push(t: number, bytes: number) { this.t.push(t); this.b.push(bytes); this.sum += bytes; }
-  rate(nowMs: number): { bps: number; msgsPerSec: number } {
+  private prune(nowMs: number) {
     while (this.head < this.t.length && nowMs - this.t[this.head] >= this.windowMs) { this.sum -= this.b[this.head]; this.head++; }
     if (this.head > 1024 && this.head * 2 > this.t.length) { this.t = this.t.slice(this.head); this.b = this.b.slice(this.head); this.head = 0; }
+  }
+  rate(nowMs: number): { bps: number; msgsPerSec: number } {
+    this.prune(nowMs);
     const s = this.windowMs / 1000;
     return { bps: this.sum * 8 / s, msgsPerSec: (this.t.length - this.head) / s };
+  }
+  /** Share of the window's wall time its datagrams occupy on air under `m` (sizes here include the
+   * UDP/IP header, which is not on air). Recomputed per call, so a new model applies at once. */
+  airtimeShare(nowMs: number, m: AirtimeModel): number {
+    if (m.kind === 'none') return 0;
+    this.prune(nowMs);
+    let ms = 0;
+    for (let i = this.head; i < this.b.length; i++) ms += airtimeMs(m, this.b[i] - UDP_IP_OVERHEAD);
+    return ms / this.windowMs;
   }
 }
 
@@ -89,7 +109,7 @@ export class Device {
     return e === null ? this.rx.last_edge_tick() : Math.max(0, Math.round(e / 1000 * TICK_HZ));
   }
 
-  view(nowMs: number): DeviceView {
+  view(nowMs: number, model: AirtimeModel = NO_AIRTIME): DeviceView {
     const tick = this.edgeTickNow(nowMs);
     this.rx.gc(tick);
     const silent = nowMs - this.lastSeenMs > DEVICE_SILENT_MS;
@@ -103,13 +123,20 @@ export class Device {
       stats: JSON.parse(this.rx.stats_json()), lastSeenMs: this.lastSeenMs,
       key: this.key, provisional: this.provisional, offeredBps: o.bps, edgeTick: tick, silent,
       addrChanges: this.addrChanges, clockOffsetMs: this.clock.offsetMs,
+      airtimeShare: this.delivered.airtimeShare(nowMs, model),
     };
   }
 
   free() { this.rx.free(); }
 }
 
-export interface WorldOptions { now?: () => number; shaper?: Shaper; geo?: GeoAnchor | null }
+export interface WorldOptions {
+  now?: () => number; shaper?: Shaper; geo?: GeoAnchor | null;
+  /** Timers and RNG for the contested loop (tests pass a fake clock). */
+  link?: Pick<LinkDeps, 'rng' | 'schedule' | 'cancel'>;
+  /** Default: runs/baseline_a.json (MINBAND_BASELINE_A). */
+  baselineAFile?: string;
+}
 type TwinRecord = TwinEvaluation & { updatedMs: number };
 
 export class World {
@@ -120,8 +147,13 @@ export class World {
   private readonly byAddr = new Map<string, Device>();
   readonly fusion = new Fusion();
   readonly shaper: Shaper;
+  readonly link: Link;
+  readonly baselineA: BaselineA;
+  /** Link budget (0 = unlimited), split over the live devices in each ack: see `edgeBudget`. */
   budgetBps = 0;
   log: string[] = [];
+  /** Packet events since the last snapshot (V3). */
+  packets: PacketEvent[] = [];
   /** Called with (address, ack datagram) whenever an ack is due. */
   onAck: (addr: string, ack: Uint8Array) => void = () => {};
   /** Per device_id: what the twin served, 30 Hz, last 60 s (outlives the Device for late GT uploads). */
@@ -131,12 +163,16 @@ export class World {
   /** Geodetic anchor of the marker origin (S3): fills Snapshot.geo and GlobalEntity.geo; CoT needs it. */
   geo: GeoAnchor | null;
   private readonly unattributed = new RateWindow();
+  /** Acks sent, all devices (downlink airtime). */
+  private readonly acksOut = new RateWindow();
   readonly startedMs: number;
 
   constructor(opts: WorldOptions = {}) {
     this.now = opts.now ?? Date.now;
     this.shaper = opts.shaper ?? new Shaper({ now: this.now });
     this.geo = opts.geo ?? null;
+    this.link = new Link({ ...opts.link, shaper: this.shaper, now: this.now, setBudget: b => { this.budgetBps = b; }, note: l => this.note(this.now(), l) });
+    this.baselineA = new BaselineA(opts.baselineAFile, this.now);
     this.startedMs = this.now();
   }
 
@@ -146,20 +182,46 @@ export class World {
   /** Every raw datagram from the socket. Goes through the shaper, then to its device. */
   ingest(addr: string, buf: Uint8Array): void {
     const nowMs = this.now();
-    (this.byAddr.get(addr)?.offered ?? this.unattributed).push(nowMs, buf.length + UDP_IP_OVERHEAD);
-    this.shaper.offer(buf.length, () => this.deliver(addr, buf, this.now()));
+    const known = this.byAddr.get(addr);
+    (known?.offered ?? this.unattributed).push(nowMs, buf.length + UDP_IP_OVERHEAD);
+    const p: PeekIds = peek(buf);
+    // A Hello names its device before it is routed; anything else belongs to the address's owner.
+    const up: PacketEvent = { t: nowMs, dir: 'up', key: p.kind === 'hello' ? `id:${p.deviceId}` : known?.key ?? '', kind: p.kind, bytes: buf.length + UDP_IP_OVERHEAD, dropped: false };
+    if (p.seq !== undefined) up.seq = p.seq;
+    if (p.ids) up.ids = p.ids;
+    this.packet(up);
+    if (!this.shaper.offer(buf.length, () => this.deliver(addr, buf, p, up, this.now()))) up.dropped = true;
   }
 
-  private deliver(addr: string, buf: Uint8Array, nowMs: number) {
-    const p = peek(buf);
+  /** Budget each edge is told: the link budget split evenly over the devices heard in the last
+   * DEVICE_SILENT_MS. A profile's budget is the link's; an edge under its budget tightens its
+   * thresholds toward the floor (one walker at 8 kbit/s: ~330 B/s instead of ~130), so N edges each
+   * told the whole budget oversubscribe the link N times. One device: unchanged. */
+  edgeBudget(nowMs = this.now()): number {
+    if (this.budgetBps <= 0) return 0;
+    let n = 0;
+    for (const d of this.devices.values()) if (nowMs - d.lastSeenMs <= DEVICE_SILENT_MS) n++;
+    return Math.max(1, Math.floor(this.budgetBps / Math.max(1, n)));
+  }
+
+  private packet(ev: PacketEvent) {
+    if (this.packets.length >= MAX_PACKETS) this.packets.shift();
+    this.packets.push(ev);
+  }
+
+  private deliver(addr: string, buf: Uint8Array, p: Peek, up: PacketEvent, nowMs: number) {
     if (p.kind === 'malformed' || p.kind === 'ack') { this.note(nowMs, `${addr} ignored: ${p.text}`); return; }
     const dev = this.route(addr, p, nowMs);
+    up.key = dev.key; // identified or adopted on the way in (moot if a snapshot already carried it)
     let ev: string;
     try { ev = dev.ingest(buf, nowMs); } catch (e) { this.note(nowMs, `${addr} malformed: ${e}`); return; }
     this.note(nowMs, `${addr} ${ev}`);
     if (dev.rx.needs_ack() || nowMs - dev.lastAckMs >= ACK_INTERVAL_MS) {
       dev.lastAckMs = nowMs;
-      this.onAck(dev.addr, dev.rx.make_ack(this.budgetBps));
+      const ack = dev.rx.make_ack(this.edgeBudget(nowMs));
+      this.acksOut.push(nowMs, ack.length + UDP_IP_OVERHEAD);
+      this.packet({ t: nowMs, dir: 'down', key: dev.key, kind: 'ack', bytes: ack.length + UDP_IP_OVERHEAD, dropped: false });
+      this.onAck(dev.addr, ack);
     }
   }
 
@@ -267,7 +329,16 @@ export class World {
     return r;
   }
 
-  views(nowMs = this.now()): DeviceView[] { return [...this.devices.values()].map(d => d.view(nowMs)); }
+  views(nowMs = this.now()): DeviceView[] { return [...this.devices.values()].map(d => d.view(nowMs, this.link.model)); }
+
+  /** Profile, airtime model, and uplink/downlink channel use over the rate window, all devices. */
+  linkView(nowMs = this.now(), views?: DeviceView[]): LinkView {
+    let airtimeShare = 0, msgsPerSec = 0;
+    if (views) for (const v of views) { airtimeShare += v.airtimeShare; msgsPerSec += v.msgsPerSec; }
+    else for (const d of this.devices.values()) { airtimeShare += d.delivered.airtimeShare(nowMs, this.link.model); msgsPerSec += d.delivered.rate(nowMs).msgsPerSec; }
+    const down = { airtimeShare: this.acksOut.airtimeShare(nowMs, this.link.model), msgsPerSec: this.acksOut.rate(nowMs).msgsPerSec };
+    return this.link.view({ airtimeShare, msgsPerSec }, down);
+  }
 
   /** Called at 30 Hz: the WS snapshot; also records what the twin served for twin-error. */
   snapshot(nowMs = this.now()): Snapshot {
@@ -276,13 +347,15 @@ export class World {
     for (const v of devices) if (!v.provisional) this.ring(v.deviceId).push(v.edgeTick, v.entities);
     const global = this.fusion.update(devices, nowMs).map(g => ({ ...g, geo: this.geo && geoPoint(g.pos, this.geo) }));
     const entityCount = devices.reduce((a, d) => a + d.entities.length, 0);
-    this.lastSnapshot = {
+    const baselineA = this.baselineA.get();
+    const snap: Snapshot = {
       t: nowMs, devices, global, shaper: this.shaper.config, fusion: this.fusion.enabled,
-      baselines: { ...BASELINES, naiveMetadataBps: entityCount * 31 * 30 * 8 + 30 * 40 * 8 },
+      baselines: { ...this.baselineA.legacy(), naiveMetadataBps: entityCount * 31 * 30 * 8 + 30 * 40 * 8 },
       budgetBps: this.budgetBps, shaperRevertMs: this.shaper.revertInMs(),
-      geo: anchorView(this.geo),
+      link: this.linkView(nowMs, devices), packets: this.packets.splice(0), baselineA, geo: anchorView(this.geo),
     };
-    return this.lastSnapshot;
+    this.lastSnapshot = snap;
+    return snap;
   }
 
   /** Evaluate an uploaded ground-truth CSV against what the twin served. Null: unknown device. */
@@ -306,7 +379,7 @@ export class World {
 
   metrics(nowMs = this.now()) {
     const devs = [...this.devices.values()];
-    const views = devs.map(d => d.view(nowMs));
+    const views = devs.map(d => d.view(nowMs, this.link.model));
     const deviceEntityCount = views.reduce((a, v) => a + v.entities.length, 0);
     return {
       t: nowMs,
@@ -317,7 +390,7 @@ export class World {
         const v = views[i]; const tw = d.deviceId !== null ? this.twin.get(d.deviceId) : undefined;
         return {
           key: v.key, deviceId: d.deviceId, provisional: v.provisional, addr: d.addr, aliases: [...d.aliases],
-          bps: v.bps, offeredBps: v.offeredBps, msgsPerSec: v.msgsPerSec,
+          bps: v.bps, offeredBps: v.offeredBps, msgsPerSec: v.msgsPerSec, airtimeShare: v.airtimeShare,
           entities: v.entities.length, staleEntities: v.entities.filter(e => e.stale).length,
           stats: v.stats, lastSeenMs: d.lastSeenMs, silentMs: nowMs - d.lastSeenMs, silent: v.silent,
           edgeTick: v.edgeTick, lastEdgeTick: d.rx.last_edge_tick(),
@@ -329,6 +402,8 @@ export class World {
       unattributedBps: this.unattributed.rate(nowMs).bps,
       shaper: { config: this.shaper.config, counters: { ...this.shaper.counters }, revertInMs: this.shaper.revertInMs(), capacityBytes: Number.isFinite(this.shaper.capacity()) ? this.shaper.capacity() : null },
       budgetBps: this.budgetBps,
+      edgeBudgetBps: this.edgeBudget(nowMs),
+      link: this.linkView(nowMs, views),
       fusion: this.fusion.enabled,
       twinError: this.twinError(),
     };

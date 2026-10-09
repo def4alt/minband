@@ -21,7 +21,7 @@ test('GET /api/shaper sets and reports the shaper; bad input is a 400 that chang
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('access-control-allow-origin'), '*');
     let j = await r.json();
-    assert.deepEqual(j.config, { bps: 2000, delayMs: 100, loss: 0.3, enabled: true, burstSec: 0.5 });
+    assert.deepEqual(j.config, { bps: 2000, delayMs: 100, loss: 0.3, enabled: true, burstSec: 0.5, queue: 0 });
     assert.equal(typeof j.counters.dropped, 'number');
     r = await fetch(`${base}/api/shaper?loss=30`);
     assert.equal(r.status, 400);
@@ -72,6 +72,65 @@ test('GET /api/metrics, /api/budget, /api/fusion; POST /api/ground-truth', async
     assert.equal((await fetch(`${base}/api/ground-truth?deviceId=42`)).status, 405);
     assert.equal((await fetch(`${base}/nope`)).status, 404);
     assert.equal((await fetch(`${base}/api/metrics`, { method: 'OPTIONS' })).status, 204);
+  });
+  e.free();
+});
+
+test('GET /api/link applies profiles (400 on bad input, nothing changes); /api/shaper by hand makes it custom', async () => {
+  const clock = new FakeClock();
+  const shaper = new Shaper({ now: clock.now, schedule: clock.schedule, cancel: clock.cancel });
+  const world = new World({ now: clock.now, shaper, link: { schedule: clock.schedule, cancel: clock.cancel, rng: () => 0 } });
+  await withServer(world, async base => {
+    const get = async (q: string) => { const r = await fetch(`${base}/api/link${q}`); return { status: r.status, j: await r.json() }; };
+    let { status, j } = await get('');
+    assert.equal(status, 200);
+    assert.deepEqual([j.profile, j.model, j.airtimeShare, j.msgsPerSec, j.profiles.length], ['clean', { kind: 'none' }, 0, 0, 7]);
+    ({ j } = await get('?profile=lora'));
+    assert.deepEqual([j.profile, j.model.kind, j.model.sf, world.budgetBps], ['lora', 'lora', 11, 1_500]);
+    assert.deepEqual([shaper.config.enabled, shaper.config.bps, shaper.config.delayMs, shaper.config.loss, shaper.config.queue], [true, 2_000, 300, 0.1, 4]);
+    for (const q of ['?profile=nope', '?profile=lora&as=hf', '?as=hf', '?profile=lora&x=1', '?profile=external&as=custom']) {
+      ({ status, j } = await get(q));
+      assert.equal(status, 400, q);
+      assert.equal(typeof j.error, 'string');
+    }
+    assert.deepEqual([world.link.profile, world.budgetBps, shaper.config.bps], ['lora', 1_500, 2_000]);
+    ({ j } = await get('?profile=external&as=hf'));
+    assert.deepEqual([j.profile, j.as, j.model.kind, j.model.rateBps, world.budgetBps, shaper.config.enabled], ['external', 'hf', 'serial', 9_600, 8_000, false]);
+    ({ j } = await get('?profile=contested'));
+    assert.deepEqual(j.contested, { blackout: false, switchInMs: 3_000 });
+    clock.advance(3_000);
+    assert.equal((await get('')).j.contested.blackout, true);
+
+    // A timed override keeps the profile; a hand-made change ends it.
+    await fetch(`${base}/api/shaper?loss=1&revertAfterMs=1000`);
+    assert.equal((await get('')).j.profile, 'contested');
+    const s = await (await fetch(`${base}/api/shaper?delayMs=100&queue=8`)).json();
+    assert.deepEqual([s.config.delayMs, s.config.queue, s.config.loss], [100, 8, 0.1]);
+    ({ j } = await get(''));
+    assert.deepEqual([j.profile, j.model.kind, j.contested], ['custom', 'lora', undefined]);
+    assert.equal(clock.pending, 0, 'contested loop and the override timer are gone');
+
+    const m = await (await fetch(`${base}/api/metrics`)).json();
+    assert.equal(m.link.profile, 'custom');
+    assert.equal(typeof m.shaper.counters.droppedQueue, 'number');
+  });
+});
+
+test('GET /api/baseline-a returns the table; metrics carry per-device airtime', async () => {
+  const clock = new FakeClock();
+  const world = new World({ now: clock.now, shaper: new Shaper({ now: clock.now, schedule: clock.schedule, cancel: clock.cancel }), baselineAFile: '/nonexistent/baseline_a.json' });
+  const e = new ScriptedEdge(world, clock, '127.0.0.1:9000', 42, 1);
+  wireAcks(world, [e]);
+  world.link.apply('external', 'lora');
+  e.run(600);
+  await withServer(world, async base => {
+    const b = await (await fetch(`${base}/api/baseline-a`)).json();
+    assert.deepEqual(b.baselineA.map((x: { id: string }) => x.id), ['h264_720p', 'h264_480p', 'h264_360p']);
+    assert.deepEqual([b.file, b.error], ['/nonexistent/baseline_a.json', null]);
+    const m = await (await fetch(`${base}/api/metrics`)).json();
+    assert.ok(m.devices[0].airtimeShare > 0);
+    assert.equal(m.link.airtimeShare, m.devices[0].airtimeShare);
+    assert.deepEqual([m.link.profile, m.link.as], ['external', 'lora']);
   });
   e.free();
 });

@@ -83,7 +83,7 @@ profile() {
   case "$1" in
     clean)     NETEM=(limit 1000); BUDGET=0; ABOUT="Wi-Fi reference, pass-through" ;;
     degraded)  NETEM=(rate 64kbit ${oh[@]+"${oh[@]}"} delay 20ms loss 2% limit 20); BUDGET=0; ABOUT="busy mesh" ;;
-    hf)        NETEM=(rate 9600bit ${oh[@]+"${oh[@]}"} delay 500ms loss 1% limit 8); BUDGET=8000; ABOUT="NATO HF ceiling" ;;
+    hf)        NETEM=(rate 9600bit ${oh[@]+"${oh[@]}"} delay 500ms loss 1% limit 32); BUDGET=8000; ABOUT="NATO HF ceiling" ;;
     lora)      NETEM=(rate 2kbit ${oh[@]+"${oh[@]}"} delay 300ms loss 10% limit 4); BUDGET=1500; ABOUT="Meshtastic-class LoRa" ;;
     telemetry) NETEM=(rate 600bit ${oh[@]+"${oh[@]}"} delay 50ms loss 5% limit 4); BUDGET=450; ABOUT="ELRS-class control-link telemetry" ;;
     contested) profile lora; ABOUT="intermittent jamming: lora with random $CONTESTED_DOWN s blackouts" ;;

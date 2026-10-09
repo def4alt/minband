@@ -124,7 +124,7 @@ shape wlan0 sport rate 2kbit delay 300ms loss 10% limit 4   # downlink, acks -> 
 |---|---|---|---|---|---|---|
 | `clean` | none | none | 0 | none | 0 | Wi-Fi reference |
 | `degraded` | 64 kbit | 20 ms | 2 % | 20 | 0 | Busy mesh |
-| `hf` | 9600 bit | 500 ms | 1 % | 8 | 8000 | NATO HF ceiling (drones-per-link slide) |
+| `hf` | 9600 bit | 500 ms | 1 % | 32 | 8000 | NATO HF ceiling (drones-per-link slide) |
 | `lora` | 2 kbit | 300 ms | 10 % | 4 | 1500 | Meshtastic-class LoRa |
 | `telemetry` | 600 bit | 50 ms | 5 % | 4 | 450 | ELRS-class control-link telemetry |
 | `contested` | `lora`, alternating with 1-5 s random blackouts | | | | 1500 | Intermittent jamming |
@@ -134,13 +134,21 @@ Scripted: `sudo tools/pi-link.sh <profile>`, which prints the budget command for
 Three details differ from the sketch above: netem's rate gets a `-14` B packet overhead, since at
 the qdisc a datagram still carries its 14 B Ethernet header and the server and `tools/eval` count
 payload + 28 B; `clean` keeps the tree with a pass-through netem so `status` still counts; and
-netem's `limit` also holds the datagrams waiting out the delay, so `hf` (8 per 500 ms) drops above
-16 datagrams/s even when the rate has room, which the drones-per-link run may hit (raise it
-there if so).
+`hf`'s queue is 32, not 8 (below).
 
-Set the budget from the laptop with `curl 'localhost:8080/api/budget?bps=...'` when switching
-profiles, until the box does it itself (stretch L2). Unplugging the cable can change the NAT source
+When switching profiles on the box, tell the server which one it emulates:
+`curl 'localhost:8080/api/link?profile=external&as=lora'` sets the edge budget from this table and
+the airtime model for the time-on-air readout, with the in-process shaper off (stretch L2 is the box
+doing this itself). Without the box, `/api/link?profile=lora` applies the same row in-process,
+including `contested` as a server-side loop (`server/README.md`). The budget is the link's: the
+server splits it over the devices it hears. Unplugging the cable can change the NAT source
 port when it comes back; the server's device identity handles that (DESIGN §4).
+
+netem's `limit` counts packets still in the delay line, so it also caps the rate in datagrams:
+`limit / delay`. With the sketch's 8 that is 16 datagrams/s for `hf`; eight one-walker feeds send
+about 17/s, so a third of them were dropped at the queue (measured in-process, which models `limit`
+the same way). A real radio's buffer does not hold packets in flight, so the `hf` row uses 32
+(about 8 % drops in the same run, mean twin error 4.4 cm).
 
 Say what the box is: it reproduces a radio's rate, delay and loss, not its framing. At 600 bit/s
 the 28 B UDP/IP header is a large share of every datagram; a real telemetry radio would not carry
@@ -177,7 +185,7 @@ golden file only if the change is intentional (`UPDATE_GOLDEN=1`).
 | # | Idea | Size |
 |---|---|---|
 | L1 | `tools/pi-link.sh <profile>` wrapping §3.2-3.3, plus `contested` as a background loop (done) | S |
-| L2 | The script also sets the edge budget and reports the profile name to the server so the viewer shows `LINK: lora 2 kbit/s · 68 % airtime` (needs a small `/api/link` endpoint; the keyframe period follows the budget with S19, the airtime figure comes with S2) | S |
+| L2 | The script also sets the edge budget and reports the profile name to the server so the viewer shows `LINK: lora 2 kbit/s · 68 % airtime` (`/api/link?profile=external&as=<profile>` exists and returns the airtime figure (S2); the keyframe period follows the budget with S19) | S |
 | L3 | Physical button on the Pi GPIO (gpiozero) that cycles profiles; an LED that goes dark on blackout | S |
 | L4 | `simplex` profile: downlink 100 % loss, so the ground station never transmits (do together with S1, the first stretch item) | S |
 

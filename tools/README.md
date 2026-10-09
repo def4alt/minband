@@ -33,7 +33,7 @@ tools/pi-link.sh --dry-run hf     # print the exact tc commands (anywhere, no ro
 |---|---|---:|
 | `clean` | pass-through (`limit 1000`); same tree, so `status` still counts | 0 (unlimited) |
 | `degraded` | `rate 64kbit delay 20ms loss 2% limit 20` | 0 |
-| `hf` | `rate 9600bit delay 500ms loss 1% limit 8` | 8000 |
+| `hf` | `rate 9600bit delay 500ms loss 1% limit 32` | 8000 |
 | `lora` | `rate 2kbit delay 300ms loss 10% limit 4` | 1500 |
 | `telemetry` | `rate 600bit delay 50ms loss 5% limit 4` | 450 |
 | `contested` | `lora`, alternating with random 1-5 s blackouts (background loop, pidfile `/run/minband-pi-link/contested.pid`; any other profile or `clear` stops it) | 1500 |
@@ -52,10 +52,10 @@ a server that has `/api/link`.
   still carries its 14 B Ethernet header, so without it netem would count payload + 42 B where the
   server and `tools/eval` count payload + 28 B. `L2_OVERHEAD=0` counts the header.
 - **Queue.** netem's `limit` also counts packets waiting out the delay, so it caps datagrams in
-  flight. `hf` is the one profile where that binds before the rate: 8 per 500 ms is 16
-  datagrams/s, and 9600 bit/s carries 16 datagrams/s of 75 B, so smaller datagrams at a higher
-  count (a one-update delta is 64 B; many devices in the drones-per-link run) are tail-dropped on
-  top of the 1 % loss. Raise its `limit` if that run shows drops the rate does not explain.
+  flight: `limit / delay` datagrams/s. `hf` is the one profile where that would bind before the
+  rate: the plan's original 8 per 500 ms is 16 datagrams/s, and eight one-walker feeds send about
+  17/s (a one-update delta is 64 B), so a third were tail-dropped on top of the 1 % loss. A real
+  radio's buffer does not hold packets in flight, so `hf` uses `limit 32` (64 datagrams/s).
 - **Kernel.** netem needs the `sch_netem` module; Raspberry Pi OS ships it (`modinfo sch_netem`).
 - **Settings.** `UP_DEV`, `DOWN_DEV`, `PORT`, `SERVER`, setup's `SSID`/`PASSWORD`/`BAND`/`COUNTRY`,
   `CONTESTED_UP`/`CONTESTED_DOWN` and more: `tools/pi-link.sh --help`.

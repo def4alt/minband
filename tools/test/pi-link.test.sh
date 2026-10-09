@@ -88,7 +88,7 @@ while IFS='|' read -r p budget netem; do
 done <<'EOF'
 clean|0|limit 1000
 degraded|0|rate 64kbit -14 delay 20ms loss 2% limit 20
-hf|8000|rate 9600bit -14 delay 500ms loss 1% limit 8
+hf|8000|rate 9600bit -14 delay 500ms loss 1% limit 32
 lora|1500|rate 2kbit -14 delay 300ms loss 10% limit 4
 telemetry|450|rate 600bit -14 delay 50ms loss 5% limit 4
 contested|1500|rate 2kbit -14 delay 300ms loss 10% limit 4
@@ -151,7 +151,7 @@ check "SERVER" has_line "$OUT" "curl 'http://10.0.0.5:8080/api/budget?bps=450'"
 OUT="$(DRY_RUN=1 "$SCRIPT" degraded)"
 check "DRY_RUN=1 same as --dry-run" has_line "$OUT" "tc qdisc add dev eth0 parent 1:4 handle 40: netem rate 64kbit -14 delay 20ms loss 2% limit 20"
 OUT="$("$SCRIPT" hf -n)"
-check "-n after the command" has_line "$OUT" "tc qdisc add dev wlan0 parent 1:4 handle 40: netem rate 9600bit -14 delay 500ms loss 1% limit 8"
+check "-n after the command" has_line "$OUT" "tc qdisc add dev wlan0 parent 1:4 handle 40: netem rate 9600bit -14 delay 500ms loss 1% limit 32"
 
 # Test hooks change only what they say.
 LEAF_QDISC_OVERRIDE='pfifo limit 64' ROOT_QDISC_OVERRIDE=htb dry lora
@@ -197,7 +197,7 @@ else
   check "without --dry-run tc runs (here: the stub, so the safety net works)" grep -q 'real tc called' "$TMP/err"
 fi
 OUT="$(bash -c 'source "$1"; profile hf; leaf; echo "${LEAF[*]}"' _ "$SCRIPT")"
-same "sourcing runs nothing and exposes the profile table" "$OUT" "netem rate 9600bit -14 delay 500ms loss 1% limit 8"
+same "sourcing runs nothing and exposes the profile table" "$OUT" "netem rate 9600bit -14 delay 500ms loss 1% limit 32"
 
 echo "pi-link dry-run: $PASS passed, $FAIL failed"
 (( FAIL == 0 ))

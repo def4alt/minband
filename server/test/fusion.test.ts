@@ -7,6 +7,7 @@ const ent = (id: number, x: number, cls = 0, vx = 0): EntityView => ({ id, class
 const dev = (deviceId: number, entities: EntityView[], key = `id:${deviceId}`): DeviceView => ({
   deviceId, addr: '', entities, pose: null, bps: 0, msgsPerSec: 0, stats: {}, lastSeenMs: 0,
   key, provisional: false, offeredBps: 0, edgeTick: 0, silent: false, addrChanges: 0, clockOffsetMs: null,
+  airtimeShare: 0,
 });
 /** Run `f.update` every 33 ms from `from` to `to` (inclusive) with a fixed scene; return the last output. */
 function run(f: Fusion, from: number, to: number, devices: () => DeviceView[]) {
