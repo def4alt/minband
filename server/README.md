@@ -142,9 +142,9 @@ is the Pi link box table (`docs/HACKATHON_PLAN.md` 3.3) and lives in `src/link.t
 | `clean` | | | | | 0 | none | Wi-Fi reference (shaper off) |
 | `degraded` | 64 kbit/s | 20 ms | 2 % | 20 | 0 | none | Busy mesh |
 | `hf` | 9600 bit/s | 500 ms | 1 % | 32 | 8000 | serial 9600, 10 bit/B, +2 B | NATO HF ceiling |
-| `lora` | 2 kbit/s | 300 ms | 10 % | 4 | 1500 | LoRa LongFast | Meshtastic-class LoRa |
+| `lora` | 2 kbit/s | 300 ms | 10 % | 4 | 1500 | LoRa MediumSlow | Meshtastic-class LoRa |
 | `telemetry` | 600 bit/s | 50 ms | 5 % | 4 | 450 | serial 600, 10 bit/B, +2 B | ELRS-class control-link telemetry |
-| `contested` | `lora`, alternating with blackouts | | | | 1500 | LoRa LongFast | Intermittent jamming |
+| `contested` | `lora`, alternating with blackouts | | | | 1500 | LoRa MediumSlow | Intermittent jamming |
 | `blackout` | | | 100 % | | 0 | none | Link cut |
 
 - Applying a profile sets the shaper (`enabled`, `bps`, `delayMs`, `loss`, `queue`; `burstSec`
@@ -160,11 +160,12 @@ is the Pi link box table (`docs/HACKATHON_PLAN.md` 3.3) and lives in `src/link.t
 {
   "profile": "lora",                 // or "custom", "external"
   "as": "lora",                      // only with "external"
-  "model": { "kind": "lora", "sf": 11, "bwHz": 250000, "cr": 5, "preamble": 16, "crc": true,
+  "model": { "kind": "lora", "sf": 10, "bwHz": 250000, "cr": 5, "preamble": 16, "crc": true,
              "explicitHeader": true, "lowDataRateOptimize": false, "overheadBytes": 0 },
-  "airtimeShare": 1.04,              // uplink channel time per second, all devices (can exceed 1)
+  "rateBps": 2000,                   // emulated rate (external: the `as` profile's; custom: the shaper's bps, 0 when off); 0 = unshaped
+  "airtimeShare": 0.56,              // uplink channel time per second, all devices (can exceed 1)
   "msgsPerSec": 2.1,                 // uplink datagrams/s delivered, all devices
-  "downAirtimeShare": 0.56,          // acks, same model (a half-duplex radio shares the channel)
+  "downAirtimeShare": 0.30,          // acks, same model (a half-duplex radio shares the channel)
   "downMsgsPerSec": 1.9,
   "contested": { "blackout": false, "switchInMs": 2700 },   // only while profile is contested
   "profiles": [ /* LinkProfile[], the table above */ ]
@@ -179,19 +180,23 @@ carries the payload in its own frame, the IP header only exists on the Wi-Fi/Eth
 emulation (the shaper, the bytes graph and packet events still count it, since the emulated link
 carries it). Counted from what arrives, so under loss it is a lower bound.
 
-- `lora`: Semtech time-on-air formula (SX127x, SF7-12) with Meshtastic LongFast defaults: SF11,
-  250 kHz, CR 4/5 (`cr` is the denominator, 5..8), 16-symbol preamble, explicit header, CRC on,
-  LDRO off; raw LoRa PHY (`overheadBytes` 0; a Meshtastic transport would add its 16 B header).
-  16 B = 354.3 ms, 34 B (a one-walker delta) = 518.1 ms, 100 B = 1009.7 ms.
+- `lora`: Semtech time-on-air formula (SX127x, SF7-12) with the Meshtastic MediumSlow preset:
+  SF10, 250 kHz, CR 4/5 (`cr` is the denominator: 5 = 4/5), 16-symbol preamble, explicit header,
+  CRC on, LDRO off; ~1.95 kbit/s raw, consistent with the profile's 2 kbit/s rate. Raw LoRa PHY
+  (`overheadBytes` 0; a Meshtastic transport would add its 16 B header). 16 B = 197.6 ms, 34 B (a
+  one-walker delta) = 259.1 ms, 100 B = 545.8 ms. `lora`, `contested` and `external&as=lora` use
+  it. `LORA_LONGFAST` (SF11, ~1.07 kbit/s raw: 16 B = 354.3 ms, 34 B = 518.1 ms) stays in
+  `src/link.ts` as the reference behind the plan's "60 B/s is roughly 70 % of a channel" figure,
+  which is a LongFast number: the same traffic needs about half that on MediumSlow.
 - `serial` (`hf`, `telemetry`): `(payload + 2) x 10 bits / rate`: a UART at the link rate with
   8N1 framing and two SLIP-style delimiters per datagram (a synchronous HF modem would be 8 bits
   per byte).
 
 Reference load, one walker through the edge (`SCENE=spread`, 120 s, acks on, budget 0, no Pose;
 protocol v1): 2.1 datagrams/s, 131 B/s on the wire, mean payload 35 B. Uplink airtime: `hf` 8.0 %,
-`lora` / `contested` 105 %, `telemetry` 128 % (acks add 1.5 %, 56 %, 24 %). On LoRa the binding
-limit is airtime, not the 2 kbit/s rate (52 % of it). At a profile's own budget the edge adapts
-(cadence, thresholds), so the live figure differs: the default two-walker sim reads 85-96 % up on
+`lora` / `contested` 56 % (105 % on LongFast), `telemetry` 128 % (acks add 1.5 %, 30 %, 24 %); the
+`lora` figure matches the 52 % of its 2 kbit/s wire rate. At a profile's own budget the edge adapts
+(cadence, thresholds), so the live figure differs: the default two-walker sim reads 56-67 % up on
 `lora` and about 43 % on `telemetry`, where the shaper drops about half its datagrams.
 
 ### `GET /api/baseline-a`

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { describe } from 'minband-core';
 import { World } from '../src/world.js';
 import { Shaper, UDP_IP_OVERHEAD } from '../src/shaper.js';
-import { LORA_LONGFAST, airtimeMs, serialModel } from '../src/link.js';
+import { LORA_MEDIUMSLOW, airtimeMs, serialModel } from '../src/link.js';
 import type { AirtimeModel, PacketEvent } from '../src/types.js';
 import { FakeClock, ScriptedEdge, wireAcks } from './fake.js';
 
@@ -35,16 +35,16 @@ test('airtime share per device and in total, from delivered datagrams under the 
   const d42 = snap.devices.find(d => d.deviceId === 42)!, d43 = snap.devices.find(d => d.deviceId === 43)!;
   assert.equal(d42.cadence.keyframeMs, 1400 / 120 * 1000);
   assert.equal(w42, 2 * d42.cadence.keyframeMs);
-  const e42 = share(LORA_LONGFAST, up(42), w42);
-  assert.ok(e42 > 0.1, `share ${e42}`);
+  const e42 = share(LORA_MEDIUMSLOW, up(42), w42);
+  assert.ok(e42 > 0.05, `share ${e42}`);
   assert.ok(Math.abs(d42.airtimeShare - e42) < 1e-9, `${d42.airtimeShare} vs ${e42}`);
-  assert.ok(Math.abs(d43.airtimeShare - share(LORA_LONGFAST, up(43), w43)) < 1e-9);
+  assert.ok(Math.abs(d43.airtimeShare - share(LORA_MEDIUMSLOW, up(43), w43)) < 1e-9);
   assert.ok(Math.abs(snap.link.airtimeShare - d42.airtimeShare - d43.airtimeShare) < 1e-12);
   const msgs = inWin(up(42), w42).length * 1000 / w42 + inWin(up(43), w43).length * 1000 / w43;
   assert.ok(Math.abs(snap.link.msgsPerSec - msgs) < 1e-9);
-  assert.ok(Math.abs(snap.link.downAirtimeShare! - share(LORA_LONGFAST, p => p.dir === 'down', wd)) < 1e-9);
+  assert.ok(Math.abs(snap.link.downAirtimeShare! - share(LORA_MEDIUMSLOW, p => p.dir === 'down', wd)) < 1e-9);
   assert.ok(snap.link.downMsgsPerSec! > 0);
-  assert.deepEqual([snap.link.profile, snap.link.as, snap.link.model], ['external', 'lora', LORA_LONGFAST]);
+  assert.deepEqual([snap.link.profile, snap.link.as, snap.link.model], ['external', 'lora', LORA_MEDIUMSLOW]);
   // A new model applies to the same window at once; no model, no airtime.
   world.link.apply('external', 'hf');
   assert.ok(Math.abs(world.linkView().airtimeShare - share(serialModel(9_600), up(42), w42) - share(serialModel(9_600), up(43), w43)) < 1e-9);
