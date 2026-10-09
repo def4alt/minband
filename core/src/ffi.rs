@@ -11,6 +11,7 @@
 
 use std::sync::{Mutex, MutexGuard};
 
+use crate::cadence::Cadence;
 use crate::edge::{Edge, EdgeConfig, EdgeStats, Track};
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -27,7 +28,8 @@ pub struct FfiTrack {
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
 pub struct FfiEdgeStats {
     pub seq: u32,
-    /// Payload bytes of every datagram produced so far (Hello, Delta, Keyframe, Pose).
+    /// Payload bytes of every datagram produced so far (Hello, Delta, Keyframe, Pose). The link
+    /// carries 28 B (UDP/IPv4) more per datagram.
     pub bytes_total: u64,
     pub deltas: u32,
     pub keyframes: u32,
@@ -35,6 +37,13 @@ pub struct FfiEdgeStats {
     /// Budget controller multiplier on `theta_pos`/`theta_vel` (1.0 = configured thresholds).
     pub theta_scale: f32,
     pub acked: bool,
+    /// Keyframe period and minimum pose interval (ticks) derived from `budget_bps`.
+    pub keyframe_ticks: u32,
+    pub pose_ticks: u32,
+    /// Budget in force (bit/s, 0 = unlimited): the last `Ack`'s, else `set_budget`'s.
+    pub budget_bps: u32,
+    /// Position threshold in use (m), theta_pos x `theta_scale`: the tolerance bubble radius (V4).
+    pub theta_m: f32,
 }
 
 impl From<EdgeStats> for FfiEdgeStats {
@@ -47,6 +56,34 @@ impl From<EdgeStats> for FfiEdgeStats {
             updates: s.updates,
             theta_scale: s.theta_scale,
             acked: s.acked,
+            keyframe_ticks: s.keyframe_ticks,
+            pose_ticks: s.pose_ticks,
+            budget_bps: s.budget_bps,
+            theta_m: s.theta_m,
+        }
+    }
+}
+
+/// Heartbeat cadence for a budget, in ticks of 1/120 s (see `core/src/cadence.rs`).
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
+pub struct FfiCadence {
+    pub keyframe_ticks: u32,
+    pub hello_refresh_ticks: u32,
+    pub pose_ticks: u32,
+    pub coast_ticks: u32,
+    pub stale_ticks: u32,
+    pub drop_ticks: u32,
+}
+
+impl From<Cadence> for FfiCadence {
+    fn from(c: Cadence) -> Self {
+        Self {
+            keyframe_ticks: c.keyframe_ticks,
+            hello_refresh_ticks: c.hello_refresh_ticks,
+            pose_ticks: c.pose_ticks,
+            coast_ticks: c.coast_ticks,
+            stale_ticks: c.stale_ticks,
+            drop_ticks: c.drop_ticks,
         }
     }
 }
@@ -81,7 +118,8 @@ impl FfiEdge {
         self.edge().on_datagram(&bytes)
     }
 
-    /// Bits per second, 0 = unlimited. A non-zero `budget_bps` in a later `Ack` overrides it.
+    /// Bits per second, 0 = unlimited; also sets the keyframe, Hello and pose cadence. The next
+    /// `Ack` overrides it (the server's budget is authoritative, 0 included).
     pub fn set_budget(&self, bps: u32) {
         self.edge().set_budget(bps)
     }
@@ -91,8 +129,9 @@ impl FfiEdge {
     }
 
     /// Encode a `Pose` (consumes a seq). `pos`: metres, marker frame. `quat`: unit `[x, y, z, w]`
-    /// rotating camera-frame vectors into the marker frame. Empty before the first `Ack`; callers
-    /// must not send an empty datagram.
+    /// rotating camera-frame vectors into the marker frame. Empty before the first `Ack` and when
+    /// called sooner than the budget's pose interval (`stats().pose_ticks`, 0.5 s unlimited, 10 s
+    /// below 4 kbit/s), so it can be called at any rate; callers must not send an empty datagram.
     pub fn encode_pose(&self, pos: Vec<f32>, quat: Vec<f32>, origin_locked: bool, tick: u32) -> Vec<u8> {
         let quat = if quat.len() == 4 { [quat[0], quat[1], quat[2], quat[3]] } else { [0.0, 0.0, 0.0, 1.0] };
         self.edge().pose(vec3(&pos), quat, origin_locked, tick).unwrap_or_default()
@@ -117,6 +156,12 @@ pub fn describe(bytes: Vec<u8>) -> String {
     crate::wire::describe(&bytes)
 }
 
+/// The cadence the edge follows at `budget_bps` (0 = unlimited), e.g. to show the keyframe period.
+#[uniffi::export]
+pub fn cadence(budget_bps: u32) -> FfiCadence {
+    crate::cadence::cadence(budget_bps).into()
+}
+
 fn vec3(v: &[f32]) -> [f32; 3] {
     let at = |i: usize| v.get(i).copied().unwrap_or(0.0);
     [at(0), at(1), at(2)]
@@ -139,6 +184,10 @@ mod tests {
 
     fn ack(last_seq: u32, missing: Vec<u32>) -> Vec<u8> {
         encode(&Message::Ack { last_seq, missing, budget_bps: 0 })
+    }
+
+    fn ack_budget(budget_bps: u32) -> Vec<u8> {
+        encode(&Message::Ack { last_seq: 0, missing: vec![], budget_bps })
     }
 
     #[test]
@@ -202,8 +251,8 @@ mod tests {
         // The FFI layer must not change what goes on the wire.
         let ffi = FfiEdge::with_thresholds(3, 9, 0.1, 0.2, 4000);
         let mut core = Edge::new(3, 9, EdgeConfig { theta_pos: 0.1, theta_vel: 0.2, budget_bps: 4000, ..EdgeConfig::default() });
-        ffi.on_datagram(ack(0, vec![]));
-        core.on_datagram(&ack(0, vec![]));
+        ffi.on_datagram(ack_budget(4000));
+        core.on_datagram(&ack_budget(4000));
         for tick in 0..600u32 {
             let x = tick as f32 / 100.0;
             let t = walker(x * x);
@@ -211,6 +260,22 @@ mod tests {
             assert_eq!(ffi.tick(vec![t], tick), want, "tick {tick}");
         }
         assert_eq!(ffi.stats(), FfiEdgeStats::from(core.stats()));
+        assert_eq!((ffi.stats().budget_bps, ffi.stats().keyframe_ticks), (4000, cadence(4000).keyframe_ticks));
+    }
+
+    #[test]
+    fn cadence_and_pose_gating_cross_the_ffi() {
+        let edge = FfiEdge::new(1, 1);
+        edge.tick(vec![], 0);
+        edge.on_datagram(ack_budget(600));
+        let c = cadence(600);
+        assert_eq!(c, FfiCadence::from(crate::cadence::cadence(600)));
+        let s = edge.stats();
+        assert_eq!((s.keyframe_ticks, s.pose_ticks, s.budget_bps, s.theta_m), (c.keyframe_ticks, c.pose_ticks, 600, 0.15));
+        let q = vec![0.0, 0.0, 0.0, 1.0];
+        assert!(!edge.encode_pose(vec![0.0; 3], q.clone(), true, 10).is_empty());
+        assert!(edge.encode_pose(vec![0.0; 3], q.clone(), true, 10 + 60).is_empty(), "not due: empty, do not send");
+        assert!(!edge.encode_pose(vec![0.0; 3], q, true, 10 + c.pose_ticks).is_empty());
     }
 
     #[test]
