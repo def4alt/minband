@@ -1,0 +1,19 @@
+# rust
+core/target/
+core/pkg-node/
+core/pkg-web/
+# node
+node_modules/
+viewer/dist/
+# ios
+ios/MinBand.xcodeproj/
+ios/build/
+ios/DerivedData/
+ios/Frameworks/MinBandCore.xcframework/
+ios/MinBand/Generated/
+ios/MinBand/Models/*.mlpackage
+ios/MinBand/Models/*.mlmodelc
+# data
+runs/
+*.log
+.DS_Store

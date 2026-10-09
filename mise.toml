@@ -1,0 +1,7 @@
+# Project toolchain. `mise install` in this directory sets everything up.
+[tools]
+rust = { version = "1.99.0", targets = "aarch64-apple-ios,aarch64-apple-ios-sim,wasm32-unknown-unknown" }
+pnpm = "12.10.1"
+xcodegen = "2.46.0"
+cargo-binstall = "1.25.2"
+"cargo:wasm-pack" = "0.15.0"

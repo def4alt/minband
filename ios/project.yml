@@ -1,0 +1,28 @@
+# XcodeGen spec. `cd ios && xcodegen generate` creates MinBand.xcodeproj (gitignored).
+name: MinBand
+options:
+  bundleIdPrefix: dev.minband
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  MinBand:
+    type: application
+    platform: iOS
+    sources: [MinBand]
+    dependencies:
+      - framework: Frameworks/MinBandCore.xcframework
+        embed: false
+        optional: true
+    info:
+      path: MinBand/Info.plist
+      properties:
+        NSCameraUsageDescription: "MinBand tracks objects with the camera and ARKit."
+        NSLocalNetworkUsageDescription: "MinBand streams entity updates to the laptop twin."
+        UIRequiredDeviceCapabilities: [arkit]
+        UILaunchScreen: {}
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        TARGETED_DEVICE_FAMILY: "1"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/Frameworks"
+        SWIFT_OBJC_BRIDGING_HEADER: MinBand/Generated/minband_coreFFI.h
