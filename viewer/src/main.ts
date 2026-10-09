@@ -1,6 +1,9 @@
 import { LINE_STYLES, TwinScene } from './scene';
 import { Halftone } from './halftone';
-import type { ControlMessage, ShaperConfig, Snapshot } from './types';
+import { VideoOnLink } from './videolink';
+import { Clicker, Waterfall } from './waterfall';
+import { fmtBps, fmtKbps, fmtRate, fmtSeconds, fmtTimes, h264, linkDown, linkRate, modelText } from './link';
+import type { ControlMessage, LinkProfile, ShaperConfig, Snapshot } from './types';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -9,17 +12,16 @@ const MONO = css('--mono');
 const LINK_IN = css('--series-1'), SENT = css('--series-4'); // graph series: colour, not dash
 
 const scene = new TwinScene($('scene'));
+// Dev server only: lets dev/smoke.ts find an entity on screen to hover.
+if (import.meta.env.DEV) Object.assign(window, { __minband: { scene } });
 const WS_URL = (import.meta.env.VITE_WS_URL as string | undefined) ?? `ws://${location.hostname}:8080`;
 // The HTTP API is served by the same server as the WebSocket.
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? WS_URL.replace(/^ws/, 'http');
 let ws: WebSocket;
 const send = (m: ControlMessage) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
 
-const fmtBps = (b: number) => b >= 1e6 ? `${(b / 1e6).toFixed(2)} Mbps` : b >= 1e3 ? `${(b / 1e3).toFixed(1)} kbps` : `${Math.round(b)} bps`;
-/** Rounded to what a human needs (STYLE.md, Restraint): kbps with one decimal, error in whole cm. */
-const fmtKbps = (b: number) => `${(b / 1000).toFixed(1)} kbps`;
 const fmtCm = (m: number) => `${Math.round(m * 100)} cm`;
-const fmtTimes = (x: number) => `${Math.round(x).toLocaleString('en-US')}×`;
+const fmtPct = (x: number) => `${Math.round(x * 100)} %`;
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 /** Inline markup: dim separators between credit values. */
 const SEP = (c = '·') => ` <span class="sep">${c}</span> `;
@@ -34,8 +36,23 @@ const capSlider = (bps: number) => bps <= 0 ? 0 : Math.max(1, Math.min(STEPS, Ma
 function setHTML(id: string, html: string) { const el = $(id); if (el.innerHTML !== html) el.innerHTML = html; }
 function setText(id: string, text: string) { const el = $(id); if (el.textContent !== text) el.textContent = text; }
 const buttons = (sel: string) => Array.from(document.querySelectorAll<HTMLButtonElement>(sel));
+const params = new URLSearchParams(location.search);
 
-// ---- scenarios -------------------------------------------------------------------------------
+/**
+ * Numbers never jump (STYLE.md): airtime over the server's 2 s window swings on slow links, where
+ * one keyframe can hold the channel for seconds, so readouts show it smoothed over ~3 s.
+ */
+const smoothed = new Map<string, { v: number; t: number }>();
+function smooth(key: string, v: number, t: number, tauMs = 3000): number {
+  const s = smoothed.get(key);
+  if (!s || t < s.t || t - s.t > 10_000) { smoothed.set(key, { v, t }); return v; }
+  s.v += (v - s.v) * (1 - Math.exp(-(t - s.t) / tauMs)); s.t = t;
+  return s.v;
+}
+
+// ---- link profiles (S2) -----------------------------------------------------------------------
+// The server's profile table (`snap.link.profiles`, HACKATHON_PLAN 3.3) drives the selector. These
+// shaper-only scenarios are the fallback for a server without `snap.link`.
 const SCENARIOS: Record<string, Partial<ShaperConfig>> = {
   clean: { enabled: false, bps: 0, delayMs: 0, loss: 0 },
   contested: { enabled: true, bps: 50_000, delayMs: 300, loss: 0.05 },
@@ -48,8 +65,40 @@ function scenarioOf(s: ShaperConfig, revertMs: number | null): string {
   for (const [name, p] of Object.entries(SCENARIOS)) if (p.enabled && p.bps === s.bps && p.delayMs === s.delayMs && Math.abs((p.loss ?? 0) - s.loss) < 1e-9) return name;
   return 'custom';
 }
-/** Link condition for the credits row: the scenario name, or the shaper settings when custom. */
-const linkDesc = (s: ShaperConfig, name: string) => name !== 'custom' ? name : [s.bps ? fmtBps(s.bps) : 'uncapped', `${Math.round(s.delayMs)} ms`, `${Math.round(s.loss * 100)}%`].join(SEP());
+const timedBlackout = (snap: Snapshot) => snap.shaperRevertMs != null && snap.shaper.enabled && snap.shaper.loss >= 1;
+/** The shaper settings, for a link set by hand. */
+const shaperDesc = (s: ShaperConfig) => [s.enabled && s.bps ? fmtRate(s.bps) : 'uncapped', `${Math.round(s.delayMs)} ms`, `${Math.round(s.loss * 100)}%`].join(SEP());
+/** Credits row, Link: `lora 2 kbit/s · 68 % airtime`, `blackout · 7 s left`, or the settings when set by hand. */
+function linkCredit(snap: Snapshot): string {
+  const s = snap.shaper, l = snap.link;
+  if (timedBlackout(snap)) return `blackout${SEP()}${Math.ceil(snap.shaperRevertMs! / 1000)} s left`;
+  if (!l) { const name = scenarioOf(s, snap.shaperRevertMs ?? null); return name === 'custom' ? shaperDesc(s) : name; }
+  const rate = linkRate(snap);
+  const head = l.profile === 'custom' ? shaperDesc(s) : `${esc(l.profile)}${rate ? ` ${fmtRate(rate)}` : ''}`;
+  const down = linkDown(snap) && l.profile !== 'blackout' ? `${SEP()}link down` : '';
+  const air = l.model && l.model.kind !== 'none' ? `${SEP()}${fmtPct(smooth('link', l.airtimeShare, snap.t))} airtime` : '';
+  return `${head}${down}${air}`;
+}
+
+const profileParams = (p: LinkProfile) => p.loss >= 1 ? '100% loss' : !p.bps && !p.delayMs && !p.loss ? 'no impairment'
+  : [p.bps ? fmtRate(p.bps) : 'uncapped', `${Math.round(p.delayMs)} ms`, `${Math.round(p.loss * 100)}%`].join(' · ');
+let profileSig = '';
+function renderProfiles(profiles: LinkProfile[]) {
+  // A held 'blackout' profile is left out: the timed action below is the stage-safe cut.
+  const shown = profiles.filter(p => p.name !== 'blackout');
+  const sig = shown.map(p => `${p.name}:${p.bps}:${p.delayMs}:${p.loss}:${p.label}`).join(',');
+  if (sig === profileSig) return;
+  profileSig = sig;
+  $('scenario').innerHTML = shown.map(p => `<button data-profile="${esc(p.name)}" title="${esc(p.label)}">${esc(p.name)}<span class="p">${profileParams(p)}</span></button>`).join('')
+    + `<button data-blackout="1" title="100% loss for 10 s, then the link comes back">Blackout 10 s<span class="p">100% loss</span></button>`;
+}
+/** Header of the profile section: what the active profile stands for. */
+function profileNote(snap: Snapshot): string {
+  const l = snap.link!;
+  if (timedBlackout(snap)) return `blackout · ${Math.ceil(snap.shaperRevertMs! / 1000)} s left`;
+  if (l.profile === 'external') return `external${l.model.kind !== 'none' ? ` · ${modelText(l.model)}` : ''}`;
+  return l.profiles.find(p => p.name === l.profile)?.label ?? l.profile;
+}
 
 // ---- bytes graph: oscilloscope ---------------------------------------------------------------
 const HIST = 300; // 10 s at 30 Hz
@@ -88,15 +137,16 @@ function drawGraph(snap: Snapshot) {
     ctx.strokeStyle = INK2; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = INK2; ctx.textAlign = 'left'; ctx.fillText(`CAP ${fmtBps(cap)}`, 3, yy - 5);
   }
-  // H.264 baseline: a dashed reference when it is on the scale, else a label at the top edge saying how far over
-  const h264 = snap.baselines.h264_720p_bps;
-  if (h264 <= max) {
-    const yy = px(y(h264));
+  // H.264 baseline (Baseline A, "configured" until measured): a dashed reference when it is on the
+  // scale, else a label at the top edge saying how far over
+  const v = h264(snap, '720'), name = `${v.label.toUpperCase()}${v.measured ? '' : ' · CONFIGURED'}`;
+  if (v.bps <= max) {
+    const yy = px(y(v.bps));
     ctx.strokeStyle = INK2; ctx.setLineDash([1.5, 3]); ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = INK2; ctx.textAlign = 'left'; ctx.fillText('H.264 720P', 3, yy - 5);
+    ctx.fillStyle = INK2; ctx.textAlign = 'left'; ctx.fillText(name, 3, yy - 5);
   } else {
     ctx.fillStyle = INK2; ctx.textAlign = 'left';
-    ctx.fillText(`▲ H.264 720P ${fmtBps(h264)} · ${fmtTimes(h264 / Math.max(total, 1))} above`, 0, 6);
+    ctx.fillText(`▲ ${name} ${fmtBps(v.bps)} · ${fmtTimes(v.bps / Math.max(total, 1))} above`, 0, 6);
   }
 
   const trace = (pick: (h: { total: number; offered: number }) => number, color: string) => {
@@ -125,11 +175,24 @@ function setToggle(id: string, on: boolean) {
   const v = b.querySelector('.v'); if (v && v.textContent !== (on ? 'on' : 'off')) v.textContent = on ? 'on' : 'off';
 }
 const isOn = (id: string) => $(id).classList.contains('on');
-let scenario = 'clean';
-function setScenario(name: string) {
-  scenario = name;
-  for (const b of buttons('#scenario button')) b.classList.toggle('on', b.dataset.scenario === name);
-  setText('scenarioName', name);
+
+/** Highlight the active profile (or fallback scenario) unless the operator just clicked one. */
+function syncProfiles(snap: Snapshot) {
+  if (!idle('scenario')) return;
+  if (!snap.link) {
+    const name = scenarioOf(snap.shaper, snap.shaperRevertMs ?? null);
+    for (const b of buttons('#scenario button')) b.classList.toggle('on', b.dataset.scenario === name);
+    setText('scenarioName', name);
+    return;
+  }
+  renderProfiles(snap.link.profiles);
+  const timed = timedBlackout(snap), active = timed ? 'blackout' : snap.link.profile;
+  for (const b of buttons('#scenario button')) {
+    const on = b.dataset.blackout ? active === 'blackout' : b.dataset.profile === active;
+    b.classList.toggle('on', on);
+    if (b.dataset.blackout) { const p = b.querySelector('.p')!; const t = timed ? `${Math.ceil(snap.shaperRevertMs! / 1000)} s left` : '100% loss'; if (p.textContent !== t) p.textContent = t; }
+  }
+  setText('scenarioName', profileNote(snap));
 }
 
 function syncControls(snap: Snapshot) {
@@ -141,43 +204,60 @@ function syncControls(snap: Snapshot) {
   setSlider('budgetSlider', capSlider(budget)); setText('budgetv', budget ? fmtBps(budget) : 'unlimited');
   setToggle('impair', s.enabled);
   setToggle('fusion', snap.fusion);
-  if (idle('scenario')) setScenario(scenarioOf(s, snap.shaperRevertMs ?? null));
+  syncProfiles(snap);
 }
 
 // ---- render ----------------------------------------------------------------------------------
 let lastTotal = 0;
+let lastSnap: Snapshot | null = null;
 const swatch = (style: number) => `<svg width="24" height="5" viewBox="0 0 24 5" aria-hidden="true"><line x1="0" y1="2.5" x2="24" y2="2.5" stroke="${INK}" stroke-width="1"${LINE_STYLES[style].svg ? ` stroke-dasharray="${LINE_STYLES[style].svg}"` : ''}/></svg>`;
 const detailsOpen = () => !$('details').hidden;
+const waterfall = new Waterfall($<HTMLCanvasElement>('waterfall'));
+const clicker = new Clicker();
 
 function render(snap: Snapshot) {
+  lastSnap = snap;
   scene.update(snap);
   setStatus(null);
   const total = snap.devices.reduce((a, d) => a + d.bps, 0); lastTotal = total;
-  const s = snap.shaper;
+  const hasAir = !!snap.link?.model && snap.link.model.kind !== 'none';
 
   // default view: one primary readout, the twin error, the credits row
   setHTML('bps', `${(total / 1000).toFixed(1)}<small>kbps</small>`); setText('sheetBps', fmtKbps(total));
   const n = snap.devices.length, lost = snap.devices.filter(d => d.silent).length;
-  setHTML('cEdge', n ? `${n} device${n === 1 ? '' : 's'}${lost ? `${SEP()}<span class="lost" ${phase()}>${lost} lost</span>` : ''}` : 'no device');
-  const name = scenarioOf(s, snap.shaperRevertMs ?? null);
-  setHTML('cLink', name === 'blackout' ? `blackout${SEP()}${Math.ceil(snap.shaperRevertMs! / 1000)} s left` : linkDesc(s, name));
-  setText('cTwin', `${snap.global.length} entit${snap.global.length === 1 ? 'y' : 'ies'}`);
+  const coasting = snap.devices.filter(d => d.coasting && !d.silent).length;
+  setHTML('cEdge', n ? `${n} device${n === 1 ? '' : 's'}${coasting ? `${SEP()}${coasting === n ? 'coasting' : `${coasting} coasting`}` : ''}${lost ? `${SEP()}<span class="lost" ${phase()}>${lost} lost</span>` : ''}` : 'no device');
+  setHTML('cLink', linkCredit(snap));
+  // Grid reference of the marker origin (S3) when the server has a geodetic anchor.
+  setHTML('cTwin', `${snap.global.length} entit${snap.global.length === 1 ? 'y' : 'ies'}${snap.geo ? `${SEP()}${esc(snap.geo.mgrs)}` : ''}`);
   syncControls(snap);
   history.push({ total, offered: snap.devices.reduce((a, d) => a + (d.offeredBps ?? d.bps), 0) }); if (history.length > HIST) history.shift();
-  if ($('camera').hidden === false) updateRawOverlay();
+
+  waterfall.push(snap);
+  clicker.play(snap.packets, snap.t);
+  if (stageOn || detailsOpen()) waterfall.draw(h264(snap, res));
+  if ($('camera').hidden === false) updateRawOverlay(snap);
   if (!detailsOpen()) return;
 
   // details
-  const b = snap.baselines;
-  setHTML('baselines', `H.264 720p would be ${fmtBps(b.h264_720p_bps)}, ${fmtTimes(b.h264_720p_bps / Math.max(total, 1))} more<br>naive 30 Hz metadata ${fmtBps(b.naiveMetadataBps)}`);
+  const v = h264(snap, '720'), b = snap.baselines, notes = [
+    `${v.label}${v.measured ? '' : ' (configured)'} would be ${fmtBps(v.bps)}, ${fmtTimes(v.bps / Math.max(total, 1))} more`,
+    `naive 30 Hz metadata ${fmtBps(b.naiveMetadataBps)}`,
+  ];
+  if (v.measured) notes.push(`measured: ${esc(v.source)}`);
+  if (hasAir) notes.push(`airtime ${fmtPct(smooth('link', snap.link!.airtimeShare, snap.t))} of ${modelText(snap.link!.model)}${SEP()}${snap.link!.msgsPerSec.toFixed(1)} msg/s`);
+  setHTML('baselines', notes.join('<br>'));
   $('devices').innerHTML = snap.devices.map(d => {
     const dk = d.key ?? String(d.deviceId), style = scene.styleOf(dk);
     const name = d.provisional ? `Dev ?${SEP()}<span class="note">${esc(d.addr)}</span>` : `Dev ${d.deviceId}`;
-    const tags = [d.silent ? `<span class="tag lost" ${phase()}>lost</span>` : '', d.addrChanges ? `<span class="tag">moved ×${d.addrChanges}</span>` : ''].join(' ');
-    const sent = s.enabled && d.offeredBps > d.bps * 1.05 ? `<div class="kv"><span class="note">sent before the link</span><span class="note">${fmtBps(d.offeredBps)}</span></div>` : '';
+    const tags = [d.silent ? `<span class="tag lost" ${phase()}>lost</span>` : d.coasting ? '<span class="tag">coasting</span>' : '', d.addrChanges ? `<span class="tag">moved ×${d.addrChanges}</span>` : ''].join(' ');
+    const sent = snap.shaper.enabled && d.offeredBps > d.bps * 1.05 ? `<div class="kv"><span class="note">sent before the link</span><span class="note">${fmtBps(d.offeredBps)}</span></div>` : '';
+    // Share of channel time (S2) and the heartbeat the budget gives this device (S19).
+    const air = hasAir && d.airtimeShare !== undefined ? `${SEP()}${fmtPct(smooth(`dev ${dk}`, d.airtimeShare, snap.t))} airtime` : '';
+    const beat = d.cadence ? `${SEP()}keyframe every ${fmtSeconds(d.cadence.keyframeMs / 1000)}` : '';
     return `<div class="dev"><div class="kv"><span class="name lbl">${swatch(style)}<span>${name}</span>${tags}</span><span class="val">${fmtBps(d.bps)}</span></div>`
-      + `<div class="kv"><span class="note">${d.entities.length} ent${SEP()}${d.msgsPerSec.toFixed(1)} msg/s</span><span class="note dim">${LINE_STYLES[style].name}</span></div>${sent}`
-      + `<div class="note dim">kf ${d.stats.keyframes ?? 0}${SEP()}Δ ${d.stats.deltas ?? 0}${SEP()}gaps ${d.stats.gapsDetected ?? 0}${SEP()}nacks ${d.stats.nacksSent ?? 0}</div></div>`;
+      + `<div class="kv"><span class="note">${d.entities.length} ent${SEP()}${d.msgsPerSec.toFixed(1)} msg/s${air}</span><span class="note dim">${LINE_STYLES[style].name}</span></div>${sent}`
+      + `<div class="note dim">kf ${d.stats.keyframes ?? 0}${SEP()}Δ ${d.stats.deltas ?? 0}${SEP()}gaps ${d.stats.gapsDetected ?? 0}${SEP()}nacks ${d.stats.nacksSent ?? 0}${beat}</div></div>`;
   }).join('');
   drawGraph(snap);
 }
@@ -228,6 +308,7 @@ const onInput = (id: string, fn: (v: number) => void) => {
   const el = $<HTMLInputElement>(id); paint(el);
   el.oninput = () => { touch(id); paint(el); fn(+el.value); };
 };
+// A manual change makes the server's profile 'custom'.
 onInput('capSlider', v => { const b = capValue(v); setText('bpsv', b ? fmtBps(b) : 'off'); shaper({ bps: b }); });
 onInput('delaySlider', v => { setText('delayv', `${v} ms`); shaper({ delayMs: v }); });
 onInput('lossSlider', v => { setText('lossv', `${v}%`); shaper({ loss: v / 100 }); });
@@ -235,14 +316,18 @@ onInput('budgetSlider', v => { const b = capValue(v); setText('budgetv', b ? fmt
 $('impair').onclick = () => { const on = !isOn('impair'); setToggle('impair', on); shaper({ enabled: on }); };
 $('fusion').onclick = () => { const on = !isOn('fusion'); setToggle('fusion', on); send({ type: 'fusion', enabled: on }); };
 $('ghosts').onclick = () => { scene.showGhosts = !scene.showGhosts; setToggle('ghosts', scene.showGhosts); };
-for (const b of buttons('#scenario button')) b.onclick = () => {
+// Profiles are rebuilt from the server's table, so one delegated handler serves them and the fallback scenarios.
+$('scenario').addEventListener('click', ev => {
+  const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('#scenario button');
+  if (!b) return;
   touch('scenario');
-  const v = b.dataset.scenario!;
-  setScenario(v);
+  for (const o of buttons('#scenario button')) o.classList.toggle('on', o === b);
   // The server holds the blackout timer and restores the previous link itself (survives a reload).
-  if (v === 'blackout') send({ type: 'shaper', config: { enabled: true, loss: 1 }, revertAfterMs: BLACKOUT_MS });
-  else if (SCENARIOS[v]) shaper(SCENARIOS[v]);
-};
+  if (b.dataset.blackout || b.dataset.scenario === 'blackout') { setText('scenarioName', 'blackout'); send({ type: 'shaper', config: { enabled: true, loss: 1 }, revertAfterMs: BLACKOUT_MS }); }
+  else if (b.dataset.profile) { setText('scenarioName', b.dataset.profile); send({ type: 'link', profile: b.dataset.profile }); }
+  else if (b.dataset.scenario && SCENARIOS[b.dataset.scenario]) { setText('scenarioName', b.dataset.scenario); shaper(SCENARIOS[b.dataset.scenario]); }
+});
+$('click').onclick = () => { if (clicker.on) clicker.disable(); else clicker.enable(); setToggle('click', clicker.on); };
 
 // ---- bottom sheet (narrow screens) -----------------------------------------------------------
 $('sheetToggle').onclick = () => {
@@ -259,61 +344,89 @@ function setDetails(open: boolean) {
 }
 $('detailsToggle').onclick = () => setDetails($('details').hidden);
 try { if (localStorage.getItem(DETAILS_KEY) === '1') setDetails(true); } catch { /* default: collapsed */ }
+if (params.has('details')) setDetails(params.get('details') !== '0');
 
-// ---- side-by-side: twin lines vs halftoned raw video -----------------------------------------
-const RES: Record<string, { w: number; h: number; bps: number }> = {
-  '360': { w: 640, h: 360, bps: 250_000 },
-  '480': { w: 854, h: 480, bps: 500_000 },
-  '720': { w: 1280, h: 720, bps: 1_500_000 },
-  '1080': { w: 1920, h: 1080, bps: 3_000_000 },
-};
+// ---- side-by-side: twin lines vs video on the same link (V1) ----------------------------------
 let res = '720';
 let stream: MediaStream | null = null;
 let camWanted = false;
 const halftone = new Halftone($<HTMLCanvasElement>('halftone'));
+const videoLink = new VideoOnLink(halftone, $<HTMLCanvasElement>('thumb'));
 
-function updateRawOverlay() {
-  const r = RES[res];
-  setText('rawRate', fmtBps(r.bps));
-  setText('rawVs', lastTotal > 0 ? `${fmtKbps(lastTotal)}${' · '}${fmtTimes(r.bps / lastTotal)} less` : 'idle');
+function updateRawOverlay(snap: Snapshot | null) {
+  const v = h264(snap, res);
+  // "configured" goes away once Baseline A is measured on the phone.
+  setHTML('rawRate', `${fmtBps(v.bps)}${v.measured ? '' : ` <span class="dim">configured</span>`}`);
+  setText('rawVs', lastTotal > 0 ? `${fmtKbps(lastTotal)} · ${fmtTimes(v.bps / lastTotal)} less` : 'idle');
+  if (!snap) return;
+  const view = videoLink.update(snap, res);
+  setText('vlValue', view.value); setText('vlDetail', view.detail);
+  $('frameClock').hidden = view.mode === 'flows';
+  setText('frameClockL', view.mode === 'stalled' ? 'Link down' : 'Next frame'); setText('frameClockV', view.clock);
+  for (const id of ['thumbBox', 'vlThumb', 'vlThumbLbl']) $(id).hidden = view.thumb === null;
+  setText('vlThumb', view.thumb ?? '');
+  const live = view.mode === 'flows';
+  setText('camTitleL', live ? 'Raw video' : 'Video on this link');
+  setText('camTitleV', live ? 'laptop camera, stand-in for the drone feed' : 'H.264 at the link rate');
 }
 
 function showPlaceholder(reason: string) {
-  halftone.still();
+  halftone.setVideo(null); videoLink.reset();
   $('camPlaceholder').hidden = false; setText('camReason', reason);
+  if (lastSnap) updateRawOverlay(lastSnap); else halftone.live();
 }
 
 async function startCamera() {
-  const r = RES[res];
+  const r = { '360': [640, 360], '480': [854, 480], '720': [1280, 720], '1080': [1920, 1080] }[res] ?? [1280, 720];
   if (!navigator.mediaDevices?.getUserMedia) { showPlaceholder(window.isSecureContext ? 'no camera API in this browser' : 'needs https or localhost'); return; }
   try {
-    const s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: r.w }, height: { ideal: r.h } }, audio: false });
-    if (!camWanted) { s.getTracks().forEach(t => t.stop()); return; }
+    const s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: r[0] }, height: { ideal: r[1] } }, audio: false });
+    if ($('camera').hidden) { s.getTracks().forEach(t => t.stop()); return; }
     stream = s;
     const v = $<HTMLVideoElement>('cam'); v.srcObject = s; v.play().catch(() => {});
     $('camPlaceholder').hidden = true;
-    halftone.play(v);
+    halftone.setVideo(v); videoLink.reset();
+    if (lastSnap) updateRawOverlay(lastSnap); else halftone.live();
   } catch (e) {
     showPlaceholder(`${(e as DOMException).name === 'NotAllowedError' ? 'permission refused' : (e as Error).message || 'no camera'}`);
   }
 }
 function stopCamera() {
-  halftone.stop();
+  halftone.pause(); halftone.setVideo(null); videoLink.reset();
   stream?.getTracks().forEach(t => t.stop()); stream = null;
   $<HTMLVideoElement>('cam').srcObject = null;
 }
+/** The panel shows when side-by-side is on or the stage wants it. */
+function updateCameraPanel() {
+  const want = camWanted || stageOn;
+  if (want === !$('camera').hidden) return;
+  $('camera').hidden = !want;
+  if (want) { updateRawOverlay(lastSnap); startCamera(); } else stopCamera();
+}
 
-$('sbs').onclick = () => {
-  camWanted = !camWanted;
-  setToggle('sbs', camWanted);
-  $('camera').hidden = !camWanted;
-  updateRawOverlay();
-  if (camWanted) startCamera(); else stopCamera();
-};
+$('sbs').onclick = () => { camWanted = !camWanted; setToggle('sbs', camWanted); updateCameraPanel(); };
 for (const b of buttons('#res button')) b.onclick = () => {
   res = b.dataset.res!;
   for (const o of buttons('#res button')) o.classList.toggle('on', o === b);
-  updateRawOverlay();
-  const r = RES[res];
-  stream?.getVideoTracks()[0]?.applyConstraints({ width: { ideal: r.w }, height: { ideal: r.h } }).catch(() => {});
+  updateRawOverlay(lastSnap);
+  const r = { '360': [640, 360], '480': [854, 480], '720': [1280, 720], '1080': [1920, 1080] }[res] ?? [1280, 720];
+  stream?.getVideoTracks()[0]?.applyConstraints({ width: { ideal: r[0] }, height: { ideal: r[1] } }).catch(() => {});
 };
+
+// ---- STAGE: the presenter view (HACKATHON_PLAN section 5) -------------------------------------
+// The operator view keeps the restraint rules; STAGE puts the dramatic visuals on screen: the link
+// activity strip moves from DETAILS onto the stage beside the twin, and the video-on-this-link panel
+// opens. Remembered per browser; `?stage=1` forces it (e2e screenshots).
+const STAGE_KEY = 'minband.stage';
+let stageOn = false;
+function setStage(on: boolean) {
+  stageOn = on; setToggle('stageMode', on); $('stage').classList.toggle('staged', on);
+  const act = $('activity');
+  if (on) $('stage').insertBefore(act, $('camera')); else $('activitySec').appendChild(act);
+  $('activitySec').hidden = on;
+  try { localStorage.setItem(STAGE_KEY, on ? '1' : '0'); } catch { /* storage blocked */ }
+  updateCameraPanel();
+}
+$('stageMode').onclick = () => setStage(!stageOn);
+try { if (localStorage.getItem(STAGE_KEY) === '1') setStage(true); } catch { /* default: operator view */ }
+if (params.has('stage')) setStage(params.get('stage') !== '0');
