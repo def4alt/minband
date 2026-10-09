@@ -37,7 +37,7 @@ less airtime, not undetectable); the video ratio before H.264 is measured on the
 |---|---|---|---|
 | P0 | Pick the track (Tactical Edge: Sensor Fusion & Edge AI, else UAS/C-UAS), quote its problem statement on slide 1, get one concrete scenario and real link rates from a military mentor | slides | Scenario written on slide 1 |
 | P0 | Measure H.264 on the phone (VideoToolbox) at 720p/480p/360p | `runs/baseline_a.json`, `tools/eval` | Viewer overlay no longer says "configured" |
-| P0 | Pi 5 link box with profiles | §3, new `tools/pi-link.sh` | Phone -> Pi -> laptop works; each profile changes the bytes graph |
+| P0 | Pi 5 link box with profiles | §3, `tools/pi-link.sh` (scripted; verify on the Pi) | Phone -> Pi -> laptop works; each profile changes the bytes graph |
 | P0 | Budget fixes needed for profiles below ~4 kbit/s, including keyframe cadence from the budget (S19) and keyframe pacing (S16) | §3.4 | Telemetry and LoRa profiles hold a static scene without saturating or dropping the keyframe burst |
 | P0 | Record a fallback run; rehearse the 3 + 2 min and 5 min versions | `runs/eval` | Video file and slides frozen |
 | P1 | Visuals V2, V1, V3 (§5): V2 fed by the threshold byte and the coasting state (S14, S15), V1 with the thumbnail competitor (S23) | core, server, viewer | Each rehearsed in the demo script |
@@ -61,8 +61,12 @@ iPhone ──Wi-Fi (Pi hotspot)──► Raspberry Pi 5 ──Ethernet──► 
 The laptop must be on Ethernet, not on the hotspot: traffic between two Wi-Fi clients of the same
 AP is forwarded inside the Wi-Fi stack and never passes `tc`.
 
-The commands below are an untested sketch (no Pi in the dev environment); verify each step on
-the Pi before relying on it.
+**Scripted** in [`tools/pi-link.sh`](../tools/pi-link.sh): `setup`, the profiles, `contested`,
+`status`, `clear`, `--dry-run`; usage in [tools/README.md](../tools/README.md#pi-5-link-box-pi-linksh).
+The commands below are what it runs and stay as the reference. Its tc tree and filters are tested
+on a Linux kernel with pfifo in netem's place (`tools/test/`); netem itself and `nmcli` are not
+(no Pi in the dev environment), so verify each step on the Pi before relying on it.
+`sudo tools/test/pi-link-kernel.test.sh` on the Pi also checks the real netem.
 
 ### 3.1 Hardware and OS
 
@@ -85,6 +89,9 @@ sudo nmcli con add type ethernet ifname eth0 con-name minband-eth \
   ipv4.method manual ipv4.addresses 192.168.77.1/24
 sudo nmcli con up minband-eth
 ```
+
+Scripted: `sudo tools/pi-link.sh setup --password '<8+ chars>'` (also sets autoconnect, so the
+box comes back after a reboot).
 
 Point the iOS app at `192.168.77.2:7777`. Shared mode should masquerade the phone's traffic, so
 the server sees it from `192.168.77.1`; check with `curl localhost:8080/api/metrics` on the
@@ -122,6 +129,14 @@ shape wlan0 sport rate 2kbit delay 300ms loss 10% limit 4   # downlink, acks -> 
 | `telemetry` | 600 bit | 50 ms | 5 % | 4 | 450 | ELRS-class control-link telemetry |
 | `contested` | `lora`, alternating with 1-5 s random blackouts | | | | 1500 | Intermittent jamming |
 | `blackout` | | | 100 % | | | Link cut (or pull the Ethernet cable) |
+
+Scripted: `sudo tools/pi-link.sh <profile>`, which prints the budget command for the profile.
+Three details differ from the sketch above: netem's rate gets a `-14` B packet overhead, since at
+the qdisc a datagram still carries its 14 B Ethernet header and the server and `tools/eval` count
+payload + 28 B; `clean` keeps the tree with a pass-through netem so `status` still counts; and
+netem's `limit` also holds the datagrams waiting out the delay, so `hf` (8 per 500 ms) drops above
+16 datagrams/s even when the rate has room, which the drones-per-link run may hit (raise it
+there if so).
 
 Set the budget from the laptop with `curl 'localhost:8080/api/budget?bps=...'` when switching
 profiles, until the box does it itself (stretch L2). Unplugging the cable can change the NAT source
@@ -161,7 +176,7 @@ golden file only if the change is intentional (`UPDATE_GOLDEN=1`).
 
 | # | Idea | Size |
 |---|---|---|
-| L1 | `tools/pi-link.sh <profile>` wrapping §3.2-3.3, plus `contested` as a background loop | S |
+| L1 | `tools/pi-link.sh <profile>` wrapping §3.2-3.3, plus `contested` as a background loop (done) | S |
 | L2 | The script also sets the edge budget and reports the profile name to the server so the viewer shows `LINK: lora 2 kbit/s · 68 % airtime` (needs a small `/api/link` endpoint; the keyframe period follows the budget with S19, the airtime figure comes with S2) | S |
 | L3 | Physical button on the Pi GPIO (gpiozero) that cycles profiles; an LED that goes dark on blackout | S |
 | L4 | `simplex` profile: downlink 100 % loss, so the ground station never transmits (do together with S1, the first stretch item) | S |
@@ -174,6 +189,8 @@ No camera needed for the first two steps.
 # Golden vectors on Linux aarch64: the same predictor, bit for bit, on companion-computer-class hardware.
 curl --proto '=https' -sSf https://sh.rustup.rs | sh
 cd core && cargo test
+# Without a Pi: the same tests cross-compiled for aarch64 Linux, run under qemu-user.
+tools/golden-aarch64.sh
 
 # Sim edge(s) on the Pi -> laptop through the link box. Copy core/pkg-node from the laptop
 # (WASM is platform-independent) instead of installing wasm-pack on the Pi. Node 20+.
