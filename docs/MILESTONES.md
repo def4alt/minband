@@ -25,7 +25,7 @@ Repo layout, design, protocol, toolchain via `mise install`.
   side-by-side layout.
 - Done when: a non-team member can read the demo without explanation.
 
-## M4 iOS app [iOS owner] (implemented 2026-10-09; needs on-device verification)
+## M4 iOS app [iOS owner] (done 2026-10-09; tested on device)
 - ARKit session, marker origin, depth, CoreML detector, 3D lift, KF tracker.
 - Core FFI integration, UDP client, acks, budget.
 - Ground-truth logger and export.
@@ -51,9 +51,9 @@ Repo layout, design, protocol, toolchain via `mise install`.
   what's next (real drone radio, ROI thumbnails, field-level diffs).
 
 ## Remaining work (as of 2026-10-09)
-- On a real iPhone: marker lock, depth lift, overlay alignment, detector rate, bytes/s end to end.
 - Record a phone ground-truth log and rerun `tools/eval` on it; retune θ_vel (EVAL_FINDINGS.md #1).
 - Measure the H.264 baseline on the phone (VideoToolbox) and drop it into `runs/baseline_a.json`.
 - dummynet runs at 0/5/20/50% loss on Wi-Fi (`tools/link.sh`).
 - Two-phone fusion rehearsal with the printed marker.
 - Presentation: recorded fallback run, slides from `runs/eval/*.svg` and `summary.md`.
+- Weekend priorities, the Pi 5 link box and stretch ideas: [HACKATHON_PLAN.md](HACKATHON_PLAN.md).
