@@ -57,3 +57,4 @@ Repo layout, design, protocol, toolchain via `mise install`.
 - dummynet runs at 0/5/20/50% loss on Wi-Fi (`tools/link.sh`).
 - Two-phone fusion rehearsal with the printed marker.
 - Presentation: recorded fallback run, slides from `runs/eval/*.svg` and `summary.md`.
+- Weekend priorities, the Pi 5 link box and stretch ideas: [HACKATHON_PLAN.md](HACKATHON_PLAN.md).

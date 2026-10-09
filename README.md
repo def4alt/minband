@@ -26,6 +26,7 @@ with emulated impairment.
 2. [proto/PROTOCOL.md](proto/PROTOCOL.md) - wire format
 3. [docs/MILESTONES.md](docs/MILESTONES.md) - build order and ownership
 4. [docs/PRIOR_ART.md](docs/PRIOR_ART.md) - what exists and where this sits
+5. [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md) - D4D x EDTH weekend plan, Pi 5 link box, stretch ideas
 
 ## Toolchain
 
