@@ -16,9 +16,13 @@ import { DEFAULT_SHAPER, sanitizeShaper, type Shaper } from './shaper.js';
 export type LoraModel = Extract<AirtimeModel, { kind: 'lora' }>;
 export const NO_AIRTIME: AirtimeModel = { kind: 'none' };
 /** Meshtastic LongFast: SF11, 250 kHz, CR 4/5 (`cr` is the denominator, 5..8 = 4/5..4/8, as in
- * Meshtastic and RadioLib), 16-symbol preamble, explicit header, CRC on, LDRO off. Raw LoRa PHY:
- * a Meshtastic transport would add its own 16 B packet header (`overheadBytes: 16`). */
+ * Meshtastic and RadioLib), 16-symbol preamble, explicit header, CRC on, LDRO off; ~1.07 kbit/s
+ * raw. Raw LoRa PHY: a Meshtastic transport would add its own 16 B packet header
+ * (`overheadBytes: 16`). Reference only (16 B = 354 ms; the plan's "60 B/s is ~70 % of a channel"). */
 export const LORA_LONGFAST: LoraModel = { kind: 'lora', sf: 11, bwHz: 250_000, cr: 5, preamble: 16, crc: true, explicitHeader: true, lowDataRateOptimize: false, overheadBytes: 0 };
+/** Meshtastic MediumSlow: LongFast at SF10, ~1.95 kbit/s raw (SF x BW / 2^SF x 4/5), so it agrees
+ * with the `lora` profile's 2 kbit/s emulated rate. The `lora` and `contested` profiles use it. */
+export const LORA_MEDIUMSLOW: LoraModel = { ...LORA_LONGFAST, sf: 10 };
 /** Serial-class radio fed by a UART: 8N1 = 10 bits per byte at the link rate, plus two SLIP-style
  * frame delimiters per datagram (escapes ignored). A synchronous HF modem would be 8 bits/byte. */
 export const serialModel = (rateBps: number): AirtimeModel => ({ kind: 'serial', rateBps, bitsPerByte: 10, overheadBytes: 2 });
@@ -49,15 +53,16 @@ export const PROFILES: readonly LinkProfile[] = [
   prof('clean', 0, 0, 0, 0, 0, NO_AIRTIME, 'Wi-Fi reference'),
   prof('degraded', 64_000, 20, 0.02, 20, 0, NO_AIRTIME, 'Busy mesh'),
   prof('hf', 9_600, 500, 0.01, 32, 8_000, serialModel(9_600), 'NATO HF ceiling'),
-  prof('lora', 2_000, 300, 0.10, 4, 1_500, LORA_LONGFAST, 'Meshtastic-class LoRa'),
+  prof('lora', 2_000, 300, 0.10, 4, 1_500, LORA_MEDIUMSLOW, 'Meshtastic-class LoRa'),
   prof('telemetry', 600, 50, 0.05, 4, 450, serialModel(600), 'ELRS-class control-link telemetry'),
-  prof('contested', 2_000, 300, 0.10, 4, 1_500, LORA_LONGFAST, 'Intermittent jamming (lora + 1-5 s blackouts)'),
+  prof('contested', 2_000, 300, 0.10, 4, 1_500, LORA_MEDIUMSLOW, 'Intermittent jamming (lora + 1-5 s blackouts)'),
   prof('blackout', 0, 0, 1, 0, 0, NO_AIRTIME, 'Link cut'),
 ];
 export const findProfile = (name: string): LinkProfile | undefined => PROFILES.find(p => p.name === name);
 
-/** contested: lora for `onMs`, then a blackout (100 % loss) for `blackoutMs`, each uniform in [lo, hi]. */
-export const CONTESTED = { onMs: [3_000, 8_000], blackoutMs: [1_000, 5_000] } as const;
+/** contested: lora for `onMs`, then a blackout (100 % loss) for `blackoutMs`, each uniform in [lo, hi]
+ * (tools/pi-link.sh CONTESTED_UP 4-12 s, CONTESTED_DOWN 1-5 s). */
+export const CONTESTED = { onMs: [4_000, 12_000], blackoutMs: [1_000, 5_000] } as const;
 
 /** Shaper config for a profile ('clean' = shaper off, everything reset). */
 export function shaperFor(p: LinkProfile): ShaperConfig {
@@ -149,8 +154,15 @@ export class Link {
     if (blackout) this.d.note(`link: contested blackout ${(ms / 1000).toFixed(1)} s`);
   }
 
+  /** Emulated link rate (bit/s, 0 = unshaped): the profile's, the `as` profile's when the Pi box
+   * shapes, the shaper's own when set by hand (0 while it is off). */
+  rateBps(): number {
+    if (this.profile === 'custom') { const c = this.d.shaper.config; return c.enabled ? c.bps : 0; }
+    return findProfile(this.profile === 'external' ? this.as ?? 'clean' : this.profile)?.bps ?? 0;
+  }
+
   view(up: { airtimeShare: number; msgsPerSec: number }, down?: { airtimeShare: number; msgsPerSec: number }): LinkView {
-    const v: LinkView = { profile: this.profile, model: this.model, airtimeShare: up.airtimeShare, msgsPerSec: up.msgsPerSec, profiles: [...PROFILES] };
+    const v: LinkView = { profile: this.profile, model: this.model, rateBps: this.rateBps(), airtimeShare: up.airtimeShare, msgsPerSec: up.msgsPerSec, profiles: [...PROFILES] };
     if (this.as !== null) v.as = this.as;
     if (down) { v.downAirtimeShare = down.airtimeShare; v.downMsgsPerSec = down.msgsPerSec; }
     if (this.loop) v.contested = { blackout: this.loop.blackout, switchInMs: Math.max(0, this.loop.until - this.d.now()) };

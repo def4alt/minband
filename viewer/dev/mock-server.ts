@@ -324,6 +324,8 @@ class Mock {
   shaper: ShaperConfig = { bps: 0, delayMs: 0, loss: 0, enabled: false, burstSec: 0.5 };
   revert: { prev: ShaperConfig; at: number } | null = null;
   budget = 0; profile = 'clean'; model: AirtimeModel = { kind: 'none' }; fusion = true;
+  /** LinkView.rateBps under 'external': the rate of the profile the box emulates. */
+  externalRate = 0;
   tokens = Infinity; lastRefill = 0;
   queue: Pending[] = [];
   packets: PacketEvent[] = [];
@@ -351,7 +353,7 @@ class Mock {
     if (name === 'external') {
       this.revert = null; this.shaper = { ...this.shaper, enabled: false };
       const p = profileOf(as ?? '') ?? profileOf('clean')!;
-      this.profile = 'external'; this.model = p.airtime; this.budget = p.budgetBps;
+      this.profile = 'external'; this.model = p.airtime; this.budget = p.budgetBps; this.externalRate = p.bps;
       return;
     }
     const p = profileOf(name); if (!p) return;
@@ -493,6 +495,7 @@ class Mock {
       budgetBps: this.budget, shaperRevertMs: this.revert ? Math.max(0, this.revert.at - now) : null,
       link: {
         profile: this.profile, model: this.model, profiles: PROFILES,
+        rateBps: this.profile === 'external' ? this.externalRate : this.shaper.enabled ? this.shaper.bps : 0,
         airtimeShare: linkAir.sum / (RATE_WINDOW_MS / 1000), msgsPerSec: linkMsgs.n / (RATE_WINDOW_MS / 1000),
       },
       packets: this.packets.splice(0),

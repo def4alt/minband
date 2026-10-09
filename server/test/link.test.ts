@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTESTED, LORA_LONGFAST, Link, PROFILES, airtimeMs, findProfile, linkError, loraAirtimeMs, serialModel, type LoraModel } from '../src/link.js';
+import { CONTESTED, LORA_LONGFAST, LORA_MEDIUMSLOW, Link, PROFILES, airtimeMs, findProfile, linkError, loraAirtimeMs, serialModel, type LoraModel } from '../src/link.js';
 import { DEFAULT_SHAPER, Shaper, seededRng } from '../src/shaper.js';
 import { FakeClock } from './fake.js';
 
@@ -25,6 +25,12 @@ test('LoRa time on air: Semtech formula vectors', () => {
   close(loraAirtimeMs({ ...LORA_LONGFAST, overheadBytes: 16 }, 0), 354.304);
   close(airtimeMs(LORA_LONGFAST, 16), 354.304);
   assert.ok(airtimeMs(LORA_LONGFAST, 60) > airtimeMs(LORA_LONGFAST, 16));
+  // Meshtastic MediumSlow (the lora profile): 4.096 ms symbols. 16 B: 20.25 + 8 + ceil(132/40) x 5 symbols.
+  close(loraAirtimeMs(LORA_MEDIUMSLOW, 16), 197.632);
+  close(loraAirtimeMs(LORA_MEDIUMSLOW, 34), 259.072); // a one-walker delta
+  // Raw rate SF x BW / 2^SF x 4/5 ~ 1.95 kbit/s, consistent with the profile's 2 kbit/s.
+  const raw = (m: LoraModel) => m.sf * m.bwHz / 2 ** m.sf * 4 / m.cr;
+  close(raw(LORA_MEDIUMSLOW), 1953.125); close(raw(LORA_LONGFAST), 1074.21875);
 });
 
 test('serial time on air: (payload + framing) x bits per byte at the rate; none is free', () => {
@@ -46,7 +52,8 @@ test('profile table is the Pi link box table (HACKATHON_PLAN 3.3)', () => {
     blackout: [0, 0, 1, 0, 0, 'none'],
   });
   assert.deepEqual(findProfile('hf')!.airtime, { kind: 'serial', rateBps: 9_600, bitsPerByte: 10, overheadBytes: 2 });
-  assert.deepEqual(findProfile('lora')!.airtime, LORA_LONGFAST);
+  assert.deepEqual(findProfile('lora')!.airtime, LORA_MEDIUMSLOW);
+  assert.deepEqual(findProfile('contested')!.airtime, LORA_MEDIUMSLOW);
   assert.ok(PROFILES.every(p => p.label.length > 0));
 });
 
@@ -66,7 +73,8 @@ test('applying a profile sets the shaper, the edge budget and the airtime model'
   assert.equal(link.apply('lora'), null);
   assert.deepEqual(shaper.config, { ...DEFAULT_SHAPER, enabled: true, bps: 2_000, delayMs: 300, loss: 0.1, queue: 4 });
   assert.equal(st.budget, 1_500);
-  assert.deepEqual(link.model, LORA_LONGFAST);
+  assert.deepEqual(link.model, LORA_MEDIUMSLOW);
+  assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).rateBps, 2_000);
   assert.equal(link.apply('telemetry'), null);
   assert.deepEqual([shaper.config.bps, shaper.config.delayMs, shaper.config.loss, shaper.config.queue, st.budget], [600, 50, 0.05, 4, 450]);
   assert.equal(kind(link), 'serial');
@@ -76,7 +84,7 @@ test('applying a profile sets the shaper, the edge budget and the airtime model'
   assert.deepEqual(shaper.config, DEFAULT_SHAPER);
   assert.deepEqual([st.budget, kind(link), link.profile], [0, 'none', 'clean']);
   const v = link.view({ airtimeShare: 0.25, msgsPerSec: 2 });
-  assert.deepEqual([v.profile, v.airtimeShare, v.msgsPerSec, v.profiles.length, v.as, v.contested], ['clean', 0.25, 2, 7, undefined, undefined]);
+  assert.deepEqual([v.profile, v.rateBps, v.airtimeShare, v.msgsPerSec, v.profiles.length, v.as, v.contested], ['clean', 0, 0.25, 2, 7, undefined, undefined]);
   assert.ok(st.notes.some(n => n.includes('lora')));
 });
 
@@ -88,6 +96,7 @@ test("'external': shaper off, budget and model of `as`; invalid names change not
   assert.deepEqual([link.profile, link.as, st.budget], ['external', 'hf', 8_000]);
   assert.deepEqual(link.model, serialModel(9_600));
   assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).as, 'hf');
+  assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).rateBps, 9_600, 'the rate the box applies');
   link.apply('external', 'contested'); // the box runs the jammer: no loop here
   assert.deepEqual([link.model.kind, st.budget, clock.pending], ['lora', 1_500, 0]);
   assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested, undefined);
@@ -108,15 +117,15 @@ test('contested: lora alternating with random blackouts; stops when another prof
   const { clock, shaper, link, st } = mk(() => seq[i++ % seq.length]);
   link.apply('contested');
   assert.deepEqual([shaper.config.loss, shaper.config.bps, st.budget, link.model.kind], [0.1, 2_000, 1_500, 'lora']);
-  assert.deepEqual(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested, { blackout: false, switchInMs: 3_000 }); // rng 0 -> shortest on
-  clock.advance(2_999); assert.equal(shaper.config.loss, 0.1);
+  assert.deepEqual(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested, { blackout: false, switchInMs: 4_000 }); // rng 0 -> shortest on
+  clock.advance(3_999); assert.equal(shaper.config.loss, 0.1);
   clock.advance(1); assert.equal(shaper.config.loss, 1);
   assert.equal(shaper.config.bps, 2_000, 'blackout is lora at 100 % loss');
   assert.deepEqual(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested, { blackout: true, switchInMs: 5_000 }); // rng 1 -> longest blackout
   assert.equal(link.profile, 'contested');
   clock.advance(5_000); assert.equal(shaper.config.loss, 0.1);
-  assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested!.switchInMs, 5_500);
-  clock.advance(5_500); assert.equal(shaper.config.loss, 1);
+  assert.equal(link.view({ airtimeShare: 0, msgsPerSec: 0 }).contested!.switchInMs, 8_000);
+  clock.advance(8_000); assert.equal(shaper.config.loss, 1);
   link.apply('hf');
   assert.equal(clock.pending, 0, 'loop timer cancelled');
   clock.advance(60_000);
@@ -153,7 +162,7 @@ test("manual shaper change: 'custom' with the model kept; timed overrides keep t
 
   // Leaving contested mid-blackout by hand does not keep the jammer's 100 % loss.
   link.apply('contested');
-  clock.advance(3_000);
+  clock.advance(4_000);
   assert.equal(shaper.config.loss, 1);
   link.manual({ delayMs: 100 });
   assert.deepEqual([link.profile, shaper.config.loss, shaper.config.delayMs, clock.pending], ['custom', 0.1, 100, 0]);

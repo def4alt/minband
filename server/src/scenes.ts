@@ -4,6 +4,8 @@
 //   spread: device d sees its own walkers in its own area, so N devices are N independent feeds
 //           (drones per link). Walkers follow the eval's one_walker tour (tools/eval/src/synth.ts),
 //           so one walker per device costs about what the eval measured (~118 B/s on the wire).
+// Each device also has a camera path (`sharedCamera`, `spreadCamera`) for its Pose: the viewer
+// draws it as the device's frustum.
 import { TICK_HZ } from './types.js';
 
 export interface Track { id: number; class: number; pos: number[]; vel: number[]; conf: number }
@@ -69,6 +71,47 @@ function walker(start: [number, number], wps: Waypoint[], cruise: number, accel 
 export function spreadCentre(d: number, n: number): [number, number] {
   const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
   return [(d % cols - (cols - 1) / 2) * SPREAD_M, (Math.floor(d / cols) - (rows - 1) / 2) * SPREAD_M];
+}
+
+/** Camera pose in the marker frame: position (m) and unit quaternion [x, y, z, w]. */
+export interface CameraPose { pos: [number, number, number]; quat: [number, number, number, number] }
+export type CameraPath = (tick: number) => CameraPose;
+
+/** Quaternion of a camera at `eye` looking at `target` (-Z forward, +Y up, as ARKit and the viewer's frustum). */
+export function lookAt(eye: number[], target: number[]): [number, number, number, number] {
+  const norm = (v: number[]) => { const l = Math.hypot(v[0], v[1], v[2]); return v.map(x => x / l); };
+  const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const z = norm([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]); // camera +Z points away from the target
+  const x = norm(cross([0, 1, 0], z)), y = cross(z, x);
+  // Rotation matrix with columns x, y, z -> quaternion (Shepperd).
+  const [m11, m12, m13, m21, m22, m23, m31, m32, m33] = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+  const tr = m11 + m22 + m33;
+  if (tr > 0) { const s = 0.5 / Math.sqrt(tr + 1); return [(m32 - m23) * s, (m13 - m31) * s, (m21 - m12) * s, 0.25 / s]; }
+  if (m11 > m22 && m11 > m33) { const s = 2 * Math.sqrt(1 + m11 - m22 - m33); return [0.25 * s, (m12 + m21) / s, (m13 + m31) / s, (m32 - m23) / s]; }
+  if (m22 > m33) { const s = 2 * Math.sqrt(1 + m22 - m11 - m33); return [(m12 + m21) / s, 0.25 * s, (m23 + m32) / s, (m13 - m31) / s]; }
+  const s = 2 * Math.sqrt(1 + m33 - m11 - m22);
+  return [(m13 + m31) / s, (m23 + m32) / s, 0.25 * s, (m21 - m12) / s];
+}
+
+/** shared: device d of n walks a 6 m circle around the common scene at phone height, one lap per
+ * 2 min, starting from its own bearing, always looking at the scene. */
+export function sharedCamera(d: number, n: number): CameraPath {
+  return tick => {
+    const a = 2 * Math.PI * (d / n + 1 / 8) + tick / TICK_HZ * 2 * Math.PI / 120;
+    const pos: [number, number, number] = [6 * Math.cos(a), 1.6, 6 * Math.sin(a)];
+    return { pos, quat: lookAt(pos, [0, 0.5, 0]) };
+  };
+}
+
+/** spread: a drone over device d's area, 6 m up on a 4 m orbit around the area centre, one lap per
+ * 90 s, looking at the area (where its walkers are). */
+export function spreadCamera(d: number, n: number): CameraPath {
+  const [cx, cz] = spreadCentre(d, n);
+  return tick => {
+    const a = 2 * Math.PI * d / n + tick / TICK_HZ * 2 * Math.PI / 90;
+    const pos: [number, number, number] = [cx + 4 * Math.cos(a), 6, cz + 4 * Math.sin(a)];
+    return { pos, quat: lookAt(pos, [cx, PERSON_Y, cz]) };
+  };
 }
 
 /** Device `d` of `n`: `walkers` people on the tour in its own area. Walker k's tour is turned by

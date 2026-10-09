@@ -7,10 +7,13 @@
 //   GT_POST_MS=0 npm run sim              # do not upload ground truth (default: last 10 s every 5 s)
 // Ground truth: the scene the edge saw is POSTed to /api/ground-truth so the server's twin-error
 // metric (and the viewer's readout) works without a phone. Device ids are 100 + d.
+// Pose: each device has a moving camera (src/scenes.ts: its own orbit around the shared scene, or a
+// drone orbit over its area), offered to the edge at 2 Hz like the phone; core sends it at the
+// budget's pose interval (0.5 s unlimited, 10 s below 4 kbit/s) with originLocked true.
 import dgram from 'node:dgram';
 import { WasmEdge, describe } from 'minband-core';
 import { TICK_HZ } from './types.js';
-import { SCENES, sharedScene, spreadScene, type SceneName } from './scenes.js';
+import { SCENES, sharedCamera, sharedScene, spreadCamera, spreadScene, type SceneName } from './scenes.js';
 
 const HOST = process.env.MINBAND_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.MINBAND_UDP_PORT ?? 7777);
@@ -23,6 +26,7 @@ const GT_POST_MS = Number(process.env.GT_POST_MS ?? 5000);
 const GT_WINDOW_TICKS = Number(process.env.GT_WINDOW_S ?? 10) * TICK_HZ;
 const STATS_MS = 5000;
 const UDP_IP_OVERHEAD = 28;
+const POSE_EVERY_TICKS = TICK_HZ / 2;
 
 if (!SCENES.includes(SCENE)) { console.error(`SCENE must be one of ${SCENES.join(', ')}`); process.exit(2); }
 
@@ -37,6 +41,7 @@ const sims: { deviceId: number; edge: WasmEdge; bytes: number }[] = [];
 for (let d = 0; d < DEVICES; d++) {
   const deviceId = 100 + d;
   const scene = SCENE === 'spread' ? spreadScene(d, DEVICES, WALKERS) : sharedScene(deviceId);
+  const camera = SCENE === 'spread' ? spreadCamera(d, DEVICES) : sharedCamera(d, DEVICES);
   const edge = new WasmEdge(deviceId, Math.floor(Math.random() * 2 ** 31));
   const sock = dgram.createSocket('udp4');
   sock.on('message', m => edge.on_datagram(new Uint8Array(m)));
@@ -51,8 +56,13 @@ for (let d = 0; d < DEVICES; d++) {
     while (tick <= target) {
       const tracks = scene(tick);
       if (GT_POST_MS > 0) for (const tr of tracks) gt.push({ tick, line: [tick, tr.id, tr.class, ...tr.pos.map(v => v.toFixed(4)), ...tr.vel.map(v => v.toFixed(4)), tr.conf].join(',') });
-      const packed = edge.tick(JSON.stringify(tracks), tick);
-      for (const dg of unpack(packed)) {
+      const out = unpack(edge.tick(JSON.stringify(tracks), tick));
+      if (tick % POSE_EVERY_TICKS === 0) { // offered at 2 Hz like the phone; core sends it at the budget's pose interval
+        const c = camera(tick);
+        const pose = edge.pose(...c.pos, ...c.quat, true, tick);
+        if (pose.length) out.push(pose);
+      }
+      for (const dg of out) {
         sock.send(dg, PORT, HOST);
         sim.bytes += dg.length + UDP_IP_OVERHEAD;
         if (VERBOSE) console.log(`[${deviceId}] ${describe(dg)} (${dg.length} B)`);

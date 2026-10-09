@@ -57,7 +57,10 @@ export type AirtimeModel =
   | { kind: 'none' }
   /** Serial-class radio (HF, ELRS/SiK telemetry): every payload byte costs `bitsPerByte` bits at `rateBps`, plus `overheadBytes` framing per datagram. */
   | { kind: 'serial'; rateBps: number; bitsPerByte: number; overheadBytes: number }
-  /** LoRa (Semtech time-on-air formula); defaults = Meshtastic LongFast (SF11, 250 kHz, CR 4/5, 16-symbol preamble). */
+  /** LoRa (Semtech time-on-air formula). `cr` is the coding-rate denominator: 5 = 4/5 ... 8 = 4/8
+   * (as Meshtastic and RadioLib; not Semtech's 1..4 index). The `lora` and `contested` profiles use
+   * Meshtastic MediumSlow (SF10, 250 kHz, CR 4/5, 16-symbol preamble, explicit header, CRC on,
+   * LDRO off, ~1.95 kbit/s raw, matching their 2 kbit/s rate); LongFast is the same at SF11. */
   | { kind: 'lora'; sf: number; bwHz: number; cr: number; preamble: number; crc: boolean; explicitHeader: boolean; lowDataRateOptimize: boolean; overheadBytes: number };
 /** A named link profile; the same table as the Pi link box (docs/HACKATHON_PLAN.md section 3.3). */
 export interface LinkProfile {
@@ -72,6 +75,9 @@ export interface LinkView {
   /** Active profile name, 'custom' when the shaper was set by hand, 'external' when the Pi box shapes. */
   profile: string;
   model: AirtimeModel;
+  /** Emulated link rate in bit/s, 0 = unshaped: the profile's (for 'external' the `as` profile's,
+   * which the Pi box applies), or the shaper's `bps` when set by hand ('custom'; 0 while it is off). */
+  rateBps: number;
   /** Uplink channel time used per second of wall time over the rate window (0..1, can exceed 1 when oversubscribed). */
   airtimeShare: number;
   /** Uplink datagrams/s over the rate window, all devices. */
@@ -104,7 +110,11 @@ export interface PacketEvent {
   dropped: boolean;
 }
 /** H.264 reference bitrates (Baseline A): measured when runs/baseline_a.json exists, else configured. */
-export interface BaselineAEntry { id: string; label: string; bps: number; measured: boolean; source: string }
+export interface BaselineAEntry {
+  id: string; label: string; bps: number; measured: boolean; source: string;
+  /** Frame rate of the encode (from runs/baseline_a.json when given); absent means 30. */
+  fps?: number;
+}
 export interface ShaperConfig {
   bps: number; delayMs: number; loss: number; enabled: boolean;
   /** Token bucket depth in seconds of `bps` (added in M5, default 0.5). */

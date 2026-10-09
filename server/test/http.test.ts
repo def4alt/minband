@@ -86,7 +86,7 @@ test('GET /api/link applies profiles (400 on bad input, nothing changes); /api/s
     assert.equal(status, 200);
     assert.deepEqual([j.profile, j.model, j.airtimeShare, j.msgsPerSec, j.profiles.length], ['clean', { kind: 'none' }, 0, 0, 7]);
     ({ j } = await get('?profile=lora'));
-    assert.deepEqual([j.profile, j.model.kind, j.model.sf, world.budgetBps], ['lora', 'lora', 11, 1_500]);
+    assert.deepEqual([j.profile, j.model.kind, j.model.sf, j.rateBps, world.budgetBps], ['lora', 'lora', 10, 2_000, 1_500]);
     assert.deepEqual([shaper.config.enabled, shaper.config.bps, shaper.config.delayMs, shaper.config.loss, shaper.config.queue], [true, 2_000, 300, 0.1, 4]);
     for (const q of ['?profile=nope', '?profile=lora&as=hf', '?as=hf', '?profile=lora&x=1', '?profile=external&as=custom']) {
       ({ status, j } = await get(q));
@@ -97,8 +97,8 @@ test('GET /api/link applies profiles (400 on bad input, nothing changes); /api/s
     ({ j } = await get('?profile=external&as=hf'));
     assert.deepEqual([j.profile, j.as, j.model.kind, j.model.rateBps, world.budgetBps, shaper.config.enabled], ['external', 'hf', 'serial', 9_600, 8_000, false]);
     ({ j } = await get('?profile=contested'));
-    assert.deepEqual(j.contested, { blackout: false, switchInMs: 3_000 });
-    clock.advance(3_000);
+    assert.deepEqual(j.contested, { blackout: false, switchInMs: 4_000 });
+    clock.advance(4_000);
     assert.equal((await get('')).j.contested.blackout, true);
 
     // A timed override keeps the profile; a hand-made change ends it.
@@ -107,7 +107,7 @@ test('GET /api/link applies profiles (400 on bad input, nothing changes); /api/s
     const s = await (await fetch(`${base}/api/shaper?delayMs=100&queue=8`)).json();
     assert.deepEqual([s.config.delayMs, s.config.queue, s.config.loss], [100, 8, 0.1]);
     ({ j } = await get(''));
-    assert.deepEqual([j.profile, j.model.kind, j.contested], ['custom', 'lora', undefined]);
+    assert.deepEqual([j.profile, j.model.kind, j.contested, j.rateBps], ['custom', 'lora', undefined, 2_000]);
     assert.equal(clock.pending, 0, 'contested loop and the override timer are gone');
 
     const m = await (await fetch(`${base}/api/metrics`)).json();
