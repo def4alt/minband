@@ -16,6 +16,10 @@ npm run typecheck
 |---|---|---|
 | `MINBAND_UDP_PORT` | 7777 | edge datagrams in, acks out (same socket) |
 | `MINBAND_WS_PORT` | 8080 | HTTP API and WebSocket on one server |
+| `MINBAND_GEO` | unset | geodetic anchor `lat,lon,headingDeg[,altM]` of the marker (see [Geodetic anchor and CoT export](#geodetic-anchor-and-cot-export-tak)) |
+| `MINBAND_COT` | unset (off) | CoT endpoints, comma-separated: `udp://239.2.3.1:6969` (ATAK SA multicast), `udp://<device-ip>:<port>`, `tcp://<tak-server>:8087`; `udp://...?ttl=2&iface=<local-ip>` for multicast |
+| `MINBAND_COT_HZ` | 1 | CoT send rate, (0, 30] |
+| `MINBAND_COT_STALE_S` | max(5, 3 / Hz) | validity window of a live CoT event |
 
 Sim only: `DEVICES` (1), `MINBAND_HOST` (127.0.0.1), `VERBOSE`, `GT_POST_MS` (5000; 0 disables
 ground-truth upload), `GT_WINDOW_S` (10), `MINBAND_API` (`http://$MINBAND_HOST:8080`). The sim
@@ -101,6 +105,30 @@ Byte budget pushed to every edge in `Ack.budget_bps` (0 = unlimited). Returns `{
 
 Multi-device fusion on/off. Returns `{fusion}`.
 
+### `GET /api/geo?lat=&lon=&heading=&alt=` / `?mgrs=&heading=` / `?clear=1`
+
+Reads or sets the geodetic anchor (same as `MINBAND_GEO`). Fields not given keep their current
+value, so `?heading=93` alone corrects the heading; `alt=` (empty) makes the altitude unknown;
+`mgrs=` takes the centre of the grid square instead of `lat`/`lon`. Invalid or unknown
+parameters return 400 and change nothing.
+
+```bash
+curl 'localhost:8080/api/geo?lat=37.5665&lon=126.978&heading=90&alt=38'
+curl 'localhost:8080/api/geo?mgrs=52SCG2142459640&heading=90'
+```
+
+```json
+{ "anchor": { "lat": 37.5665, "lon": 126.978, "headingDeg": 90, "altM": 38, "mgrs": "52S CG 21424 59640" } }
+```
+
+`{"anchor": null}` when none is set.
+
+### `GET /api/cot`
+
+The CoT events one send round would carry now, as one XML document
+(`<events count="n"><event .../>...</events>`; on the wire each event is its own document).
+Works with or without `MINBAND_COT`; 409 without an anchor.
+
 ### `POST /api/ground-truth?deviceId=<u32>`
 
 Body: CSV `tick,id,class,x,y,z,vx,vy,vz,conf` (header optional, `#` comments ignored), ticks of
@@ -127,7 +155,9 @@ Server -> viewer:
 
 - `{"type":"snapshot","snap":Snapshot}` at 30 Hz (`src/types.ts`). Added in M5:
   `DeviceView.key / provisional / offeredBps / edgeTick / silent / addrChanges / clockOffsetMs`,
-  `ShaperConfig.burstSec`, `Snapshot.budgetBps / shaperRevertMs`.
+  `ShaperConfig.burstSec`, `Snapshot.budgetBps / shaperRevertMs`. With a geodetic anchor:
+  `Snapshot.geo` = `{lat, lon, headingDeg, mgrs}` of the marker and `GlobalEntity.geo` =
+  `{lat, lon, mgrs}` (1 m MGRS, e.g. `52S CG 21434 59641`); both null without one.
 - `{"type":"log","lines":[...],"shaper":ShaperCounters}` at 2 Hz (`shaper.dropped/passed` kept;
   the other counters were added).
 
@@ -154,6 +184,63 @@ Viewer -> server:
 - **Staleness**: core marks entities stale after 6 s without refresh; the server also marks every
   entity of a device stale after 5 s without any datagram, and removes the device after 30 s.
 
+## Geodetic anchor and CoT export (TAK)
+
+**Anchor.** `lat,lon` of the marker centre (WGS84 degrees) and `headingDeg`, the true bearing
+of the marker frame's -Z axis: from the marker centre toward the **top edge of the printed
+image** as you read it (+X, the image's right, is then heading + 90; for the manual "set origin
+here" fallback, -Z is the direction the phone faced). Optional `altM` is the marker's height
+above the WGS84 ellipsoid; without it CoT `hae` and `le` are "unknown" (9999999). To measure,
+stand at the marker's bottom edge looking across it toward the top edge, read the bearing from a
+compass set to true north (iPhone Compass: Settings -> Compass -> Use True North), and take
+lat/lon from the phone at the marker. A few
+metres of GPS error shift every entity by the same amount; CoT `ce` does not include it.
+Positions go marker -> ENU -> ECEF -> WGS84 (exact for the Cartesian ARKit frame). UTM is the
+Krueger series to n^6; MGRS uses the WGS84 lettering with the Norway/Svalbard exceptions and
+truncates like GeographicLib. Polar UPS is not implemented (MGRS is then ''). `src/geo.ts` has
+the conventions, `test/geo.test.ts` the reference vectors (NGA GEOTRANS, PROJ, GeographicLib).
+
+**Events.** One per fused entity, at `MINBAND_COT_HZ`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<event version="2.0" uid="minband-g1" type="a-u-G" how="m-f" time="2026-10-10T09:00:00.000Z" start="2026-10-10T09:00:00.000Z" stale="2026-10-10T09:00:05.000Z">
+  <point lat="37.5665136" lon="126.9779697" hae="38.00" ce="0.35" le="0.35"/>
+  <detail><contact callsign="DISMOUNT g1"/><track course="15.8" speed="1.09"/>
+    <remarks>MinBand g1: dismount (COCO person), 2 sources. ce 0.35 m is the twin's error bound (grows while the link is silent). Position dead-reckoned between edge updates; affiliation not assessed.</remarks></detail>
+</event>
+```
+
+(Pretty-printed here; on the wire an event is one line.)
+
+| field | value | why |
+|---|---|---|
+| `uid` | `minband-<gid>` | stable while fusion keeps the group (gids restart with the server) |
+| `type` | `a-u-G` | affiliation unknown, ground; a person is a dismount, not an infantry unit, so no `G-U-C-I` |
+| `how` | `m-p`, or `m-f` with >= 2 devices and not coasting | CoT Event.xsd: `p` "predicted - prediction of future (e.g. from a tracker)", `f` "fused - corroborated from multiple sources"; not `m-g` (GPS) |
+| `stale` | now if the entity is stale, else now + max(5 s, 3 periods) | an entity that disappears gets one more event with `stale` = now, so TAK greys it out |
+| `ce` | `GlobalEntity.ce` (m), 9999999 when unknown | the edge's declared threshold grown with silence; a bound, so conservative as CoT's 1-sigma |
+| `le` | `ce` with a known `altM`, else 9999999 | the threshold bounds the 3D error |
+| `track` | course (degrees true) and horizontal speed (m/s) | velocity rotated by the heading |
+
+**Viewing it on the same Wi-Fi.**
+
+- ATAK (Android) and WinTAK listen on the SA multicast group by default:
+  `MINBAND_COT=udp://239.2.3.1:6969`. Add `?iface=<laptop Wi-Fi IP>` when the laptop has more
+  than one interface (e.g. Ethernet to the Pi link box), `?ttl=2` across a router.
+- Venue Wi-Fi often drops multicast or isolates clients. Then send unicast to the device,
+  `udp://<tablet-ip>:4242` (ATAK's default UDP input; check Settings -> Network Preferences ->
+  Manage Inputs, or add one), or to a subnet broadcast address `udp://192.168.1.255:<port>`.
+- iTAK, or a shared team picture: send to a TAK Server or FreeTAKServer plain CoT input,
+  `tcp://<server>:8087`, and connect the clients to the server. TLS inputs (8089) are not
+  supported. The sender reconnects with backoff (1 s to 30 s) and skips rounds while down.
+- Several sinks at once: `MINBAND_COT=udp://239.2.3.1:6969,tcp://tak.local:8087`.
+
+```bash
+MINBAND_GEO="37.5665,126.978,90,38" MINBAND_COT=udp://239.2.3.1:6969 npm run start
+curl -s localhost:8080/api/cot      # what is being sent
+```
+
 ## Layout
 
 | file | |
@@ -164,6 +251,8 @@ Viewer -> server:
 | `src/shaper.ts` | in-process link impairment |
 | `src/fusion.ts` | multi-device merge/split with hysteresis |
 | `src/groundtruth.ts` | snapshot ring, CSV parsing, twin error |
+| `src/geo.ts` | geodetic anchor: marker frame <-> ENU <-> WGS84, UTM, MGRS |
+| `src/cot.ts` | CoT events, UDP/TCP senders |
 | `src/http.ts` | `/api/*` |
 | `src/peek.ts` | datagram kind/id/tick via core's `describe()` (no byte parsing in TS) |
 | `src/sim.ts` | synthetic edge(s) |

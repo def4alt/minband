@@ -1,6 +1,8 @@
 // HTTP API on the same server the WebSocket attaches to (:8080). See server/README.md.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { sanitizeShaper } from './shaper.js';
+import { anchorFromQuery, anchorInfo } from './geo.js';
+import { currentCotEvents, eventsXml, type CotOptions } from './cot.js';
 import type { World } from './world.js';
 
 export const MAX_GT_BYTES = 64 * 1024 * 1024;
@@ -10,6 +12,8 @@ const ENDPOINTS = [
   'GET  /api/shaper?enabled=0|1&bps=&delayMs=&loss=0..1&burstSec=&revertAfterMs=',
   'GET  /api/budget?bps=',
   'GET  /api/fusion?enabled=0|1',
+  'GET  /api/geo?lat=&lon=&heading=&alt= | ?mgrs=&heading= | ?clear=1',
+  'GET  /api/cot  (current CoT events, XML)',
   'POST /api/ground-truth?deviceId=  (body: CSV tick,id,class,x,y,z,vx,vy,vz,conf)',
 ];
 
@@ -43,8 +47,8 @@ export function shaperState(world: World) {
   };
 }
 
-/** Request handler for `http.createServer`. */
-export function createApi(world: World) {
+/** Request handler for `http.createServer`. `cot`: the CoT sender's options, for /api/cot. */
+export function createApi(world: World, opts: { cot?: CotOptions } = {}) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const q = Object.fromEntries(url.searchParams);
@@ -86,6 +90,17 @@ export function createApi(world: World) {
             world.fusion.enabled = ['1', 'true', 'on'].includes(q.enabled);
           }
           send(res, 200, { fusion: world.fusion.enabled });
+          return;
+        }
+        case '/api/geo': {
+          try { world.geo = anchorFromQuery(world.geo, q); } catch (e) { send(res, 400, { error: (e as Error).message }); return; }
+          send(res, 200, anchorInfo(world.geo));
+          return;
+        }
+        case '/api/cot': {
+          if (!world.geo) { send(res, 409, { error: 'no geodetic anchor: set MINBAND_GEO or GET /api/geo?lat=&lon=&heading=' }); return; }
+          res.writeHead(200, { ...CORS, 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(eventsXml(currentCotEvents(world, world.now(), opts.cot)));
           return;
         }
         case '/api/ground-truth': {
