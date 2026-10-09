@@ -31,7 +31,11 @@ udp.bind(UDP_PORT, () => console.log(`udp ingest on :${UDP_PORT}`));
 // One HTTP server for the API and the WebSocket upgrade.
 const server = http.createServer(createApi(world, { cot: cotCfg.opts }));
 const wss = new WebSocketServer({ server });
-server.on('error', e => { console.error(`http/ws: ${e.message}`); process.exit(1); });
+// ws re-emits the http server's errors (e.g. EADDRINUSE) on the WebSocketServer, through a listener
+// registered before ours: without its own handler that re-emit throws with a stack trace first.
+const fatal = (e: Error) => { console.error(`http/ws: ${e.message}`); process.exit(1); };
+server.on('error', fatal);
+wss.on('error', fatal);
 server.listen(WS_PORT, () => console.log(`ws + http api on :${WS_PORT}`));
 wss.on('connection', ws => {
   ws.on('message', raw => {
