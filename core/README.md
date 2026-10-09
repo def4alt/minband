@@ -5,7 +5,7 @@ cargo test                                   # unit + golden tests
 UPDATE_GOLDEN=1 cargo test --test golden     # after an intentional protocol/predictor change
 wasm-pack build --target nodejs --out-dir pkg-node --release -- --features wasm   # for server/
 wasm-pack build --target web    --out-dir pkg-web  --release -- --features wasm   # for viewer/
-cargo build --release --target aarch64-apple-ios                                  # for ios/
+../tools/build-ios.sh   # for ios/: staticlib for device + simulator, uniffi Swift bindings, XCFramework
 ```
 
 Determinism rules (enforced by review, tested by `tests/golden`): f32 only, integer ticks,

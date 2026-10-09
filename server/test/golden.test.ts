@@ -32,7 +32,8 @@ const isSeq5Delta = (d: Uint8Array) => d[0] === 0 && d[1] === 1 && d[2] === 5; /
 test('wasm edge reproduces the native golden datagrams', () => {
   const edge = new WasmEdge(7, 0xC0FFEE);
   const rx = new WasmReceiver();
-  // Pre-ack like the Rust test: Ack { last_seq: 0, missing: [], budget_bps: 0 }
+  // Hello at tick 0, then pre-ack like the Rust test: Ack { last_seq: 0, missing: [], budget_bps: 0 }
+  edge.tick('[]', 0);
   edge.on_datagram(new Uint8Array([0, 4, 0, 0, 0]));
   const got: [number, string][] = []; let bytes = 0;
   const ex: [number, number, number[]][] = [];

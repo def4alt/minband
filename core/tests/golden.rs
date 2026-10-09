@@ -35,7 +35,8 @@ fn run() -> Golden {
     let mut edge = Edge::new(7, 0xC0FFEE, EdgeConfig::default());
     let mut rx = Receiver::new(ReceiverConfig::default());
     let mut g = Golden { datagrams: Vec::new(), extrapolations: Vec::new(), bytes_total: 0 };
-    // Pre-ack so the scene starts immediately (Hello/ack handshake is covered by unit tests).
+    // Hello at tick 0, then pre-ack so the scene starts immediately.
+    edge.tick(&[], 0);
     edge.on_datagram(&encode(&Message::Ack { last_seq: 0, missing: vec![], budget_bps: 0 }));
     for tick in 0..(8 * TICK_HZ) {
         for d in edge.tick(&scene(tick), tick) {

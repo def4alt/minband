@@ -1,55 +1,70 @@
 // Merge observations of the same physical object from different devices into one global entity.
 // Hysteresis: merge when close for MERGE_MS, split when far for SPLIT_MS.
+//
+// Invariants:
+//  - A group never holds two tracks from the same device (merges are refused, also transitively).
+//  - Pair timers only live while both tracks are evaluated on consecutive updates; a pair that
+//    is skipped (track vanished, fusion disabled) starts its hysteresis from scratch.
+//  - Devices are identified by DeviceView.key, not deviceId (provisional devices share id 0).
 import type { DeviceView, EntityView, GlobalEntity } from './types.js';
 
-const MERGE_DIST = 0.5, MERGE_VEL = 0.5, SPLIT_DIST = 1.0, MERGE_MS = 1000, SPLIT_MS = 1000;
+export const MERGE_DIST = 0.5, MERGE_VEL = 0.5, SPLIT_DIST = 1.0, MERGE_MS = 1000, SPLIT_MS = 1000;
 
-type Key = string; // `${deviceId}:${id}`
-const key = (d: number, id: number): Key => `${d}:${id}`;
+type Key = string; // `${deviceKey}#${id}`
+const devKey = (d: DeviceView): string => d.key ?? `id:${d.deviceId}`;
 
 export class Fusion {
   enabled = true;
   private groups = new Map<string, Set<Key>>(); // gid -> members
   private memberOf = new Map<Key, string>();
+  private deviceOf = new Map<Key, string>();
   private closeSince = new Map<string, number>(); // pair key -> ms
   private farSince = new Map<string, number>();
   private nextGid = 1;
 
   update(devices: DeviceView[], nowMs: number): GlobalEntity[] {
-    const all: { k: Key; d: number; e: EntityView }[] = [];
-    for (const d of devices) for (const e of d.entities) all.push({ k: key(d.deviceId, e.id), d: d.deviceId, e });
+    const all: { k: Key; dk: string; d: number; e: EntityView }[] = [];
+    for (const d of devices) {
+      const dk = devKey(d);
+      for (const e of d.entities) all.push({ k: `${dk}#${e.id}`, dk, d: d.deviceId, e });
+    }
     const alive = new Set(all.map(a => a.k));
 
-    // Ensure every live track has a group.
-    for (const a of all) if (!this.memberOf.has(a.k)) this.newGroup(a.k);
-    // Remove dead tracks.
-    for (const k of [...this.memberOf.keys()]) if (!alive.has(k)) this.leave(k);
+    // Remove dead tracks, then make sure every live track has a group.
+    for (const k of [...this.memberOf.keys()]) if (!alive.has(k)) { this.leave(k); this.deviceOf.delete(k); }
+    for (const a of all) { this.deviceOf.set(a.k, a.dk); if (!this.memberOf.has(a.k)) this.newGroup(a.k); }
 
+    const touched = new Set<string>();
     if (this.enabled) {
       for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
         const a = all[i], b = all[j];
-        if (a.d === b.d || a.e.class !== b.e.class) continue;
+        if (a.dk === b.dk) continue;
         const pk = a.k < b.k ? `${a.k}|${b.k}` : `${b.k}|${a.k}`;
+        const same = this.memberOf.get(a.k) === this.memberOf.get(b.k);
+        if (!same && a.e.class !== b.e.class) continue;
+        touched.add(pk);
         const dist = Math.hypot(a.e.pos[0] - b.e.pos[0], a.e.pos[1] - b.e.pos[1], a.e.pos[2] - b.e.pos[2]);
         const dvel = Math.hypot(a.e.vel[0] - b.e.vel[0], a.e.vel[1] - b.e.vel[1], a.e.vel[2] - b.e.vel[2]);
-        const same = this.memberOf.get(a.k) === this.memberOf.get(b.k);
         if (!same) {
           this.farSince.delete(pk);
-          if (dist < MERGE_DIST && dvel < MERGE_VEL) {
+          if (dist < MERGE_DIST && dvel < MERGE_VEL && this.canMerge(a.k, b.k)) {
             const since = this.closeSince.get(pk) ?? nowMs; this.closeSince.set(pk, since);
-            if (nowMs - since >= MERGE_MS) this.merge(a.k, b.k);
+            if (nowMs - since >= MERGE_MS) { this.merge(a.k, b.k); this.closeSince.delete(pk); }
           } else this.closeSince.delete(pk);
         } else {
           this.closeSince.delete(pk);
-          if (dist > SPLIT_DIST) {
+          // A re-classified member counts as far: it is no longer the same object.
+          if (dist > SPLIT_DIST || a.e.class !== b.e.class) {
             const since = this.farSince.get(pk) ?? nowMs; this.farSince.set(pk, since);
-            if (nowMs - since >= SPLIT_MS) { this.leave(b.k); this.newGroup(b.k); }
+            if (nowMs - since >= SPLIT_MS) { this.leave(b.k); this.newGroup(b.k); this.farSince.delete(pk); }
           } else this.farSince.delete(pk);
         }
       }
     } else {
       for (const a of all) if ((this.groups.get(this.memberOf.get(a.k)!)?.size ?? 1) > 1) { this.leave(a.k); this.newGroup(a.k); }
     }
+    for (const pk of [...this.closeSince.keys()]) if (!touched.has(pk)) this.closeSince.delete(pk);
+    for (const pk of [...this.farSince.keys()]) if (!touched.has(pk)) this.farSince.delete(pk);
 
     const byKey = new Map(all.map(a => [a.k, a]));
     const out: GlobalEntity[] = [];
@@ -65,6 +80,23 @@ export class Fusion {
       });
     }
     return out;
+  }
+
+  /** Number of pending hysteresis timers (for tests / leak checks). */
+  get pendingTimers(): number { return this.closeSince.size + this.farSince.size; }
+
+  private devicesOf(gid: string): Set<string> {
+    const s = new Set<string>();
+    for (const k of this.groups.get(gid) ?? []) s.add(this.deviceOf.get(k)!);
+    return s;
+  }
+
+  private canMerge(a: Key, b: Key): boolean {
+    const ga = this.memberOf.get(a)!, gb = this.memberOf.get(b)!;
+    if (ga === gb) return false;
+    const da = this.devicesOf(ga);
+    for (const d of this.devicesOf(gb)) if (da.has(d)) return false;
+    return true;
   }
 
   private newGroup(k: Key) { const gid = `g${this.nextGid++}`; this.groups.set(gid, new Set([k])); this.memberOf.set(k, gid); }

@@ -1,6 +1,8 @@
 import dgram from 'node:dgram';
+import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { World } from './world.js';
+import { createApi, shaperState } from './http.js';
 import type { ControlMessage } from './types.js';
 
 const UDP_PORT = Number(process.env.MINBAND_UDP_PORT ?? 7777);
@@ -8,30 +10,45 @@ const WS_PORT = Number(process.env.MINBAND_WS_PORT ?? 8080);
 
 const world = new World();
 const udp = dgram.createSocket('udp4');
-udp.on('message', (msg, rinfo) => {
-  const addr = `${rinfo.address}:${rinfo.port}`;
-  const ack = world.ingest(addr, new Uint8Array(msg), Date.now());
-  if (ack) udp.send(ack, rinfo.port, rinfo.address);
-});
+world.onAck = (addr, ack) => {
+  const i = addr.lastIndexOf(':');
+  udp.send(ack, Number(addr.slice(i + 1)), addr.slice(0, i));
+};
+udp.on('message', (msg, rinfo) => world.ingest(`${rinfo.address}:${rinfo.port}`, new Uint8Array(msg)));
+udp.on('error', e => { console.error(`udp: ${e.message}`); process.exit(1); });
 udp.bind(UDP_PORT, () => console.log(`udp ingest on :${UDP_PORT}`));
 
-const wss = new WebSocketServer({ port: WS_PORT });
-wss.on('listening', () => console.log(`ws on :${WS_PORT}`));
+// One HTTP server for the API and the WebSocket upgrade.
+const server = http.createServer(createApi(world));
+const wss = new WebSocketServer({ server });
+server.on('error', e => { console.error(`http/ws: ${e.message}`); process.exit(1); });
+server.listen(WS_PORT, () => console.log(`ws + http api on :${WS_PORT}`));
 wss.on('connection', ws => {
   ws.on('message', raw => {
     let m: ControlMessage; try { m = JSON.parse(raw.toString()); } catch { return; }
-    if (m.type === 'shaper') world.shaper.set(m.config);
-    else if (m.type === 'budget') world.budgetBps = m.bps;
-    else if (m.type === 'fusion') world.fusion.enabled = m.enabled;
+    if (m.type === 'shaper') {
+      const r = Number(m.revertAfterMs);
+      if (m.revertAfterMs !== undefined && Number.isFinite(r) && r > 0) world.shaper.setFor(m.config ?? {}, Math.min(r, 3_600_000));
+      else world.shaper.set(m.config ?? {});
+    } else if (m.type === 'budget') { const b = Number(m.bps); if (Number.isFinite(b) && b >= 0) world.budgetBps = Math.round(b); }
+    else if (m.type === 'fusion') world.fusion.enabled = !!m.enabled;
   });
 });
 
-setInterval(() => {
-  const snap = world.snapshot(Date.now());
-  const payload = JSON.stringify({ type: 'snapshot', snap });
-  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(payload);
-}, 1000 / 30);
-setInterval(() => {
-  const payload = JSON.stringify({ type: 'log', lines: world.log.splice(0) , shaper: { dropped: world.shaper.dropped, passed: world.shaper.passed } });
-  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(payload);
-}, 500);
+const broadcast = (payload: string) => { for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(payload); };
+const timers = [
+  setInterval(() => broadcast(JSON.stringify({ type: 'snapshot', snap: world.snapshot() })), 1000 / 30),
+  setInterval(() => {
+    const s = shaperState(world);
+    broadcast(JSON.stringify({ type: 'log', lines: world.log.splice(0), shaper: s.counters }));
+  }, 500),
+];
+
+const shutdown = () => {
+  timers.forEach(clearInterval);
+  for (const c of wss.clients) c.terminate();
+  wss.close(); server.close(); udp.close();
+  setTimeout(() => process.exit(0), 200).unref();
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

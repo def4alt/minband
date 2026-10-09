@@ -1,33 +1,185 @@
-// In-process link impairment: token bucket (bps), fixed delay, Bernoulli loss. Applied to every
-// datagram before it reaches the receiver so resync is exercised for real.
+// In-process link impairment: Bernoulli loss, token bucket (bps, burstSec), fixed delay. Applied to
+// every datagram before it reaches the receiver so resync is exercised for real. Clock, RNG and
+// timer are injected so tests are deterministic.
+//
+// Order per datagram: loss (like dummynet's plr, before the queue) -> token bucket -> delay queue.
+// Token bucket: capacity = bps/8 * burstSec bytes, refilled at bps/8 bytes/s, starts full. A
+// datagram (payload + 28 B UDP/IPv4 header) is admitted whenever the bucket is positive and its
+// size is taken out, possibly leaving the bucket in debt. The long-run rate is still exactly bps
+// (debt is repaid before anything else passes), bursts are at most one bucket plus one datagram,
+// and admission does not depend on size: with a strict "tokens >= size" rule a 160 B keyframe
+// never fits a 2 kbps link's 125 B bucket while small deltas keep it near empty, so repair
+// starves. This behaves like a drop-tail queue, which is what a narrow radio link does.
+// Delay is FIFO: a datagram is never delivered before one offered earlier, even if delayMs drops.
 import type { ShaperConfig } from './types.js';
 
+export const DEFAULT_SHAPER: ShaperConfig = { bps: 0, delayMs: 0, loss: 0, enabled: false, burstSec: 0.5 };
+export const UDP_IP_OVERHEAD = 28;
+
+export interface ShaperDeps {
+  now?: () => number;
+  rng?: () => number;
+  schedule?: (fn: () => void, ms: number) => unknown;
+  cancel?: (handle: unknown) => void;
+}
+
+export interface ShaperCounters {
+  offered: number; offeredBytes: number;
+  passed: number; passedBytes: number;     // admitted to the link (includes in flight)
+  delivered: number; deliveredBytes: number;
+  dropped: number; droppedBytes: number;
+  droppedLoss: number; droppedCap: number;
+  inFlight: number;
+}
+
+/** Deterministic PRNG (mulberry32) for reproducible loss patterns. */
+export function seededRng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Validate a partial config. Returns the cleaned values or a list of errors. */
+export function sanitizeShaper(c: Record<string, unknown>): { ok: Partial<ShaperConfig>; errors: string[] } {
+  const ok: Partial<ShaperConfig> = {}; const errors: string[] = [];
+  const num = (k: string, lo: number, hi: number): number | undefined => {
+    if (c[k] === undefined || c[k] === null || c[k] === '') return undefined;
+    const v = Number(c[k]);
+    if (!Number.isFinite(v) || v < lo || v > hi) { errors.push(`${k} must be a number in [${lo}, ${hi}]`); return undefined; }
+    return v;
+  };
+  const bps = num('bps', 0, 1e10); if (bps !== undefined) ok.bps = Math.round(bps);
+  const delayMs = num('delayMs', 0, 60_000); if (delayMs !== undefined) ok.delayMs = delayMs;
+  const loss = num('loss', 0, 1); if (loss !== undefined) ok.loss = loss;
+  const burstSec = num('burstSec', 0.01, 10); if (burstSec !== undefined) ok.burstSec = burstSec;
+  if (c.enabled !== undefined && c.enabled !== '') {
+    const e = c.enabled;
+    if (e === true || e === 1 || e === '1' || e === 'true' || e === 'on') ok.enabled = true;
+    else if (e === false || e === 0 || e === '0' || e === 'false' || e === 'off') ok.enabled = false;
+    else errors.push('enabled must be 0/1/true/false');
+  }
+  return { ok, errors };
+}
+
 export class Shaper {
-  config: ShaperConfig = { bps: 0, delayMs: 0, loss: 0, enabled: false };
-  private tokens = 0;
-  private lastRefill = Date.now();
-  dropped = 0;
-  passed = 0;
+  config: ShaperConfig = { ...DEFAULT_SHAPER };
+  readonly counters: ShaperCounters = {
+    offered: 0, offeredBytes: 0, passed: 0, passedBytes: 0, delivered: 0, deliveredBytes: 0,
+    dropped: 0, droppedBytes: 0, droppedLoss: 0, droppedCap: 0, inFlight: 0,
+  };
+  private readonly now: () => number;
+  private readonly rng: () => number;
+  private readonly schedule: (fn: () => void, ms: number) => unknown;
+  private readonly cancel: (handle: unknown) => void;
+  private tokens = Infinity; // full; clamped to capacity on first refill
+  private lastRefill: number;
+  private queue: { due: number; bytes: number; deliver: () => void }[] = [];
+  private timer: unknown = null;
+  private timerDue = Infinity;
+  private lastDue = -Infinity;
+  private revert: { prev: ShaperConfig; at: number; handle: unknown } | null = null;
 
-  constructor(private rng: () => number = Math.random) {}
+  constructor(deps: ShaperDeps | (() => number) = {}) {
+    const d: ShaperDeps = typeof deps === 'function' ? { rng: deps } : deps; // old signature: (rng)
+    this.now = d.now ?? Date.now;
+    this.rng = d.rng ?? Math.random;
+    this.schedule = d.schedule ?? ((fn, ms) => setTimeout(fn, ms));
+    this.cancel = d.cancel ?? (h => clearTimeout(h as ReturnType<typeof setTimeout>));
+    this.lastRefill = this.now();
+  }
 
-  set(c: Partial<ShaperConfig>) { this.config = { ...this.config, ...c }; }
+  /** Legacy counters (kept for the WS log message). */
+  get dropped(): number { return this.counters.dropped; }
+  get passed(): number { return this.counters.passed; }
 
-  /** Returns true if the datagram is delivered (after delay via callback), false if dropped. */
+  /** Merge a partial config. Any explicit change ends a pending timed override (e.g. blackout). */
+  set(c: Partial<ShaperConfig>): ShaperConfig {
+    const { ok } = sanitizeShaper(c as Record<string, unknown>);
+    if (this.revert) { this.config = this.revert.prev; this.cancel(this.revert.handle); this.revert = null; }
+    this.config = { ...this.config, ...ok };
+    return this.config;
+  }
+
+  /** Apply `c` for `ms`, then restore the config that was active before. */
+  setFor(c: Partial<ShaperConfig>, ms: number): ShaperConfig {
+    const prev = this.revert ? this.revert.prev : { ...this.config };
+    this.set(c);
+    const handle = this.schedule(() => {
+      const r = this.revert;
+      if (r && r.handle === handle) { this.config = r.prev; this.revert = null; }
+    }, ms);
+    this.revert = { prev, at: this.now() + ms, handle };
+    return this.config;
+  }
+
+  /** Milliseconds until a timed override reverts, or null. */
+  revertInMs(): number | null { return this.revert ? Math.max(0, this.revert.at - this.now()) : null; }
+
+  /** Bytes the bucket can hold at the current config (Infinity when uncapped). */
+  capacity(): number { return this.config.bps > 0 ? this.config.bps / 8 * this.config.burstSec : Infinity; }
+
+  /** Returns true if the datagram was admitted (`deliver` runs now or after the delay), false if dropped. */
   offer(bytes: number, deliver: () => void): boolean {
-    const c = this.config;
-    if (!c.enabled) { this.passed++; deliver(); return true; }
-    if (c.loss > 0 && this.rng() < c.loss) { this.dropped++; return false; }
+    const c = this.config; const k = this.counters;
+    const wire = bytes + UDP_IP_OVERHEAD;
+    k.offered++; k.offeredBytes += wire;
+    if (!c.enabled) return this.admit(wire, 0, deliver);
+    if (c.loss > 0 && this.rng() < c.loss) { k.droppedLoss++; return this.drop(wire); }
     if (c.bps > 0) {
-      const now = Date.now();
-      this.tokens = Math.min(c.bps / 8 * 0.5, this.tokens + (now - this.lastRefill) / 1000 * c.bps / 8); // burst = 0.5 s
+      const now = this.now(); const cap = this.capacity();
+      this.tokens = Math.min(cap, this.tokens + Math.max(0, now - this.lastRefill) / 1000 * c.bps / 8);
       this.lastRefill = now;
-      const wire = bytes + 28; // UDP + IPv4 headers
-      if (this.tokens < wire) { this.dropped++; return false; }
+      if (this.tokens <= 0) { k.droppedCap++; return this.drop(wire); }
       this.tokens -= wire;
     }
-    this.passed++;
-    if (c.delayMs > 0) setTimeout(deliver, c.delayMs); else deliver();
+    return this.admit(wire, c.delayMs, deliver);
+  }
+
+  private drop(wire: number): false {
+    this.counters.dropped++; this.counters.droppedBytes += wire;
+    return false;
+  }
+
+  private admit(wire: number, delayMs: number, deliver: () => void): true {
+    const k = this.counters;
+    k.passed++; k.passedBytes += wire;
+    const now = this.now();
+    const due = Math.max(now + delayMs, this.lastDue);
+    this.lastDue = due;
+    if (due <= now && this.queue.length === 0) { this.deliverOne(wire, deliver); return true; }
+    this.queue.push({ due, bytes: wire, deliver });
+    k.inFlight++;
+    this.arm();
     return true;
+  }
+
+  private deliverOne(wire: number, deliver: () => void) {
+    this.counters.delivered++; this.counters.deliveredBytes += wire;
+    deliver();
+  }
+
+  private arm() {
+    if (!this.queue.length) return;
+    const due = this.queue[0].due;
+    if (this.timer !== null && this.timerDue <= due) return;
+    if (this.timer !== null) this.cancel(this.timer);
+    this.timerDue = due;
+    this.timer = this.schedule(() => this.drain(), Math.max(0, due - this.now()));
+  }
+
+  private drain() {
+    this.timer = null; this.timerDue = Infinity;
+    const now = this.now();
+    while (this.queue.length && this.queue[0].due <= now) {
+      const q = this.queue.shift()!;
+      this.counters.inFlight--;
+      try { this.deliverOne(q.bytes, q.deliver); } catch { /* receiver errors are the receiver's business */ }
+    }
+    this.arm();
   }
 }

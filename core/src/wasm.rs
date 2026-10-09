@@ -3,7 +3,6 @@
 
 use crate::edge::{Edge, EdgeConfig, Track};
 use crate::receiver::{Receiver, ReceiverConfig};
-use crate::wire::{decode, Message};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -83,8 +82,8 @@ impl WasmReceiver {
     pub fn stats_json(&self) -> String {
         let s = self.inner.stats();
         format!(
-            "{{\"datagrams\":{},\"bytes\":{},\"deltas\":{},\"keyframes\":{},\"poses\":{},\"gapsDetected\":{},\"nacksSent\":{},\"outOfOrderDropped\":{}}}",
-            s.datagrams, s.bytes, s.deltas, s.keyframes, s.poses, s.gaps_detected, s.nacks_sent, s.out_of_order_dropped
+            "{{\"datagrams\":{},\"bytes\":{},\"deltas\":{},\"keyframes\":{},\"poses\":{},\"gapsDetected\":{},\"nacksSent\":{},\"outOfOrderDropped\":{},\"reconciled\":{}}}",
+            s.datagrams, s.bytes, s.deltas, s.keyframes, s.poses, s.gaps_detected, s.nacks_sent, s.out_of_order_dropped, s.reconciled
         )
     }
 }
@@ -92,12 +91,7 @@ impl WasmReceiver {
 /// Decode a datagram to a debug string (for the viewer's packet log).
 #[wasm_bindgen]
 pub fn describe(bytes: &[u8]) -> String {
-    match decode(bytes) {
-        Ok(Message::Delta { seq, tick, updates }) => format!("Delta seq={seq} tick={tick} updates={}", updates.len()),
-        Ok(Message::Keyframe { seq, tick, part, of, entities }) => format!("Keyframe seq={seq} tick={tick} part={part}/{of} entities={}", entities.len()),
-        Ok(m) => format!("{m:?}"),
-        Err(e) => format!("error {e:?}"),
-    }
+    crate::wire::describe(bytes)
 }
 
 /// Split a packed buffer (u16-LE length prefixes) into datagrams. Exposed for tests.

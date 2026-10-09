@@ -22,12 +22,18 @@ pub struct EdgeConfig {
     pub t_max_ticks: u32,
     pub keyframe_ticks: u32,
     pub hello_ticks: u32,
+    /// After being acked, re-send Hello this often so a restarted server re-identifies the device.
+    pub hello_refresh_ticks: u32,
     /// 0 = unlimited.
     pub budget_bps: u32,
     pub theta_scale_min: f32,
     pub theta_scale_max: f32,
     /// Confidence is bucketed into this many levels; a bucket change triggers an update.
     pub conf_buckets: u8,
+    /// Ignore a repeat nack for an entity repaired within this many ticks (one round trip).
+    pub repair_min_ticks: u32,
+    /// Remember despawned ids this long so a lost Despawn can be repaired.
+    pub despawn_memory_ticks: u32,
 }
 
 impl Default for EdgeConfig {
@@ -38,10 +44,13 @@ impl Default for EdgeConfig {
             t_max_ticks: 3 * TICK_HZ,
             keyframe_ticks: 2 * TICK_HZ,
             hello_ticks: TICK_HZ / 2,
+            hello_refresh_ticks: 5 * TICK_HZ,
             budget_bps: 0,
             theta_scale_min: 0.33,
             theta_scale_max: 13.0,
             conf_buckets: 4,
+            repair_min_ticks: TICK_HZ / 2,
+            despawn_memory_ticks: 10 * TICK_HZ,
         }
     }
 }
@@ -74,6 +83,10 @@ pub struct Edge {
     repair_ids: Vec<u32>,
     /// (seq, ids touched by that datagram), ring buffer for nack repair.
     sent: Vec<(u32, Vec<u32>)>,
+    /// (id, tick) of recent despawns, so a nacked Despawn can be resent.
+    recent_despawns: Vec<(u32, u32)>,
+    /// (id, tick) of the last repair sent per id, to ignore repeat nacks within a round trip.
+    last_repair: Vec<(u32, u32)>,
     theta_scale: f32,
     window_start: u32,
     window_bytes: u64,
@@ -94,6 +107,8 @@ impl Edge {
             force_keyframe: false,
             repair_ids: Vec::new(),
             sent: Vec::new(),
+            recent_despawns: Vec::new(),
+            last_repair: Vec::new(),
             theta_scale: 1.0,
             window_start: 0,
             window_bytes: 0,
@@ -130,6 +145,20 @@ impl Edge {
             return out;
         }
 
+        let hello_refresh = match self.last_hello_tick {
+            Some(t) => now.wrapping_sub(t) >= self.cfg.hello_refresh_ticks,
+            None => true,
+        };
+        if hello_refresh {
+            self.last_hello_tick = Some(now);
+            out.push(self.emit(Message::Hello {
+                device_id: self.device_id,
+                session_nonce: self.session_nonce,
+                caps: 0,
+                tick: now,
+            }, Vec::new()));
+        }
+
         let keyframe_due = self.force_keyframe
             || (!tracks.is_empty() && now.wrapping_sub(self.last_keyframe_tick) >= self.cfg.keyframe_ticks);
 
@@ -156,11 +185,15 @@ impl Edge {
         let mut updates: Vec<Update> = Vec::new();
 
         // Despawns: ghosts whose track vanished.
+        let despawn_memory = self.cfg.despawn_memory_ticks;
+        self.recent_despawns.retain(|(_, t)| now.wrapping_sub(*t) < despawn_memory);
+        let recent_despawns = &mut self.recent_despawns;
         self.ghosts.retain(|g| {
             if tracks.iter().any(|t| t.id == g.id) {
                 true
             } else {
                 updates.push(Update::Despawn { id: g.id, tick: now });
+                recent_despawns.push((g.id, now));
                 false
             }
         });
@@ -170,8 +203,10 @@ impl Edge {
         let tp2 = tp * tp;
         let tv2 = tv * tv;
 
+        let mut repaired_now: Vec<u32> = Vec::new();
         for t in tracks {
             let real = state_of(t, now);
+            let repair = self.repair_ids.contains(&t.id) && !self.recently_repaired(t.id, now);
             match self.ghosts.iter_mut().find(|g| g.id == t.id) {
                 None => {
                     updates.push(Update::Spawn(real));
@@ -184,15 +219,29 @@ impl Edge {
                     let aged = now.wrapping_sub(g.tick) >= self.cfg.t_max_ticks;
                     let class_changed = g.class != real.class
                         || bucket(g.conf, self.cfg.conf_buckets) != bucket(real.conf, self.cfg.conf_buckets);
-                    let repair = self.repair_ids.contains(&t.id);
                     if dp > tp2 || dv > tv2 || aged || class_changed || repair {
                         updates.push(Update::Update(real));
                         *g = real;
+                        if repair {
+                            repaired_now.push(t.id);
+                        }
                     }
                 }
             }
         }
-        self.repair_ids.clear();
+        for id in repaired_now {
+            self.note_repair(id, now);
+        }
+        // Repair of lost Despawns: nacked ids that are no longer tracked but were despawned recently.
+        let repair_ids = core::mem::take(&mut self.repair_ids);
+        for id in repair_ids {
+            let tracked = tracks.iter().any(|t| t.id == id);
+            let despawned = self.recent_despawns.iter().any(|(d, _)| *d == id);
+            if !tracked && despawned && !self.recently_repaired(id, now) {
+                updates.push(Update::Despawn { id, tick: now });
+                self.note_repair(id, now);
+            }
+        }
 
         if !updates.is_empty() {
             self.stats.updates += updates.len() as u32;
@@ -202,6 +251,19 @@ impl Edge {
         }
         self.account(now, &out);
         out
+    }
+
+    /// Encode a camera pose (`Message::Pose`, DESIGN §4: ~2 Hz, only for drawing the frustum).
+    /// `pos` in metres in the marker frame, `quat` a unit quaternion `[x, y, z, w]` (w last).
+    ///
+    /// Like every non-Hello message it consumes a `seq` (so the receiver can detect gaps), but it
+    /// is never repaired: a nack for a pose seq touches no entities. Returns `None` before the
+    /// first `Ack`, since the edge sends nothing but `Hello` until then (PROTOCOL.md).
+    pub fn pose(&mut self, pos: [f32; 3], quat: [f32; 4], origin_locked: bool, tick: u32) -> Option<Vec<u8>> {
+        if !self.acked {
+            return None;
+        }
+        Some(self.emit(Message::Pose { seq: 0, tick, pos, quat, origin_locked }, Vec::new()))
     }
 
     /// Feed a datagram received from the server (acks).
@@ -225,6 +287,16 @@ impl Edge {
                 }
             }
         }
+    }
+
+    fn recently_repaired(&self, id: u32, now: u32) -> bool {
+        self.last_repair.iter().any(|(i, t)| *i == id && now.wrapping_sub(*t) < self.cfg.repair_min_ticks)
+    }
+
+    fn note_repair(&mut self, id: u32, now: u32) {
+        let min = self.cfg.repair_min_ticks;
+        self.last_repair.retain(|(i, t)| *i != id && now.wrapping_sub(*t) < min);
+        self.last_repair.push((id, now));
     }
 
     fn emit(&mut self, mut msg: Message, ids: Vec<u32>) -> Vec<u8> {
@@ -286,8 +358,18 @@ mod tests {
 
     fn edge() -> Edge {
         let mut e = Edge::new(1, 42, EdgeConfig::default());
+        e.tick(&[], 0); // Hello
         e.on_datagram(&encode(&Message::Ack { last_seq: 0, missing: vec![], budget_bps: 0 }));
         e
+    }
+
+    #[test]
+    fn hello_is_refreshed_periodically_after_ack() {
+        let mut e = edge();
+        assert!(e.tick(&[], 1).is_empty());
+        let out = e.tick(&[], 5 * TICK_HZ + 1);
+        assert_eq!(out.len(), 1);
+        assert!(matches!(decode(&out[0]).unwrap(), Message::Hello { .. }));
     }
 
     fn walker(x: f32) -> Track {
@@ -348,6 +430,52 @@ mod tests {
         e.on_datagram(&encode(&Message::Ack { last_seq: seq, missing: vec![seq], budget_bps: 0 }));
         let out = e.tick(&[walker(0.01)], 2);
         assert_eq!(out.len(), 1, "repair resend of entity 1");
+    }
+
+    #[test]
+    fn pose_consumes_seq_after_ack_and_is_never_repaired() {
+        let mut un = Edge::new(1, 42, EdgeConfig::default());
+        assert_eq!(un.pose([0.0; 3], [0.0, 0.0, 0.0, 1.0], true, 0), None, "only Hello before ack");
+        assert_eq!(un.stats().seq, 0);
+
+        let mut e = edge();
+        let out = e.tick(&[walker(0.0)], 1);
+        let delta_seq = match decode(&out[0]).unwrap() { Message::Delta { seq, .. } => seq, m => panic!("{m:?}") };
+        let b = e.pose([1.0, 1.5, -2.0], [0.0, 0.0, 0.0, 1.0], true, 2).expect("acked");
+        let pose_seq = match decode(&b).unwrap() {
+            Message::Pose { seq, tick: 2, pos: [1.0, 1.5, -2.0], quat: [0.0, 0.0, 0.0, 1.0], origin_locked: true } => seq,
+            m => panic!("{m:?}"),
+        };
+        assert_eq!(pose_seq, delta_seq + 1);
+        assert_eq!(e.stats().seq, pose_seq);
+        assert!(e.stats().bytes_total >= (out[0].len() + b.len()) as u64);
+
+        // Nack of the pose seq: nothing to repair, the walker is still on its ghost.
+        e.on_datagram(&encode(&Message::Ack { last_seq: pose_seq, missing: vec![pose_seq], budget_bps: 0 }));
+        assert!(e.tick(&[walker(0.01)], 3).is_empty());
+        // The next datagram continues the sequence.
+        let out = e.tick(&[walker(5.0)], 4);
+        assert!(matches!(decode(&out[0]).unwrap(), Message::Delta { seq, .. } if seq == pose_seq + 1));
+    }
+
+    #[test]
+    fn lost_despawn_is_repaired_and_repeat_nack_ignored() {
+        let mut e = edge();
+        e.tick(&[walker(0.0)], 1);
+        let out = e.tick(&[], 2); // despawn
+        let seq = match decode(&out[0]).unwrap() { Message::Delta { seq, .. } => seq, _ => panic!() };
+        e.on_datagram(&encode(&Message::Ack { last_seq: seq, missing: vec![seq], budget_bps: 0 }));
+        let out = e.tick(&[], 3);
+        match decode(&out[0]).unwrap() {
+            Message::Delta { updates, .. } => assert!(matches!(updates[0], Update::Despawn { id: 1, .. })),
+            m => panic!("unexpected {m:?}"),
+        }
+        // Same nack again within a round trip: nothing is resent.
+        e.on_datagram(&encode(&Message::Ack { last_seq: seq, missing: vec![seq], budget_bps: 0 }));
+        assert!(e.tick(&[], 4).is_empty());
+        // After repair_min_ticks a repeat nack is honoured again.
+        e.on_datagram(&encode(&Message::Ack { last_seq: seq, missing: vec![seq], budget_bps: 0 }));
+        assert_eq!(e.tick(&[], 4 + TICK_HZ).len(), 1);
     }
 
     #[test]

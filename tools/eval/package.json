@@ -1,0 +1,28 @@
+{
+  "name": "minband-eval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline evaluation for MinBand: synthetic ground truth, in-process WASM replay, sweeps, baselines and charts.",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "eval": "node src/eval.ts",
+    "synth": "node src/synth.ts",
+    "replay": "node src/replay.ts",
+    "sweep": "node src/sweep.ts",
+    "baselines": "node src/baselines.ts",
+    "charts": "node src/charts.ts",
+    "ablation": "node src/ablation.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "minband-core": "file:../../core/pkg-node"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

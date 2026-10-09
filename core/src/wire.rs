@@ -66,6 +66,16 @@ pub fn decode(bytes: &[u8]) -> Result<Message, CodecError> {
     Ok(env.msg)
 }
 
+/// One-line human-readable summary of a datagram, for packet logs (viewer, iOS debug HUD).
+pub fn describe(bytes: &[u8]) -> String {
+    match decode(bytes) {
+        Ok(Message::Delta { seq, tick, updates }) => format!("Delta seq={seq} tick={tick} updates={}", updates.len()),
+        Ok(Message::Keyframe { seq, tick, part, of, entities }) => format!("Keyframe seq={seq} tick={tick} part={part}/{of} entities={}", entities.len()),
+        Ok(m) => format!("{m:?}"),
+        Err(e) => format!("error {e:?}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

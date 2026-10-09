@@ -120,8 +120,20 @@ Single crate `minband-core`, deterministic:
 ## 4. Sync protocol (behaviour; wire format in `proto/PROTOCOL.md`)
 
 - **Ticks** are 1/120 s of the *edge* clock, `u32` since session start. The receiver estimates
-  offset to its own clock from datagram arrival times (min-filter over the last 50) and
-  extrapolates to its own now.
+  offset to its own clock from datagram arrival times and extrapolates to its own now
+  (`server/src/clock.ts`): each datagram gives `local - edge = offset + transit delay`; a sample
+  below the estimate lowers it at once; the estimate never exceeds the min over a sliding 10 s
+  window and, while every sample in that window is above it (edge clock running slow, or added
+  latency), rises toward that min by at most 1 ms/s. If every sample for 2 s is more than 1 s
+  above it, the edge clock stepped (phone slept, ARKit timestamps stalled) and it re-syncs at
+  once. A new session (new `session_nonce`) starts a fresh estimate.
+- **Device identity**: the server keys a device by `device_id` once its `Hello` has been seen and
+  by UDP address before that. A known `device_id` saying `Hello` from a new address keeps its
+  state and moves there; acks go to the latest address, the old one stays routed as an alias.
+  Because an acked edge never repeats `Hello`, a stream from an unknown address with no `Hello`
+  is also adopted by an identified device when that device went quiet (>= 500 ms) as the new
+  address appeared and the new stream's ticks continue its tick stream (within 1 s); ambiguous
+  matches stay separate.
 - **Sequence numbers** per device, `u32`, one per datagram.
 - **Delta** = list of entity updates (`Spawn | Update | Despawn`). An `Update` carries the full
   `EntityState` of that entity (not a diff of fields): idempotent, loss-tolerant, ~22 bytes with
@@ -142,6 +154,18 @@ Single crate `minband-core`, deterministic:
 - **Loss handling**: receiver tracks a window of seqs; a gap older than 200 ms becomes a `Nack`.
   The edge responds with the *current* state of every entity touched in the missing seqs (state
   repair), not the lost packets.
+- **Hello refresh**: after being acked, the edge re-sends `Hello` every 5 s so a restarted
+  server re-identifies the device. A receiver that adopted a device without a Hello records the
+  nonce on the first one it sees; only a *different* nonce resets state.
+- **Nack pacing**: a gap is nacked at most once per 500 ms (one round trip plus margin), and the
+  edge ignores a repeat nack for an id it repaired within the last 500 ms. Without this, repairs
+  under loss roughly doubled the uplink (see EVAL_FINDINGS.md).
+- **Despawn repair**: the edge remembers despawned ids for 10 s; a nacked seq that carried a
+  Despawn is repaired by resending it. Independently, once every part of a keyframe has arrived
+  the receiver removes entities the keyframe did not list (and that were not observed after it).
+- **Entity drop rule**: while the device is alive, removal happens only through Despawn and
+  keyframe reconciliation. Age-based dropping (10 s) applies once the device has been silent for
+  6 s; a hard limit of 30 s applies regardless.
 - **Staleness**: entity not refreshed for 2 x `T_max` is drawn as stale; after 10 s it is dropped.
   If the device is silent for 5 s, all its entities are stale; after 30 s the device is removed.
 
@@ -157,22 +181,48 @@ golden vectors (`core/tests/golden/*.json`) that must match on native, iOS and W
 
 Two mechanisms, used for different purposes:
 
-1. **In-process shaper** in the server (token bucket + fixed delay + Bernoulli loss) controlled
-   from the viewer slider. Reliable on stage, shows cause and effect instantly. It drops
-   datagrams *before* they reach the receiver so resync is exercised for real.
+1. **In-process shaper** in the server (Bernoulli loss, then token bucket, then fixed FIFO delay)
+   controlled from the viewer sliders and scenario presets, or from `GET /api/shaper` (see
+   `server/README.md`). Reliable on stage, shows cause and effect instantly. It drops datagrams
+   *before* they reach the receiver so resync is exercised for real, and acks are only generated
+   for datagrams that got through, so a blackout silences the downlink too. Token bucket depth is
+   `burstSec` (default 0.5 s) of `bps`; a datagram is admitted while the bucket is positive and
+   may leave it in debt, so admission does not depend on size (a strict "tokens >= size" rule
+   starves 160 B keyframes behind small deltas on a 2 kbps link). Delay never reorders. A timed
+   override (`revertAfterMs`, used by the "blackout 10 s" preset) restores the previous link on
+   the server, so it survives a viewer reload; any explicit change ends it early.
 2. **dummynet** (`tools/link.sh`, macOS `dnctl`/`pfctl`) shaping UDP :7777 at the OS level for
    honest measurements and for the recorded evaluation runs.
 
 ## 7. Evaluation
 
-- **Bytes/s per device** under scenarios: static room, one walker, three walkers, 2 phones.
-- **Baseline A**: H.264 720p at 1.5 Mbps (and 480p at 500 kbps) - the "what drones send today".
-  Encoded from the recorded ARKit frames with VideoToolbox, bitrate measured not quoted.
-- **Baseline B**: naive metadata, full state of every entity every frame at 30 Hz.
+Tooling: `tools/eval` (see its README). Logs are replayed offline and in-process through the WASM
+`Edge` and `Receiver` over a simulated link; no server. Until phone logs exist the same pipeline
+runs on synthetic ground truth (perfect-tracker velocities, optional gaussian noise).
+
+- **Bytes/s per device** under scenarios: static room, one walker, three walkers, crowd (8
+  people with churn), 2 phones (live only). Bytes are counted at the sender, every datagram
+  including those the link drops, as payload + 28 B UDP/IP header.
+- **Baseline A**: H.264 720p at 1.5 Mbps (and 480p at 500 kbps, 360p at 250 kbps) - the "what
+  drones send today". Encoded from the recorded ARKit frames with `AVAssetWriter` H.264
+  (VideoToolbox) at those target bitrates over the same session as the ground-truth log; the
+  bitrate is measured from the encoded track, not quoted. Until then the numbers are shown as
+  "configured, to be replaced by measured VideoToolbox numbers".
+- **Baseline B**: naive metadata, full state of every entity every frame at 30 Hz:
+  `entities * 31 B * 30 Hz + 30 Hz * 40 B`, entities time-averaged from the log.
+- **Twin error**: at every logged frame, for each ground-truth row, the distance between the
+  logged position and the receiver's extrapolation to that tick. The ground truth is the edge's
+  own tracker output, so this measures sync fidelity, not perception accuracy. An entity absent
+  from the twin is reported as availability (and charged 2.0 m in the penalised mean).
 - **Fidelity vs bytes**: replay the edge's ground-truth log through `core::Edge` offline with
-  `θ_pos` swept over `[0.02 .. 2.0]`, measure mean and p95 twin position error against the
-  ground truth at the receiver's extrapolated time, plot error vs bytes/s. One chart, log-x.
-- **Resilience**: twin error vs packet loss rate at fixed `θ`, with and without state repair.
+  `θ_pos` swept over `[0.02 .. 2.0]` (log-spaced, `θ_vel = 2·θ_pos`), lossless zero-delay link,
+  measure mean and p95 twin position error, plot error vs bytes/s. One chart, log-x, with the
+  baselines as reference lines.
+- **Resilience**: twin error and availability vs packet loss rate (0, 5, 20, 50 %, Bernoulli,
+  both directions, 50 ms one-way delay) at `θ_pos` 0.15, mean of 10 seeds, with state repair
+  (an ack listing the open gaps whenever a gap turns 200 ms old, checked every 100 ms) and
+  without (no acks; keyframes only). The live server's cadence (an ack after any datagram once
+  100 ms have passed) is measured too, as a bytes comparison.
 
 ## 8. Risks and mitigations
 

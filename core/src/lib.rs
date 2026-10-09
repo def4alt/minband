@@ -7,9 +7,8 @@
 //! - `predictor`: per-class kinematic extrapolation.
 //! - `edge`: ghosts, divergence thresholds, budget controller, outgoing sequence.
 //! - `receiver`: per-device state, gap detection, acks, extrapolation.
-
-
-
+//! - `wasm` (feature `wasm`): wasm-bindgen surface for the server and viewer.
+//! - `ffi` (feature `ios`): uniffi surface for the Swift app (`tools/build-ios.sh`).
 
 pub mod classes;
 pub mod edge;
@@ -19,6 +18,13 @@ pub mod wire;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
+
+#[cfg(feature = "ios")]
+pub mod ffi;
+
+// uniffi needs its scaffolding (`UniFfiTag`, namespace `minband_core`) at the crate root.
+#[cfg(feature = "ios")]
+uniffi::setup_scaffolding!();
 
 /// Ticks per second of the edge clock. 120 divides 30, 60 and 24 fps frame periods exactly.
 pub const TICK_HZ: u32 = 120;

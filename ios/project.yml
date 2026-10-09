@@ -9,7 +9,12 @@ targets:
     type: application
     platform: iOS
     sources: [MinBand]
+    scheme:
+      testTargets: [MinBandTests]
     dependencies:
+      # Built by tools/build-ios.sh: static libminband_core.a per slice plus the Clang module
+      # `minband_coreFFI` (Headers/minband_coreFFI/module.modulemap) that
+      # MinBand/Generated/minband_core.swift imports. Static, so linked but not embedded.
       - framework: Frameworks/MinBandCore.xcframework
         embed: false
         optional: true
@@ -20,9 +25,47 @@ targets:
         NSLocalNetworkUsageDescription: "MinBand streams entity updates to the laptop twin."
         UIRequiredDeviceCapabilities: [arkit]
         UILaunchScreen: {}
+        # Perception pipeline: overlay and Vision orientation assume portrait.
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIStatusBarHidden: true
+        # Ground-truth CSVs in Documents are visible in the Files app.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
         SWIFT_VERSION: "5.10"
         TARGETED_DEVICE_FAMILY: "1"
+        # MinBand/Models/*.mlpackage (gitignored) is compiled by Xcode into the bundle root;
+        # Detector loads it through Vision, so no generated model class is needed.
+        COREML_CODEGEN_LANGUAGE: None
         LIBRARY_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/Frameworks"
-        SWIFT_OBJC_BRIDGING_HEADER: MinBand/Generated/minband_coreFFI.h
+        # The core's simulator slice is arm64 only (rust target aarch64-apple-ios-sim); without
+        # this a generic simulator build also links x86_64 and fails.
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+        # No bridging header: the generated Swift does `import minband_coreFFI`, a Clang module
+        # shipped inside the XCFramework.
+
+  # Logic tests for the perception pipeline (tracker, origin, detector mapping, lift, GT log).
+  # Not hosted in the app and not linked against the core: the tested files are compiled in
+  # directly, so these run even when the XCFramework is stale.
+  MinBandTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - MinBandTests
+      - MinBand/Models.swift
+      - MinBand/Tracker.swift
+      - MinBand/Origin.swift
+      - MinBand/Detector.swift
+      - MinBand/Lift3D.swift
+      - MinBand/GroundTruthLog.swift
+      # The gitignored YOLO model, if present, so testBundledModelRunsIfPresent can load it.
+      - path: MinBand/Models
+        optional: true
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        COREML_CODEGEN_LANGUAGE: None
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64

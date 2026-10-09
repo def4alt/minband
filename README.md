@@ -30,12 +30,10 @@ with emulated impairment.
 ## Toolchain
 
 ```bash
-# Rust (core). Not installed on this machine yet.
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim wasm32-unknown-unknown
-cargo install wasm-pack uniffi-bindgen-cli
-# Node 20+ (server, viewer): present.
-# Xcode 16+ with iOS 17+ SDK (ios): present. Optional: brew install xcodegen
+# Everything (rust + iOS/WASM targets, wasm-pack, xcodegen, pnpm) is pinned in mise.toml:
+mise install
+# Node 20+ (server, viewer) and Xcode 16+ with the iOS 17 SDK are assumed.
+# iOS: tools/build-ios.sh builds the core XCFramework + Swift bindings (gitignored) before Xcode can build.
 ```
 
 ## Quick start (laptop side)
