@@ -3,7 +3,8 @@
 Status: v0.1, written 2026-10-09 (Builders Night). Event: D4D x EDTH, Seoul, build 10 Oct, judging
 11 Oct 2026. Bringing existing code is allowed. Background and sources:
 [`reports/EDTH and D4D lessons for MinBand.md`](../reports/EDTH%20and%20D4D%20lessons%20for%20MinBand.md).
-Hardware on hand: iPhone (LiDAR), laptop, Raspberry Pi 5. No external radio yet.
+Hardware on hand: iPhone (LiDAR; the iOS app is tested on device), laptop, Raspberry Pi 5. No
+external radio yet.
 
 Work top to bottom. P0 is the demo; P1 makes it land with the military judges; stretch items are
 picked up only once everything above them works end to end and is rehearsed.
@@ -33,11 +34,11 @@ less airtime, not undetectable); the video ratio before H.264 is measured on the
 | Pri | Item | Where | Done when |
 |---|---|---|---|
 | P0 | Pick the track (Tactical Edge: Sensor Fusion & Edge AI, else UAS/C-UAS), quote its problem statement on slide 1, get one concrete scenario and real link rates from a military mentor | slides | Scenario written on slide 1 |
-| P0 | iPhone end to end: marker lock, depth lift, detector rate, bytes/s on the laptop | `ios/MinBand/Origin.swift`, `Lift3D.swift`, `Detector.swift`, `Pipeline.swift` | Walker tracked live on the twin |
 | P0 | Measure H.264 on the phone (VideoToolbox) at 720p/480p/360p | `runs/baseline_a.json`, `tools/eval` | Viewer overlay no longer says "configured" |
 | P0 | Pi 5 link box with profiles | §3, new `tools/pi-link.sh` | Phone -> Pi -> laptop works; each profile changes the bytes graph |
 | P0 | Budget fixes needed for profiles below ~4 kbit/s | §3.4 | Telemetry and LoRa profiles hold a static scene without saturating |
 | P0 | Record a fallback run; rehearse the 3 + 2 min and 5 min versions | `runs/eval` | Video file and slides frozen |
+| P1 | Visuals V1-V3 (§5) | viewer, server | Each rehearsed in the demo script |
 | P1 | CoT export to ATAK/iTAK/WinTAK: one CoT event per fused entity, affiliation unknown (`a-u-G...`), `ce`/`le` from the error estimate, `stale` from staleness; marker lat/lon/heading from config | new `server/src/cot.ts` next to `world.ts`, `fusion.ts` | Entity appears on a TAK screen |
 | P1 | Drones-per-link: N sim devices from the Pi plus the phone through the HF profile | §4, `server/src/sim.ts` | Per-device and total B/s visible under 9.6 kbit/s |
 | P1 | Pi 5 as a further platform for the golden vectors | §4 | `cargo test` green on the Pi |
@@ -175,7 +176,30 @@ Sim traffic leaves through `eth0`, so its uplink is shaped; its acks arrive on `
 are not. Use it for the drones-per-link run: eight simulated devices plus the phone sharing the
 `hf` profile.
 
-## 5. Stretch ideas, in order
+## 5. Visual presentation
+
+Each visual proves one claim. Dramatic ones live behind a `STAGE` toggle so the operator view
+keeps the restraint rules in `docs/STYLE.md`; all of them stay monochrome, hairline, and move
+only when something happened.
+
+| # | Visual | Proves | Where | Size |
+|---|---|---|---|---|
+| V1 | **Video on the same link.** Beside the live twin, the halftone panel shows what video would deliver through the current profile: frames paint in line by line at the link rate (a ~30 KB still takes ~2 min at 2 kbit/s), with `NEXT FRAME 1:52`. Labelled as computed from the measured bitrate. | ~1/1000 of the bytes | `viewer/src/halftone.ts`, side-by-side panel | S-M |
+| V2 | **Uncertainty rings in a blackout.** Each entity gets a hairline ground ring that widens with time since its last update; on reconnect the rings snap to points. Pairs with pulling the Pi's Ethernet cable. | Survives the link dying, honestly | `viewer/src/scene.ts` | S |
+| V3 | **Packet waterfall and click.** A `LINK ACTIVITY` strip: time scrolls down, one tick per datagram, width = bytes (video would be a solid bar). Optional soft click per packet, like a Geiger counter: silent while predictable, clicks on turns. | Bandwidth proportional to surprise | structured per-datagram WS event (device, kind, bytes, ids) in `server/src/world.ts` (today it is only a text log line); viewer strip | M |
+| V4 | **Tolerance bubble on the phone.** In the iOS `WIREFRAME` stage mode, a wire sphere of radius θ_pos x theta_scale sits on each person's ghost; walking stretches it, leaving it snaps it back and a packet goes. Needs an FFI accessor returning ghost positions predicted to `now` (ghosts are in `core/src/edge.rs`, `theta_scale` is already in stats). | The mechanism, without words | `core/src/edge.rs`, `core/src/ffi.rs`, `ios/MinBand/ARViewContainer.swift` | M |
+| V5 | **Packets in the twin.** Using V3's event, each update draws a short line from the device frustum to the entity it corrects, with the error that triggered it (`+17 cm`). | Only surprises are sent | `viewer/src/scene.ts` | M |
+| V6 | **Byte odometers.** `MINBAND 48 KB` vs `VIDEO 112 MB` since demo start, tabular digits, live ratio. | The headline number | viewer credits row | S |
+| V7 | **Eight drones, one HF link.** Eight sim devices from the Pi through `hf`, each with a moving frustum over the terrain, fused into one picture. The sim does not send `Pose` yet. | Drones per link | `server/src/sim.ts` | S-M |
+| V8 | **Live point on the eval curve.** The fidelity-vs-bytes chart with a dot that slides as the profile steps down. | Measured, not claimed | viewer, `runs/eval/fidelity_vs_bytes.csv` | M |
+
+Props: a 128x64 monochrome OLED on the Pi showing profile and kbit/s plus a `JAM` toggle switch
+(with L3); the phone on a pole or filmed from a mezzanine for a drone-like view; slides in the
+same visual language, reusing the eval charts.
+
+Order for the weekend: V1, V2, V3, then V4 (the iOS app is tested, so it is safe to build on).
+
+## 6. Stretch ideas, in order
 
 Pick from the top. Each is a vertical slice that can be demoed on its own.
 
@@ -195,7 +219,7 @@ Pick from the top. Each is a vertical slice that can be demoed on its own.
 | S12 | **Real low-rate radio.** Pair of Meshtastic LoRa nodes (KR920 band in Korea) or a SiK telemetry pair; measured run replaces the emulated profiles. | `tools/` | L (hardware) | Measured beats emulated |
 | S13 | **Utility test.** An operator reports count, class and location from the twin vs from video at the same budget, timed. | `tools/eval`, a script for the test | M | DARPA scores reduction "with preserved mission utility" |
 
-## 6. After the hackathon
+## 7. After the hackathon
 
 Geodesy with real error bars, global track IDs and a shared timebase, porting off ARKit (VIO,
 rangefinder or terrain ray-cast), thermal, and the Ukraine and NATO pathways are in the report's
