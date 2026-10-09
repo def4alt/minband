@@ -1,27 +1,24 @@
 // Identify a datagram before choosing which per-device Receiver gets it. Decoding stays in Rust:
-// this reads core's `describe()` string, e.g.
-//   "Hello { device_id: 7, session_nonce: 123, caps: 0, tick: 5 }"
-//   "Delta seq=12 tick=3456 updates=1", "Keyframe seq=3 tick=240 part=0/1 entities=4",
-//   "Pose { seq: 5, tick: 600, ... }", "Bye { seq: 9, tick: 700 }", "error Malformed".
-// TODO(core): expose a structured `peek_json` from the WASM build and drop the string parsing.
-import { describe } from 'minband-core';
+// core's `peek_json()` returns e.g.
+//   {"kind":"hello","deviceId":7,"nonce":123,"tick":5}
+//   {"kind":"keyframe","seq":3,"tick":252,"part":0,"of":2,"ids":[4,9],"thetaM":0.15}
+//   {"kind":"malformed","error":"BadVersion(0)"}
+// `tick` is the edge tick the datagram was sent at (for a paced keyframe part, its newest entity
+// tick). `text` keeps the human-readable `describe()` line for logs.
+import { describe, peek_json } from 'minband-core';
 
 export type PeekKind = 'hello' | 'delta' | 'keyframe' | 'pose' | 'bye' | 'ack' | 'malformed';
-export interface Peek { kind: PeekKind; deviceId?: number; nonce?: number; seq?: number; tick?: number; text: string }
-
-const KINDS: [string, PeekKind][] = [['Hello', 'hello'], ['Delta', 'delta'], ['Keyframe', 'keyframe'], ['Pose', 'pose'], ['Bye', 'bye'], ['Ack', 'ack']];
-const field = (s: string, name: string): number | undefined => {
-  const m = new RegExp(`\\b${name}(?:: |=)(\\d+)`).exec(s);
-  return m ? Number(m[1]) : undefined;
-};
+export interface Peek {
+  kind: PeekKind; deviceId?: number; nonce?: number; seq?: number; tick?: number; text: string;
+  /** Entity ids carried by a delta (spawns, updates, despawns) or a keyframe part. */
+  ids?: number[];
+  /** Keyframe part index and part count. */
+  part?: number; of?: number;
+  /** Position threshold (m) the edge declared in a delta or keyframe. */
+  thetaM?: number;
+}
 
 export function peek(buf: Uint8Array): Peek {
-  const text = describe(buf);
-  const kind = KINDS.find(([p]) => text.startsWith(p))?.[1] ?? 'malformed';
-  const p: Peek = { kind, text, seq: field(text, 'seq'), tick: field(text, 'tick') };
-  if (kind === 'hello') {
-    p.deviceId = field(text, 'device_id'); p.nonce = field(text, 'session_nonce');
-    if (p.deviceId === undefined || p.nonce === undefined) p.kind = 'malformed';
-  }
-  return p;
+  const { error: _error, ...j } = JSON.parse(peek_json(buf)) as Omit<Peek, 'text'> & { error?: string };
+  return { ...j, text: describe(buf) };
 }

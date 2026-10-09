@@ -20,8 +20,8 @@ import { TICK_HZ, readGt, toFrames, entityStats, type Frame, type GtRow } from '
 import { rng, subSeed } from './rng.ts';
 import { isMain, userPath } from './paths.ts';
 
-/** Ack { last_seq: 0, missing: [], budget_bps: 0 }, so the edge skips the Hello handshake. */
-export const PRE_ACK = new Uint8Array([0, 4, 0, 0, 0]);
+/** Ack { last_seq: 0, missing: [], budget_bps: 0 } (protocol v1), so the edge skips the Hello handshake. */
+export const PRE_ACK = new Uint8Array([1, 4, 0, 0, 0]);
 /** UDP (8) + IPv4 (20) header bytes added to every datagram for wire accounting. */
 export const HEADER_BYTES = 28;
 const KIND = { hello: 0, delta: 1, keyframe: 2, pose: 3, ack: 4, bye: 5 } as const;
@@ -43,7 +43,8 @@ export interface ReplayOptions {
   ackEveryTicks?: number;
   /** Error charged for a GT row whose entity is absent from the twin. Default 2.0 m. */
   missingPenaltyM?: number;
-  /** Passed to the edge's budget controller; 0 = unlimited (thresholds stay fixed). */
+  /** Advertised in every ack like the server does: the edge's budget controller and keyframe/hello
+   *  cadence and the receiver's coast/stale/drop limits follow it. 0 = unlimited (thresholds stay fixed). */
   budgetBps?: number;
   /** Call receiver.gc(tick) every frame like the server does (drops entities silent for 10 s). Default true. */
   gc?: boolean;
@@ -96,16 +97,17 @@ export function replayFrames(frames: Frame[], step: number, opts: ReplayOptions)
   const penalty = opts.missingPenaltyM ?? 2.0;
   const fwdRng = rng(subSeed(seed, 'link:fwd')), revRng = rng(subSeed(seed, 'link:rev'));
 
-  const edge = WasmEdge.with_thresholds(1, 0xE7A1, thetaPos, thetaVel, opts.budgetBps ?? 0);
+  const budget = opts.budgetBps ?? 0;
+  const edge = WasmEdge.with_thresholds(1, 0xE7A1, thetaPos, thetaVel, budget);
   const rx = new WasmReceiver();
-  edge.on_datagram(PRE_ACK);
+  edge.on_datagram(rx.make_ack(budget)); // PRE_ACK carrying the budget
 
   const fwd: { at: number; d: Uint8Array }[] = [];
   const rev: { at: number; d: Uint8Array }[] = [];
   let datagrams = 0, deltas = 0, keyframes = 0, other = 0, payload = 0, lost = 0;
   let acksSent = 0, acksDelivered = 0, ackBytes = 0, lastAck = -Infinity;
   const sendAck = (tick: number) => {
-    const ack = rx.make_ack(0);
+    const ack = rx.make_ack(budget);
     acksSent++; ackBytes += ack.length + HEADER_BYTES; lastAck = tick;
     if (!(ackLoss > 0 && revRng.next() < ackLoss)) rev.push({ at: tick + delay, d: ack });
     while (rev.length && rev[0].at <= tick) { edge.on_datagram(rev.shift()!.d); acksDelivered++; }

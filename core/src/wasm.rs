@@ -2,7 +2,7 @@
 //! datagrams go out as one byte buffer with u16-LE length prefixes to avoid Vec<Vec<u8>>.
 
 use crate::edge::{Edge, EdgeConfig, Track};
-use crate::receiver::{Receiver, ReceiverConfig};
+use crate::receiver::{extrapolated_json, Receiver, ReceiverConfig};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -15,6 +15,7 @@ impl WasmEdge {
         WasmEdge { inner: Edge::new(device_id, session_nonce, EdgeConfig::default()) }
     }
 
+    /// `budget_bps` applies until the first `Ack`, whose budget is authoritative.
     pub fn with_thresholds(device_id: u32, session_nonce: u32, theta_pos: f32, theta_vel: f32, budget_bps: u32) -> WasmEdge {
         let cfg = EdgeConfig { theta_pos, theta_vel, budget_bps, ..EdgeConfig::default() };
         WasmEdge { inner: Edge::new(device_id, session_nonce, cfg) }
@@ -29,13 +30,16 @@ impl WasmEdge {
     pub fn on_datagram(&mut self, bytes: &[u8]) { self.inner.on_datagram(bytes) }
     pub fn set_budget(&mut self, bps: u32) { self.inner.set_budget(bps) }
 
-    pub fn stats_json(&self) -> String {
-        let s = self.inner.stats();
-        format!(
-            "{{\"seq\":{},\"bytesTotal\":{},\"deltas\":{},\"keyframes\":{},\"updates\":{},\"thetaScale\":{},\"acked\":{}}}",
-            s.seq, s.bytes_total, s.deltas, s.keyframes, s.updates, s.theta_scale, s.acked
-        )
+    /// A `Pose` datagram (metres, marker frame; unit quaternion, w last), or empty before the first
+    /// `Ack` and when called sooner than the budget's pose interval: call it at any rate.
+    #[allow(clippy::too_many_arguments)]
+    pub fn pose(&mut self, px: f32, py: f32, pz: f32, qx: f32, qy: f32, qz: f32, qw: f32, origin_locked: bool, tick: u32) -> Vec<u8> {
+        self.inner.pose([px, py, pz], [qx, qy, qz, qw], origin_locked, tick).unwrap_or_default()
     }
+
+    /// `{seq,bytesTotal,deltas,keyframes,updates,thetaScale,acked,keyframeTicks,poseTicks,budgetBps,thetaM}`;
+    /// `bytesTotal` is payload only (the link adds 28 B per datagram).
+    pub fn stats_json(&self) -> String { self.inner.stats().json() }
 }
 
 #[wasm_bindgen]
@@ -52,25 +56,22 @@ impl WasmReceiver {
     }
 
     pub fn needs_ack(&self) -> bool { self.inner.needs_ack() }
+    /// The budget is pushed to the edge and sets this receiver's coast/stale/drop thresholds.
     pub fn make_ack(&mut self, budget_bps: u32) -> Vec<u8> { self.inner.make_ack(budget_bps) }
     pub fn last_edge_tick(&self) -> u32 { self.inner.last_edge_tick() }
     pub fn device_id(&self) -> Option<u32> { self.inner.device_id() }
     pub fn gc(&mut self, at_tick: u32) -> Vec<u32> { self.inner.gc(at_tick) }
 
-    /// JSON array of `{id,class,pos,vel,conf,tick,age,stale}`.
-    pub fn extrapolate_json(&self, at_tick: u32) -> String {
-        let mut s = String::from("[");
-        for (i, e) in self.inner.extrapolate(at_tick).iter().enumerate() {
-            if i > 0 { s.push(','); }
-            let st = e.state;
-            s.push_str(&format!(
-                "{{\"id\":{},\"class\":{},\"pos\":[{},{},{}],\"vel\":[{},{},{}],\"conf\":{},\"tick\":{},\"age\":{},\"stale\":{}}}",
-                st.id, st.class, st.pos[0], st.pos[1], st.pos[2], st.vel[0], st.vel[1], st.vel[2], st.conf, st.tick, e.age_ticks, e.stale
-            ));
-        }
-        s.push(']');
-        s
-    }
+    /// JSON array of `{id,class,pos,vel,conf,tick,age,stale,theta,coasting,ce}`: `theta` is the
+    /// threshold (m) the edge declared when it last refreshed the entity, `ce` the honest error
+    /// radius (m), which grows with the class speed while the device is `coasting`.
+    pub fn extrapolate_json(&self, at_tick: u32) -> String { extrapolated_json(&self.inner.extrapolate(at_tick)) }
+
+    /// The device has been silent for one keyframe period plus margin (cadence of the advertised budget).
+    pub fn coasting(&self, at_tick: u32) -> bool { self.inner.coasting(at_tick) }
+
+    /// Cadence for the budget this receiver last advertised (see `cadence_json`).
+    pub fn cadence_json(&self) -> String { self.inner.cadence().json() }
 
     pub fn pose_json(&self) -> Option<String> {
         self.inner.pose().map(|p| format!(
@@ -88,10 +89,28 @@ impl WasmReceiver {
     }
 }
 
+impl Default for WasmReceiver {
+    fn default() -> Self { Self::new() }
+}
+
 /// Decode a datagram to a debug string (for the viewer's packet log).
 #[wasm_bindgen]
 pub fn describe(bytes: &[u8]) -> String {
     crate::wire::describe(bytes)
+}
+
+/// `{"kind":"hello|delta|keyframe|pose|ack|bye|malformed","deviceId"?,"nonce"?,"seq"?,"tick"?,
+/// "ids"?,"part"?,"of"?,"thetaM"?,"error"?}`, for routing and packet logs.
+#[wasm_bindgen]
+pub fn peek_json(bytes: &[u8]) -> String {
+    crate::wire::peek_json(bytes)
+}
+
+/// `{"keyframeTicks","helloRefreshTicks","poseTicks","coastTicks","staleTicks","dropTicks"}` for a
+/// budget in bit/s (0 = unlimited).
+#[wasm_bindgen]
+pub fn cadence_json(budget_bps: u32) -> String {
+    crate::cadence::cadence(budget_bps).json()
 }
 
 /// Split a packed buffer (u16-LE length prefixes) into datagrams. Exposed for tests.

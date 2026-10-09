@@ -5,11 +5,13 @@
 //! Modules:
 //! - `wire`: message types and the postcard codec.
 //! - `predictor`: per-class kinematic extrapolation.
+//! - `cadence`: keyframe/hello/pose periods and coast/stale/drop thresholds from the byte budget.
 //! - `edge`: ghosts, divergence thresholds, budget controller, outgoing sequence.
 //! - `receiver`: per-device state, gap detection, acks, extrapolation.
 //! - `wasm` (feature `wasm`): wasm-bindgen surface for the server and viewer.
 //! - `ffi` (feature `ios`): uniffi surface for the Swift app (`tools/build-ios.sh`).
 
+pub mod cadence;
 pub mod classes;
 pub mod edge;
 pub mod predictor;
@@ -29,6 +31,7 @@ uniffi::setup_scaffolding!();
 /// Ticks per second of the edge clock. 120 divides 30, 60 and 24 fps frame periods exactly.
 pub const TICK_HZ: u32 = 120;
 
+pub use cadence::{cadence, Cadence};
 pub use edge::{Edge, EdgeConfig, Track};
 pub use predictor::Predictor;
 pub use receiver::{Receiver, ReceiverConfig};
