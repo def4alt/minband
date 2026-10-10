@@ -8,7 +8,6 @@ class names the export carries (COCO, VisDrone and military-vehicle models all w
 import ast
 import numpy as np
 import cv2
-import onnxruntime as ort
 
 # MinBand ids kept: COCO person, bicycle, car, motorcycle, bus, truck, and MinBand's armoured vehicle.
 KEEP = {0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck', 101: 'armoured'}
@@ -59,6 +58,7 @@ def nms(d: np.ndarray, conf: float, iou: float = 0.5) -> np.ndarray:
 
 class TiledDetector:
     def __init__(self, model_path: str, tile: int = 960, overlap: int = 96, conf: float = 0.25, threads: int = 0, size: int = 0):
+        import onnxruntime as ort  # lazy: only needed when actually loading a model
         so = ort.SessionOptions()
         if threads: so.intra_op_num_threads = threads
         self.sess = ort.InferenceSession(model_path, so, providers=['CPUExecutionProvider'])
