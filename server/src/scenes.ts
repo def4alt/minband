@@ -138,7 +138,8 @@ export function spreadScene(d: number, n: number, walkers = 1): Scene {
 
 /** log: replay a track log (`tick,id,class,x,y,z,vx,vy,vz,conf`, the phone's GroundTruthLog CSV or
  * tools/footage/track.py on real drone footage) as the tracker output, looping. Each loop gets a
- * fresh id range, so the edge despawns the old entities instead of seeing them jump. */
+ * fresh id range, so the edge despawns the old entities instead of seeing them jump. Between logged
+ * frames each track is extrapolated by its velocity to the edge tick. */
 export function logScene(path: string): { scene: Scene; durationTicks: number } {
   const frames = new Map<number, Track[]>();
   for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
@@ -159,7 +160,14 @@ export function logScene(path: string): { scene: Scene; durationTicks: number } 
       const loop = Math.floor(tick / span), rel = t0 + (tick % span);
       if (loop !== lastLoop) { i = 0; lastLoop = loop; }
       while (i + 1 < ticks.length && ticks[i + 1] <= rel) i++;
-      return (frames.get(ticks[i]) ?? []).map(tr => ({ ...tr, id: tr.id + loop * 100_000 }));
+      // Between logged frames (30 Hz) the edge ticks at 120 Hz: report each track's state predicted
+      // to the tick, as a tracker does, not the frame frozen. Frozen observations against a ghost that
+      // keeps moving cross theta inside every hold (3.5x the datagrams on the drone-footage log).
+      const dt = Math.max(0, rel - ticks[i]) / TICK_HZ;
+      return (frames.get(ticks[i]) ?? []).map(tr => ({
+        ...tr, id: tr.id + loop * 100_000,
+        pos: [tr.pos[0] + tr.vel[0] * dt, tr.pos[1] + tr.vel[1] * dt, tr.pos[2] + tr.vel[2] * dt],
+      }));
     },
   };
 }

@@ -118,6 +118,7 @@ test('log scene: replays a track log, holds the latest row per tick, loops with 
   assert.equal(durationTicks, 5);
   assert.deepEqual(scene(0).map(t => t.id), [7, 8]);
   assert.deepEqual(scene(3).map(t => t.id), [7, 8], 'held until the next logged tick');
+  assert.ok(Math.abs(scene(3)[1].pos[0] - (10 + 8 * 3 / 120)) < 1e-9, 'extrapolated by velocity to the tick');
   assert.deepEqual(scene(4).map(t => [t.id, t.pos[0]]), [[7, 1.02]]);
   assert.deepEqual(scene(5).map(t => t.id), [100_007, 100_008], 'second loop: fresh ids');
 });

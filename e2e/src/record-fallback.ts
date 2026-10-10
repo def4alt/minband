@@ -9,7 +9,8 @@
 //   TRACKS=<tracks.csv> TRACKS_CAMERA=x,y,z FAKE_CAMERA=<clip.mjpeg> npm run record
 //                                          # real drone footage (tools/footage): the sim replays the
 //                                          # track log and the viewer's video panel shows the clip
-//                                          # through Chromium's fake camera (not frame-synced)
+//                                          # through Chromium's fake camera (not frame-synced);
+//                                          # BASELINE_A=<baseline_a.json> uses the H.264 measured on it
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -37,7 +38,9 @@ const STEPS: [number, string, (api: string) => Promise<unknown>][] = [
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 mkdirSync(OUT, { recursive: true });
 const replay: Record<string, string> = process.env.TRACKS ? { TRACKS: process.env.TRACKS, TRACKS_CAMERA: process.env.TRACKS_CAMERA ?? '0,40,40' } : {};
-const s = await startStack({ sim: { DEVICES, ...replay } });
+// BASELINE_A: a measured H.264 table for the footage (tools/footage/h264.sh), for the video panel.
+const server: Record<string, string> = process.env.BASELINE_A ? { MINBAND_BASELINE_A: process.env.BASELINE_A } : {};
+const s = await startStack({ server, sim: { DEVICES, ...replay } });
 const viewer = await startViewer(s.server);
 const camera = process.env.FAKE_CAMERA
   ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-video-capture=${process.env.FAKE_CAMERA}`]

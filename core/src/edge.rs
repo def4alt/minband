@@ -1,6 +1,7 @@
 //! Edge-side sync: ghosts, divergence thresholds, budget controller, repair on nack.
 
 use crate::cadence::cadence;
+use crate::classes::prior;
 use crate::predictor::Predictor;
 use crate::wire::{decode, encode, theta_q, EntityState, Message, Update, MAX_DATAGRAM, UDP_IP_OVERHEAD};
 use crate::TICK_HZ;
@@ -533,8 +534,19 @@ fn pace_ticks(wire_bytes: usize, budget_bps: u32) -> u32 {
     (t.min(u32::MAX as u64 / 4) as u32).max(KF_PART_MIN_TICKS)
 }
 
+/// The state the edge sends for a track. Velocity is clamped to the class prior's max speed, the
+/// cap the predictor applies: otherwise a track faster than its class allows (a misclassified car,
+/// a tracker velocity spike) never matches its own ghost and costs an update on every tick.
 fn state_of(t: &Track, tick: u32) -> EntityState {
-    EntityState { id: t.id, class: t.class, pos: t.pos, vel: t.vel, conf: t.conf, tick }
+    let max = prior(t.class).max_speed;
+    let v2 = t.vel[0] * t.vel[0] + t.vel[1] * t.vel[1] + t.vel[2] * t.vel[2];
+    let vel = if v2 > max * max {
+        let k = max / v2.sqrt();
+        [t.vel[0] * k, t.vel[1] * k, t.vel[2] * k]
+    } else {
+        t.vel
+    };
+    EntityState { id: t.id, class: t.class, pos: t.pos, vel, conf: t.conf, tick }
 }
 
 fn dist2(a: &[f32; 3], b: &[f32; 3]) -> f32 {
@@ -932,5 +944,22 @@ mod tests {
         let out = e.tick(&tracks, start + 1);
         let parts: Vec<u8> = out.iter().filter_map(|d| match decode(d) { Ok(Message::Keyframe { part, .. }) => Some(part), _ => None }).collect();
         assert_eq!(parts, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn track_faster_than_its_class_does_not_storm() {
+        // A dismount reported at 6 m/s (the person prior caps at 3): the sent velocity is clamped,
+        // so the ghost matches and only the position error triggers updates, not every tick.
+        let mut e = Edge::new(1, 1, EdgeConfig::default());
+        e.on_datagram(&encode(&Message::Ack { last_seq: 0, missing: vec![], budget_bps: 0 }));
+        let mut updates = 0;
+        for t in 0..TICK_HZ {
+            let x = 6.0 * t as f32 / TICK_HZ as f32;
+            let tr = Track { id: 1, class: crate::classes::PERSON, pos: [x, 0.0, 0.0], vel: [6.0, 0.0, 0.0], conf: 200 };
+            for d in e.tick(&[tr], t) {
+                if let Ok(Message::Delta { updates: u, .. }) = decode(&d) { updates += u.len(); }
+            }
+        }
+        assert!(updates <= 30, "{updates} updates in 1 s for one over-speed track (was one per tick)");
     }
 }
