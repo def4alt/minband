@@ -92,6 +92,9 @@ def main():
     ap.add_argument("--movers", help="movers.json: mover sightings every 0.5 s (scored at every sighting)")
     ap.add_argument("--json"); ap.add_argument("--misses", help="write the missed inventory objects and unmatched contacts here")
     ap.add_argument("--no-hard", action="store_true", help="leave objects marked hard out of the inventory")
+    ap.add_argument("--rx-cam", default="rx", choices=["rx", "edge"], help="project the receiver's contacts through the pose it decoded "
+                    "(rx: the operator's drone view) or through the edge's camera (edge: where the contacts are in the world, for thin links "
+                    "that carry no camera Pose)")
     a = ap.parse_args()
     run = pathlib.Path(a.run)
     summ = json.loads((run / "scene/summary.json").read_text())
@@ -136,7 +139,7 @@ def main():
                 cam = ecam
                 items = [(x["id"], (x["e"], x["n"], x["u"]), 1, 0.0, False) for x in s["edge"]["tracks"]]
             else:
-                cam = s["rx"]["pose"]
+                cam = s["rx"]["pose"] if a.rx_cam == "rx" else ecam
                 if cam is None:
                     continue
                 items = [(c["id"], (c["e"], c["n"], c["u"] if c["u"] is not None else 0.75), c["count"], c["radius"], c["group"]) for c in s["rx"]["contacts"]]

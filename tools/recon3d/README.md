@@ -36,10 +36,20 @@ node scripts/record.mjs --out pov.mp4 --from 0 --to 40 --view drone --run-dir ru
 tools/recon3d/eval/run_eval.sh runs/recon3d/labrador-cal mytag            # PROFILE=lora etc. pass through
 ```
 
-Driver env: `POS_RES` (default 1 = 10 cm; 2 = 1 m, the old default), `LINK_M` (3), `CE_LINK` (0: the grouping
+Driver env: `POS_RES` (default 1 = 10 cm; 2 = 1 m, the old default), `LINK_M` (2: two vehicle tracks closer than a
+car's width plus clearance are one object; 3 grouped the neighbours of a parked row), `CE_LINK` (0: the grouping
 distance is `max(link_m, ce_link x ce)`; lift.py merges its own duplicates, so error radii do not group parked rows),
+`T_MOVING_S` / `T_STOPPING_S` (0.75 / 1: the edge's waits before it calls a track moving / stopped; lift.py's own motion
+test already decided, the core's defaults 2 / 5 s stay the core's), `REACQUIRE` (0: a new track within this many error
+radii of a lost contact of its class takes that contact over) and `U_TOL` (0: a height change in metres that makes a
+revision) — both measured below and left off,
 `SEED` (the link's loss is a seeded PRNG), `CLOCK=manual` (steps on `{cmd:'step'}`), `DUMP=<file.jsonl>` (batch
-replay, one state per 0.1 s step, then exit). Page: `?view=drone`, `?rec=1` (no video inset, for recording).
+replay, one state per 0.1 s step, then exit). Page: `?view=drone`, `?rec=1` (no video inset, for recording),
+`?rings=0`, `?ground=flat` (the old u = 0 plane), `?snap=0` (no settling on the ground outside the drone view).
+`lift.py --cache` keeps the lifted and ranged detections in the run dir (`lift_stage1.pkl`, `lift_ranging.pkl`) for
+iterating on tracking: ~1.6 instead of ~4.5 min; delete them after changing lifting, terrain or scale. Without the CUDA
+env (a Mac): a venv with numpy, scipy and opencv for lift.py and the scorer (`PY=<venv>/bin/python` for `run_eval.sh`);
+`record.mjs` with `CHROME=<Playwright's Chromium> SOFTGL=1`.
 
 YOLO26 needs ultralytics >= 8.4: `tools/recon3d/.venv` is a venv over the CUDA env with `ultralytics==8.4.175`
 (`python -m venv --system-site-packages`); run it with `YOLO_CONFIG_DIR=tools/recon3d/.venv/ultralytics-config` so
@@ -94,7 +104,7 @@ package must be built (`core/README.md`). Outputs go to `runs/` (gitignored); we
 | contacts with height (`dz`), rays at the object, `Ego`, camera `Pose` | real: core v2 frames through the shaped link, decoded by the WASM receiver |
 | chips | **simulated channel**: real compressed sizes (median ~0.6 kB), at most half the link (the spec's chip cap), 400 kbit/s on the video link; the core does not emit `ChipHead`/`ChipSym` yet |
 | heading of a still object | real: the course byte with speed 0 (PROTOCOL.md 3.4); lift.py measures it only where the view looks down >= 20 deg (a grazing view's footprint axis is the line of sight), so on the Labrador clip mostly near cars and movers |
-| static map | **not sent**: it stays on the drone, for placing objects; the operator's ground is a flat simulation at u = 0 (the reconstruction's ground plane) |
+| static map | **not sent**: it stays on the drone, for placing objects; the operator's ground is a simulated height field from the contacts' base heights (below) |
 | clock | the SLAM run's frame clock (30 fps); no GNSS: an arbitrary origin |
 
 ## Scenes and numbers
@@ -147,7 +157,17 @@ state is moving (the operator would see them drift); clean link (video regime).
 | + calibrated SLAM (`--focal 1401`) | 17 % | 22 % (25 %) | 27 % (30 %) | 46 % (46 %) | 3 % | 4.7 px / 0.85 m | 123 | 56/163 |
 | + YOLO26x max, far terrain tier, nothing deleted, ray-aligned noise | 62 % | 68 % (83 %) | 71 % (85 %) | 89 % (96 %) | 74 % | 6.2 px / 1.44 m | 760 | 188/513 |
 | + image-space re-identification | 58 % | 66 % (80 %) | 70 % (83 %) | 87 % (94 %) | 69 % | 6.8 px / 1.53 m | 679 | 186/499 |
-| + motion test and static estimate (**final**) | 56 % | 64 % (79 %) | 67 % (83 %) | 86 % (94 %) | 64 % | 6.4 px / 1.39 m | 656 | 30/484 |
+| + motion test and static estimate | 56 % | 64 % (79 %) | 67 % (83 %) | 86 % (94 %) | 64 % | 6.4 px / 1.39 m | 656 | 30/484 |
+| same, re-run on an M4 Mac (tag `mac_base`: identical) | 56 % | 63.5 % (78.9 %) | 67.2 % (82.6 %) | 85.8 % (93.8 %) | 53.3 % (64.0 %) | 6.4 px / 1.39 m | 656 | 30/484 |
+| + false-dismount filter | 56 % | 62.6 % (78.0 %) | 66.2 % (81.8 %) | 85.8 % (93.8 %) | 51.7 % (62.0 %) | 6.3 px / 1.38 m | 560 | 30/477 |
+| + re-identification at the static estimate, tentative tracks (`m1_all`) | 55 % | 64.8 % (72.5 %) | 69.3 % (77.0 %) | 86.4 % (87.7 %) | 49.6 % (54.1 %) | 6.7 px / 1.41 m | 477 | 35/494 |
+| + 3D static estimate (`m2_3d`) | 65 % | 81.2 % (87.0 %) | 85.0 % (90.4 %) | 85.2 % (89.5 %) | 72.7 % (77.7 %) | 4.8 px / 1.02 m | 391 | 44/626 |
+| + tracks fused only with image overlap, image-space motion test, mover heights from their ray, edge waits 0.75 s / 1 s (`m3_merged`) | 87.5 % | 79.0 % (97.0 %) | 83.0 % (98.6 %) | 88.6 % (98.1 %) | 70.2 % (92.6 %) | 4.7 px / 0.93 m | 324 | 23/604 |
+| + edge grouping distance 3 -> 2 m (**final**, tag `final`) | 87.5 % | **85.9 % (96.2 %)** | 89.8 % (98.6 %) | 91.0 % (97.5 %) | 77.7 % (90.1 %) | 4.6 px / 0.90 m | 393 | 22/657 (3 %) |
+
+From the Mac rows on, the "< 20 px" column has the with-rings figure in brackets too, and the scorer's projections are
+unchanged. Movers shown moving (`motion_check.py`): 36 % (`mac_base`) -> 41 % -> 40 % -> 61 % -> **65 %** (210/325) final.
+`final` is a fresh, uncached lift.py run (the cached runs gave the identical scene).
 
 What each step was:
 
@@ -172,32 +192,115 @@ What each step was:
 - **Re-identification** in the image (a lost track's prediction must land in the new box): fewer stale contacts, a
   little recall lost.
 - **Motion test.** The constant-velocity filter turned metres of along-ray noise into ghost speeds: 37 % of parked cars
-  reached the operator as moving. A track now moves only when a weighted line fit over 2 s has a significant velocity
-  (chi2 > 20, > 0.7 m/s, held 0.5 s); otherwise it reports the information-weighted mean of its last 5 s, no velocity.
-  Parked shown moving 37 % -> 6 %; the cost is a few points of recall and slow movers reported still until caught.
+  reached the operator as moving. A track now moves only when a test says so for 0.5 s; otherwise it reports the
+  information-weighted mean of its last 5 s, no velocity. Parked shown moving 37 % -> 6 %, but only 36 % of the movers
+  (108/302) were shown moving. What limited them, in order: (1) the 3D line fit (chi2 > 20 over 2 s) is the wrong
+  instrument for a far object: a parked car passes it one time in five (the errors of one object over 2 s are correlated,
+  not the ~60 independent looks the fit counts), and a threshold that rejects those rejects slow movers; (2) tracks of
+  *different* cars were fused whenever their 3D positions came within 1.2 m, and far cars are ranged on 4 m terrain
+  cells and share coordinates: 40 tracks held disjoint boxes in the same frame (12.8k times), m10 (45 of the 324 mover
+  sightings, a pickup driving through the lot) and m16 lived inside parked cars' tracks and were never tested;
+  (3) the core's own waits on top: a mover is `unknown` until its speed has stayed above 0.7 m/s for 2 s (and a parked
+  car until it has been calm for 5 s), after lift's 0.5-1.5 s: 121 mover sightings were `unknown`, 56 `static`;
+  (4) the edge's 5 s `t_stopping` kept every blip of the test shown as moving for five more seconds.
+  Now: tracks fuse only with box overlap (>= 0.3, `SAME_OBJECT_IOU`) and a second 2D id in a frame at another place in
+  the image is another object; the main test is in the image (`flow_tests`): the drone's motion moves every pixel, but a
+  parked car moves with its still neighbours, so a track moves when its box centre has shifted against the median shift
+  of its nearest still neighbours by more than 5 px over 0.5 s or 8 px over 1 s (parked cars: 0.7 px median, 99th
+  percentile 6-9 px; movers: median 12-20 px) and by more than the 0.7 m/s that shift is worth at its range, independent of
+  the ranging; the 3D fit (chi2 > 100, its chi2 divided by the fit's reduced chi2: a step is no velocity) stays for tracks
+  with fewer than 3 still neighbours; a mover's height is its ray's, not the terrain at its lagging filtered position
+  (20-77 px of vertical error that lost the match to parked neighbours); the driver gives the core `t_moving` 0.75 s and
+  `t_stopping` 1 s (`T_MOVING_S`, `T_STOPPING_S`; the core's defaults stay). Movers shown moving 36 % -> 62 %, parked cars
+  shown moving 6 % -> 4 %, mover sightings 86 % -> 92 % (94 % -> 98 % with rings). What is left: movers still `unknown`
+  (37) or `static` (67) are mostly the first seconds of a track, creeping starts below the threshold (m1, m14), and
+  mover contacts that lose the one-to-one match to a parked neighbour inside the same small box; the parked cars shown
+  moving include movers' contacts matched to a parked box next to them.
 
-Against the target (80 % of objects, the movers above all): movers 86 % as individual contacts (94 % counting
-group rings), not-hard objects 83 % with rings / 67 % individually, all objects 79 % / 64 %. The objects missed are
-mostly the far lot's < 20 px cars (64 % reach the operator); individual recall is held down by duplicate tracks the
-edge groups (1.6 m link) and by stale contacts of fragmented tracks (the 656 unmatched, ~80 per frame, half of them
-lost contacts).
+- **False dismounts.** At the 0.1 floor the VisDrone model calls roof vents, chimneys, AC units and poles "pedestrian":
+  the receiver held ~42 dismounts per frame against ~1.5 people in the inventory. A person track is now reported only
+  once (causally, from its history) its summed confidence reaches 9 (~1 s of a far person at 0.3), its median box aspect,
+  corrected for the look-down angle, is >= 1.6 (a standing adult 1.75 x 0.5 m; the 12 audited people measure 2.1-2.6,
+  vents and chimneys 1.0-1.5: the threshold was chosen with them in view) and, where the fine map surrounds it, it does
+  not stand > 3 m above the low ground within 15 m (a roof). Unmatched dismounts per frame 20.5 -> 6.6, held 41.8 ->
+  12.9 (crops of the survivors: mostly people the audit did not box). The 0.9 point of individual recall it cost is
+  mostly false dismounts that had "hit" cars (the scorer does not check class; counting only class-consistent hits the
+  cost is 0.4 point; dropping random halves of the false dismounts costs the same on this scorer).
+- **Re-identification and tentative tracks.** Of the 656 unmatched, 231 were lost vehicle contacts (median track life
+  1.3 s: flickers, not fragments), 261 fresh vehicle contacts (half on empty ground), 164 false dismounts; only 54 of 214
+  ended vehicle tracks had a successor within 3 m, all re-identification can join. Re-identification now uses the motion
+  test's verdict and predicts a parked track at its static estimate (chi2 <= 25 with 0.5 m of drift, in the box);
+  `REID_STATIC_S` 10 -> 30 s (the window barely matters). A track is reported after 0.7 s, or at once at detector
+  confidence >= 0.5: flickers never reach the edge. Merging duplicates by static estimate plus box overlap was tried and
+  dropped: in the 8 inventory frames duplicates and row neighbours have the same overlap, size ratio and separation.
+  The edge-side alternative (`REACQUIRE`: a new track inside a lost contact's error radius takes it over) trades
+  recall for unmatched at every gate (1 ce: 63.5 -> 60.0 %, 656 -> 575; on the final scene 85.9 -> 83.0 %, 393 -> 319): far
+  cars' error radii span their row neighbours. It stays off. The "with rings" drop of this step is rings around flicker
+  clusters that had covered untracked objects.
+- **3D static estimate.** With the above, 124 of the 220 inventory objects the operator missed entirely had an edge
+  track on the right box that projected off it: by 2 px across the line of sight but by a p90 of 126-278 px
+  vertically. A still track reported the horizontal mean of its measurements and the terrain's height *under that
+  mean*, and the mean range of a far car lands on another terrain cell (a roof edge, the 4 m far tier). Every
+  measurement lies on its own ray at the terrain where that ray meets it, so the estimate is now the 3D mean of the
+  measured points with 3D ray-aligned covariances (a ranging error slides a point along its ray, down as well as out),
+  height included: vertical error p90 126 -> 15 px at 150-300 m, operator individual recall 65 -> 81 %. Nothing is
+  snapped onto the current ray; the estimate is the measurements' own.
+- **Motion** (the bullet above): the 3D line fit was the wrong instrument for far objects, and the 3D duplicate rule
+  fused *different* far cars (4 m terrain cells), hiding two movers inside parked cars' tracks. Now: tracks fuse only
+  with box overlap and a second 2D id elsewhere in the image splits off (107 splits); the main motion test is in the
+  image (a box's shift against its still neighbours'); a mover's height is its ray's; the edge waits 0.75 s / 1 s.
+  That also gave the edge 87.5 % individual recall (cars no longer lost inside fused tracks), and with the neighbours
+  of a parked row now separate tracks, the edge's 3 m grouping distance turned them into rings: 2 m (a car's width
+  plus clearance) keeps them individual. The sweep, all reported: 3 m 79.0 % / 324 unmatched, 2.5 m 83.1 % / 354, 2 m
+  85.9 % / 393, 1.5 m 88.2 % / 437, 1 m 91.0 % / 533 (duplicates come through as singles).
+- **Height revisions** (`U_TOL`): a contact's height reaches the receiver only on a revision made for another reason.
+  Revising on a height change of 0.5-2 m cost a point of recall and 17-24 % more bytes on the old scene and nothing on the
+  final one (+5 % bytes): lift.py's heights wobble with the terrain under each estimate. Off.
+
+Against the target (>= 80 % of all objects as individual contacts; movers shown moving > 80 % with parked shown moving
+< 5 %): all objects **85.9 %** individually (96.2 % with rings), not hard 89.8 %, < 20 px 77.7 %, mover sightings 91.0 %;
+parked shown moving **3 %**; movers shown moving **65 %** — not met. What keeps movers from being shown moving: the
+first seconds of a track (`unknown`, 39 sightings), creeping starts below 0.7 m/s (m1, m14, m5), and mover contacts that
+lose the one-to-one match to a parked neighbour's contact in the same small box (m10's lags ~28 px for its first 3 s,
+its filter starting at rest). Unmatched 656 -> 393 (~49 per frame).
+
+**Thin links** (`PROFILE=hf|lora|telemetry`, 45 s replay, the receiver's contacts projected through the edge's camera
+(`score_e2e.py --rx-cam edge`): these links carry `Ego`, not the camera `Pose`, so there is no drone view to score;
+this measures where the contacts are in the world):
+
+| link | bytes delivered (45 s) | all objects: single (+ rings) | mover sightings | position error | unmatched |
+|---|---|---|---|---|---|
+| video (clean), `mac_base` -> final | 243 kB -> 228 kB | 63.1 % (78.5 %) -> 85.6 % (96.4 %) | 85.8 % (93.8 %) -> 91.0 % (97.5 %) | 1.31 -> 0.82 m | 659 -> 396 |
+| hf, 9.6 kbit/s | 49 kB -> 50 kB | 28.8 % (82.5 %) -> 47.4 % (83.6 %) | 51.9 % (78.1 %) -> 62.3 % (79.6 %) | 1.90 -> 1.15 m | 212 -> 133 |
+| lora, 2 kbit/s | 8.9 kB -> 9.0 kB | 19.4 % (73.6 %) -> 25.2 % (75.1 %) | 29.3 % (67.6 %) -> 34.0 % (72.8 %) | 1.66 -> 1.17 m | 92 -> 53 |
+| telemetry, 600 bit/s | 2.2 kB -> 2.2 kB | 4.2 % (32.6 %) -> 10.2 % (35.6 %) | 9.9 % (33.3 %) -> 16.7 % (32.1 %) | 1.24 -> 0.91 m | 25 -> 12 |
+
+The thin links coarsen into groups by design (PROTOCOL.md 6.4): individuals collapse, rings hold on hf and lora.
+
+Recording: `runs/recon3d/labrador-cal/rec/pov.mp4` (the operator's drone view, 0-40 s, `--rings 0`, clean link) and
+`pov_sbs.mp4` (the footage beside it), made on the Mac with Playwright's Chromium in SwiftShader; objects stand at
+their sent heights on the contact-height ground, and only movers draw trails.
 
 ## Limits, said plainly
 
-- The operator's ground is flat (u = 0, the RANSAC ground plane, fitted to 27 % of the map on this clip): objects stand
-  at their transmitted heights on their own rings, which here are a median 5-9 m above the sim's grid up to 500 m out
-  and ~19 m beyond (the ground rises towards the mall and the town). From the drone's point of view they project where
-  they belong; from the chase or orbit views they hover. A coarse ground from the contacts' own base heights would fix
-  the look.
+- The operator's ground is a simulation built from the contacts' own base heights (`u` minus the class's centre height; per 16 m
+  cell a low percentile, a 30 m kernel average of the residuals from a robust plane fit, eased over 2 s; `?ground=flat` is the old
+  u = 0 plane). The RANSAC plane is not the local ground here (objects stand a median 6-9 m above it); against the field the
+  contacts' bases are a median 2.3-3.4 m off (1.4-2.2 m for contacts with a ring <= 3 m; the field cannot beat the noise of the
+  heights it is made of, and leave-one-out is within 0.7 m of that). An object within 3 m of the field stands on it, one more
+  than 6 m off keeps its sent height up to 12 m, beyond that it is drawn on the ground (`?snap=0` draws every object at its
+  sent height). In the drone view every object stays at its sent height (that is what puts it on its pixels: 3 m of
+  height moves a car 200 m out by ~20 px) and the ground comes up to it; the settling is for the chase, orbit and top
+  views. Trails are drawn only for contacts the receiver calls moving, smoothed, and faded by how far they travelled
+  past their own error ring and how straight.
 - Stale contacts: a track that fragments leaves its old contact "lost" at the receiver for `t_depart` (60 s); the
-  final run still shows ~80 unmatched contacts per frame (half lost, half fresh: duplicates, false boxes at the
-  0.1 floor, misplaced far cars).
-- False dismounts: at the 0.1 floor the VisDrone model calls roof vents, chimneys and poles "pedestrian"; the receiver
-  holds ~37 dismount contacts per frame against ~1.5 people in the inventory (164 of the 656 unmatched). Nothing
-  filters person tracks by confidence or 3D size yet.
+  final run still shows ~49 unmatched contacts per frame (lost flickers, duplicates the 2 m link no longer groups,
+  false boxes at the 0.1 floor, misplaced far cars).
+- False dismounts: the person filter (above) leaves ~13 dismount contacts per frame against ~1.5 audited people; its
+  aspect threshold was chosen with the 12 audited people in view, and they are all static, tiny and low-confidence, so a
+  pedestrian seen from steeply above (aspect near 1) would be filtered too.
 - Error rings of far objects (ce several metres along a grazing ray) span the drone view; `?rings=0` /
-  `record.mjs --rings 0` hides them. Their 3 s trails show the same range jitter as thin lines towards the horizon,
-  and a group of two merged duplicates can carry a ghost speed (one showed 21 m/s in the recording).
+  `record.mjs --rings 0` hides them. A group of two merged duplicates can carry a ghost speed (one showed 21 m/s in the recording); group trails are not drawn.
 
 - One terrain surface per 0.5 m cell: an object on a bridge deck is placed on the road below. Columns
   of occupied voxels (any surface below the ray) were tried and were worse on streets (walls and

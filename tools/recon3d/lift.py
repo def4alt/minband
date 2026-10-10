@@ -22,8 +22,10 @@ slam/keyframes.npz, detections.json, clip.mp4.
 3. Track. ByteTrack's 2D ids give the association; per object a causal constant-velocity Kalman
    filter on the ground gives position and velocity (no smoothing with future frames: the edge
    cannot); the height is the terrain under the filtered position plus the class's centre height.
-   A 2D track born near where a lost one of the same coarse class was heading is the same object
-   (3D re-identification of ByteTrack's id switches).
+   A 2D track born where a lost one of the same coarse class was (a parked object's static estimate, a
+   mover's extrapolation) is the same object: its prediction must land in the new box and agree in 3D
+   (re-identification of ByteTrack's id switches). A track is reported only once it has lived REPORT_AFTER_S
+   (or the detector is sure of it): a flicker never reaches the edge.
 4. Appearance. Per object, from its best view in its first 2 s: its footprint measured in the
    reconstruction (length and width, clamped to class priors), the masked image crop (WebP with
    alpha, <= 128 px), and the projection from the object's frame (x along its heading, z up) into
@@ -38,7 +40,9 @@ Writes <run>/scene/: tracks3d.csv (tick,id,class,e,n,u,ve,vn,vu,conf,bu,bv,bw,bh
 """
 import argparse
 import json
+import os
 import pathlib
+import pickle
 import zlib
 from collections import defaultdict
 
@@ -59,6 +63,7 @@ ap.add_argument("--map-mask", default="inner", choices=["inner", "full"], help="
 ap.add_argument("--yaw-min-elev", type=float, default=20.0, help="a view counts for a static vehicle's footprint axis only when the camera looks down on it at least this steeply (deg)")
 ap.add_argument("--box-gain", type=float, default=0.77, help="a box-only car sighting measures this fraction of a mask's length (scale from boxes)")
 ap.add_argument("--box-min-px", type=float, default=80, help="smallest box (long side, px) whose car sighting counts for the scale when it has no mask")
+ap.add_argument("--cache", action="store_true", help="keep the lifted and ranged detections (the slow part) in <run>/lift_stage1.pkl and lift_ranging.pkl and reuse them: for iterating on tracking; delete both after changing the lifting, the terrain or the scale")
 args = ap.parse_args()
 
 run = pathlib.Path(args.run)
@@ -117,30 +122,37 @@ def frames_rgb():
 
 # ---- 1. lift every detection (SLAM frame) ---------------------------------------------------------
 lifted = {}  # (frame, det index) -> dict(p, pts, rgb)
-for f, rgb in zip(dets, frames_rgb()):
-    i = f["i"]
-    if i not in poses or not f["dets"]:
-        continue
-    pm = np.load(slam / "frames" / f"f_{i:05d}.npz")
-    X, C = pm["X"].astype(np.float64), pm["C"].astype(np.float32)
-    for k, d in enumerate(f["dets"]):
-        mk = mask_of(d)
-        m = mk & (C > args.conf)
-        lowconf = m.sum() < 4
-        if lowconf:
-            # MASt3R does not trust this object's depth (small, fast, or both): its pixels still give
-            # the direction, and the terrain gives the range (below), within wider bounds.
-            m = mk
-            if m.sum() < 1:
-                continue
-        Xo = X[m]
-        z = Xo[:, 2]
-        zm = np.median(z)
-        keep = (z > 0.85 * zm) & (z < 1.18 * zm) if not lowconf else np.ones(len(z), bool)   # the object's depth, not what bleeds in at its edges
-        if keep.sum() < 1:
+STAGE1_CACHE = run / "lift_stage1.pkl"
+if args.cache and STAGE1_CACHE.exists():
+    lifted = pickle.load(open(STAGE1_CACHE, "rb"))
+    print(f"stage 1 from {STAGE1_CACHE.name}")
+else:
+    for f, rgb in zip(dets, frames_rgb()):
+        i = f["i"]
+        if i not in poses or not f["dets"]:
             continue
-        Pw = world(poses[i], Xo[keep])
-        lifted[(i, k)] = {"p": np.median(Pw, 0), "pts": Pw, "rgb": rgb[m][keep], "lowconf": lowconf}
+        pm = np.load(slam / "frames" / f"f_{i:05d}.npz")
+        X, C = pm["X"].astype(np.float64), pm["C"].astype(np.float32)
+        for k, d in enumerate(f["dets"]):
+            mk = mask_of(d)
+            m = mk & (C > args.conf)
+            lowconf = m.sum() < 4
+            if lowconf:
+                # MASt3R does not trust this object's depth (small, fast, or both): its pixels still give
+                # the direction, and the terrain gives the range (below), within wider bounds.
+                m = mk
+                if m.sum() < 1:
+                    continue
+            Xo = X[m]
+            z = Xo[:, 2]
+            zm = np.median(z)
+            keep = (z > 0.85 * zm) & (z < 1.18 * zm) if not lowconf else np.ones(len(z), bool)   # the object's depth, not what bleeds in at its edges
+            if keep.sum() < 1:
+                continue
+            Pw = world(poses[i], Xo[keep])
+            lifted[(i, k)] = {"p": np.median(Pw, 0), "pts": Pw, "rgb": rgb[m][keep], "lowconf": lowconf}
+if args.cache and not STAGE1_CACHE.exists():
+    pickle.dump({k: {**v, "rgb": None} for k, v in lifted.items()}, open(STAGE1_CACHE, "wb"), protocol=4)   # (rgb is not used after this stage)
 print(f"lifted {len(lifted)} of {sum(len(f['dets']) for f in dets)} detections")
 
 # ---- 2. metric frame -------------------------------------------------------------------------------
@@ -366,7 +378,14 @@ for f in dets:
 print(f"riders dropped: {riders}")
 
 ranged_far = 0
+RANGING_CACHE = run / "lift_ranging.pkl"
+cached_ranging = pickle.load(open(RANGING_CACHE, "rb")) if args.cache and RANGING_CACHE.exists() else None
 for (i, k), L in lifted.items():
+    if cached_ranging is not None:
+        L.update(cached_ranging[(i, k)])
+        ranged += L["ranged"]
+        ranged_far += L["ranged"] and L["tier"] == 1
+        continue
     cl = det_by_frame[i][k]["cls"]
     pe = enu(L["p"])
     hit = on_terrain(cam_enu[i], pe, H_C[cl], wide=L["lowconf"])
@@ -380,6 +399,8 @@ for (i, k), L in lifted.items():
         # No terrain hit: the frame's own depth, low confidence or not, with the range error that implies (below).
         # Deleting these lost 62 % of the Labrador clip's detections, nearly all the far lot.
         L["enu"], L["ratio"], L["ranged"], L["tier"] = pe, 1.0, False, -1
+if args.cache and cached_ranging is None:
+    pickle.dump({key: {x: L[x] for x in ("enu", "ratio", "ranged", "tier")} for key, L in lifted.items()}, open(RANGING_CACHE, "wb"), protocol=4)
 print(f"terrain {gw}x{gh} cells of {args.cell} m + far tier {fw}x{fh} of {args.far_cell} m; {ranged} of {len(lifted)} detections "
       f"ranged on it ({ranged_far} on the far tier), {len(lifted) - ranged} placed at their own depth "
       f"({sum(L['lowconf'] and not L['ranged'] for L in lifted.values())} of them low pointmap confidence)")
@@ -444,33 +465,131 @@ def meas_cov(L, i, d, floor):
     return lat ** 2 * np.eye(2) + (along ** 2 - lat ** 2) * np.outer(ray, ray)
 
 
+def meas_cov3(L, i, d, floor):
+    """meas_cov in 3D: a ranging error slides the measured point along its own ray, down as well as out (a terrain
+    height error at a shallow angle is metres of range and that ray's drop over them), so the along-ray term lies on
+    the 3D ray, its horizontal part the 2D model's."""
+    lat, along, _ = ray_terms(L, i, d)
+    lat = max(lat, floor)
+    v = L["enu"] - cam_enu[i]
+    r3 = v / max(float(np.linalg.norm(v)), 1e-6)
+    along3 = max(along / max(float(np.hypot(r3[0], r3[1])), 0.05), lat)
+    return lat ** 2 * np.eye(3) + (along3 ** 2 - lat ** 2) * np.outer(r3, r3)
+
+
+# False dismounts. At the detector's 0.1 floor a VisDrone model calls roof vents, chimneys, AC units and poles "pedestrian";
+# on the Labrador clip that was ~37 dismount contacts per frame against ~1.5 people in the eye-audit inventory. A person
+# track is reported only when what the reconstruction measured of it is what a person can be, judged causally on the
+# track's history so far (the edge cannot see the rest of the clip). The track itself keeps being followed and starts
+# reporting the moment its evidence is enough:
+#  - evidence: the summed confidence of its person detections. A pedestrian stays in view for seconds and is detected at
+#    every frame; a vent flickers in and out of the detector's floor, and every track it opens leaves a "lost" contact at
+#    the receiver for t_depart. PERSON_MIN_CONF_SUM = about 1 s of frames at the ~0.3 a far person scores.
+#  - silhouette: a standing adult is 1.75 m tall and ~0.5 m across, so its box is taller than wide (the real people of
+#    the Labrador inventory, 250-460 m out, measure 2.1-2.6 in the detector's tight boxes; vents, chimneys and AC units
+#    1.0-1.5). The height a camera looking down sees shrinks with cos(elevation), so the aspect is corrected for it, and
+#    the track's median over its detections so far must reach PERSON_MIN_ASPECT.
+#  - ground: people stand on the ground, not on a roof. Where the confident fine map surrounds the object (PERCH_COVER
+#    of the disc around it is mapped), its surface may not stand more than PERSON_MAX_PERCH_M above the low ground
+#    (PERSON_PERCH_PCT-th percentile) within PERSON_PERCH_R_M: a 20 % slope over that radius is 3 m, a house's roof
+#    ridge 5-9 m. The far tier is not asked (its heights are good to ~1 m, and the ground rises towards the horizon).
+# A verdict that turns against a reporting track takes PERSON_HOLD_S to count, so a borderline track does not flicker.
+# A rider (a person on a two-wheeler) is its vehicle's class, not a person, and is not asked.
+PERSON_MIN_CONF_SUM = 9.0
+PERSON_MIN_ASPECT = 1.6
+PERSON_MAX_PERCH_M, PERSON_PERCH_R_M, PERSON_PERCH_PCT, PERCH_COVER = 3.0, 15.0, 10, 0.8
+PERSON_HOLD_S = 2.0
+_r_cells = int(round(PERSON_PERCH_R_M / args.cell))
+_gg = np.arange(-_r_cells, _r_cells + 1)
+PERCH_DISC = (_gg[:, None] ** 2 + _gg[None, :] ** 2) <= _r_cells ** 2
+
+
+def height_above_surroundings(e, n):
+    """How far the confident fine map's surface at (e, n) stands above the low ground around it (m); None where the fine
+    map does not surround the object (no surface there, or too little of the disc around it mapped)."""
+    i = int(np.clip((e - g_lo[0]) / args.cell, 0, gw - 1)); j = int(np.clip((n - g_lo[1]) / args.cell, 0, gh - 1))
+    if not np.isfinite(hf[j, i]):
+        return None
+    win = np.full(PERCH_DISC.shape, np.nan)
+    j0, j1, i0, i1 = max(j - _r_cells, 0), min(j + _r_cells + 1, gh), max(i - _r_cells, 0), min(i + _r_cells + 1, gw)
+    win[j0 - (j - _r_cells):j1 - (j - _r_cells), i0 - (i - _r_cells):i1 - (i - _r_cells)] = hf[j0:j1, i0:i1]
+    near = win[PERCH_DISC]
+    near = near[np.isfinite(near)]
+    if len(near) < PERCH_COVER * PERCH_DISC.sum():
+        return None
+    return float(hf[j, i] - np.percentile(near, PERSON_PERCH_PCT))
+
+
+def silhouette(d, L, i):
+    """A detection's box height over width, as a person standing at that range would show it at zero elevation: the
+    height a camera looking down at elevation el sees shrinks by cos(el) (not below 0.5: from straight above there is
+    no silhouette to speak of)."""
+    x1, y1, x2, y2 = d["box"]
+    v = L["enu"] - cam_enu[i]
+    el = np.arctan2(-v[2], max(float(np.hypot(v[0], v[1])), 1e-6))
+    return (y2 - y1) / max(x2 - x1, 1.0) / max(np.cos(el), 0.5)
+
+
+def person_veto(s, x):
+    """Why a person track fails now (None: it passes), from its history so far."""
+    if s["cls"][0] < PERSON_MIN_CONF_SUM:
+        return "evidence"
+    if np.median(s["asp"]) < PERSON_MIN_ASPECT:
+        return "silhouette"
+    perch = height_above_surroundings(x[0], x[1])
+    if perch is not None and perch > PERSON_MAX_PERCH_M:
+        return "ground"
+    return None
+
+
 def new_track(p, cl, t, tid2, R=None):
     veh = COARSE[cl] == 1
     return {"kf": KF(p, 2.0 if veh else 0.8, 0.35 if veh else 0.25, R), "last_t": t, "first_t": t, "hits": 0, "misses": 0,
             "coarse": COARSE[cl], "cls": defaultdict(float), "live2d": tid2,
-            "win": [], "swin": [], "Is": np.zeros((2, 2)), "bs": np.zeros(2), "moving": False, "flip_since": None}
+            "win": [], "swin": [], "Is": np.zeros((2, 2)), "bs": np.zeros(2), "Is3": np.zeros((3, 3)), "bs3": np.zeros(3), "moving": False, "flip_since": None,
+            "asp": [], "person_ok": False, "person_bad_since": None, "want3": None, "last": None, "p3": p}
+
+
+def knob(name, default):
+    """A tuning constant, overridable from the environment for sweeps (MOTION_CHI2=50 lift.py ...)."""
+    return float(os.environ.get(name, default))
 
 
 # Moving or not is a test, not a filter's velocity: far objects are uncertain by metres along the line of sight, which
 # a constant-velocity filter turns into ghost speeds (37 % of the Labrador clip's parked cars reached the receiver as
-# moving). Each track keeps a static estimate (the information-weighted mean of its measurements since it last moved)
-# and the last MOTION_WIN_S of measurements; it moves when a weighted straight-line fit over that window has a
-# velocity both significant (chi2 > MOTION_CHI2 on 2 dof, with every measurement's ray-aligned noise) and faster than
-# MOTION_MPS, for MOTION_HOLD_S; it stops when the test fails for as long. A static track reports its static estimate
-# and no velocity; a moving one the filter's state.
-MOTION_WIN_S, MOTION_CHI2, MOTION_MPS, MOTION_HOLD_S = 2.0, 20.0, 0.7, 0.5
+# moving). Each track keeps a static estimate (the information-weighted mean of its measurements since it last moved);
+# it moves when a test says so for MOTION_HOLD_S and stops when the test fails for as long. A static track reports its
+# static estimate and no velocity; a moving one the filter's state. Two tests:
+#  - In the image (flow_tests), where an oblique camera is precise: the drone's own motion moves every pixel, but a
+#    parked car moves with its neighbours. A track moves when, over the last 0.5 s or 1 s, its box centre has shifted
+#    against the median shift of its nearest still neighbours by more than FLOW_PX (the box centre's jitter is 1-2 px,
+#    the parked cars' residual is below 1 px at the median and 6 px at the 99th percentile) and by more than the
+#    MOTION_MPS that shift is worth at the track's range. Independent of the ranging, which is what ghosts are made of.
+#  - In 3D (motion_test), when a track has too few still neighbours (a lone car on a road, a convoy): a weighted
+#    straight-line fit over MOTION_WIN_S whose velocity is significant (chi2 > MOTION_CHI2 on 2 dof, every
+#    measurement's ray-aligned noise) and faster than MOTION_MPS. The noise model is optimistic, the errors of one
+#    object over 2 s being correlated (the same terrain cell under it, the same pose drift) and not the ~60
+#    independent looks the fit counts: a parked car's chi2 passes 20 one time in five while a mover's is in the
+#    hundreds to thousands, so the threshold sits where the parked cars' tail ends.
+MOTION_WIN_S, MOTION_CHI2, MOTION_MPS, MOTION_HOLD_S, MOTION_MIN_S = (
+    knob("MOTION_WIN_S", 2.0), knob("MOTION_CHI2", 100.0), knob("MOTION_MPS", 0.7), knob("MOTION_HOLD_S", 0.5), knob("MOTION_MIN_S", 0.5))
+# (window s, box shift px at a 1920 px wide frame) of the image test; a track moves if any window passes. The nearest
+# FLOW_K still neighbours within FLOW_R px give the shift of the ground, at least FLOW_MIN of them.
+FLOW_WINS = ((0.5, knob("FLOW_PX_SHORT", 5.0)), (1.0, knob("FLOW_PX_LONG", 8.0)))
+FLOW_K, FLOW_R, FLOW_MIN = 7, 250.0, 3
 # The static estimate averages the last STATIC_WIN_S only: ~150 looks for a parked car, and a slow mover the test has
 # not caught yet lags by at most half of it.
-STATIC_WIN_S = 5.0
+STATIC_WIN_S = knob("STATIC_WIN_S", 5.0)
 
 
 def motion_test(win):
-    """Weighted line fit p(t) = a + v (t - tm) over [(t, z, Rinv)]: (v, chi2 of v), or None when too short."""
-    if len(win) < 8 or win[-1][0] - win[0][0] < 0.8:
+    """Weighted line fit p(t) = a + v (t - tm) over [(t, z, Rinv)]: (v, chi2 of v), or None when too short. The chi2 is
+    divided by the fit's own reduced chi2 where that exceeds 1: a step in the window (a ranging jump) is no velocity."""
+    if len(win) < 8 or win[-1][0] - win[0][0] < MOTION_MIN_S:
         return None
     tm = np.mean([w[0] for w in win])
     A = np.zeros((4, 4)); b = np.zeros(4)
-    for t_, z, Ri in win:
+    for t_, z, Ri, *_ in win:
         J = np.hstack([np.eye(2), (t_ - tm) * np.eye(2)])
         A += J.T @ Ri @ J; b += J.T @ Ri @ z
     try:
@@ -479,7 +598,49 @@ def motion_test(win):
         return None
     x = cov @ b
     v = x[2:]
-    return v, float(v @ np.linalg.solve(cov[2:, 2:], v))
+    chi2 = float(v @ np.linalg.solve(cov[2:, 2:], v))
+    res = sum(float((z - x[:2] - (t_ - tm) * v) @ Ri @ (z - x[:2] - (t_ - tm) * v)) for t_, z, Ri, *_ in win)
+    return v, chi2 / max(1.0, res / (2 * len(win) - 4))
+
+
+fbox = {}   # frame -> {track id: box centre (source px)}, the last second or two
+
+
+def flow_tests(i, tids):
+    """{track id: True/False/None} for the tracks seen in frame i: the image test above (None: too few still neighbours,
+    or the track is too young for the window)."""
+    out = dict.fromkeys(tids)
+    cur = fbox[i]
+    px = meta["src_w"] / 1920.0
+    for wsec, thr in FLOW_WINS:
+        wf = max(1, round(wsec * args.fps))
+        todo = {t for t in tids if t in cur}
+        for dj in range(4):          # the nearest frame with data, a miss or two of the detector allowed
+            j = i - wf - dj
+            if j not in fbox or not todo:
+                continue
+            ids = [t for t in fbox[j] if t in cur]
+            if len(ids) < FLOW_MIN + 1:
+                continue
+            Xi = np.array([cur[t] for t in ids]); Xj = np.array([fbox[j][t] for t in ids])
+            D = Xi - Xj
+            still = np.array([t in tracks and not tracks[t]["moving"] for t in ids])
+            for n, t in enumerate(ids):
+                if t not in todo:
+                    continue
+                dist = np.hypot(*(Xi - Xi[n]).T)
+                dist[n] = np.inf
+                dist[~still | (dist > FLOW_R * px)] = np.inf
+                nb = np.argsort(dist)[:FLOW_K]
+                nb = nb[np.isfinite(dist[nb])]
+                if len(nb) < FLOW_MIN:
+                    continue
+                shift = float(np.hypot(*(D[n] - np.median(D[nb], 0))))
+                rng = float(np.linalg.norm(tracks[t]["p3"] - cam_enu[i]))
+                mps = shift * rng / (F_SRC * (i - j) / args.fps)
+                out[t] = bool(out[t]) or (shift > thr * px and mps > MOTION_MPS)
+                todo.discard(t)
+    return out
 
 
 def to_image(P, i):
@@ -487,6 +648,23 @@ def to_image(P, i):
     v = (B @ Rs[i]).T @ (np.asarray(P, float) - cam_enu[i])
     z = max(float(v[2]), 1e-3)
     return np.array([F_SRC * v[0] / z + meta["src_w"] / 2, F_SRC * v[1] / z + meta["src_h"] / 2]), float(v[2])
+
+
+def static_refit(s):
+    """The static estimate's information sums over its window, in 2D (motion test, re-identification) and in 3D (what a
+    still object reports). Every measurement lies on its own ray, at the terrain's height where that ray meets it, so
+    their 3D mean with ray-aligned weights stays on the rays and reprojects onto the object's pixels. The ground's
+    height under the 2D mean does not: on the Labrador clip a far parked car's mean range lands on another terrain cell
+    (a roof edge, the 4 m far tier) metres above or below, and it projected a median 7 px (p90 20-280 px, by range) off
+    its box vertically, while across the line of sight it was off by 2 px."""
+    s["Is"] = sum(w[2] for w in s["swin"]); s["bs"] = sum(w[2] @ w[1] for w in s["swin"])
+    s["Is3"] = sum(w[4] for w in s["swin"]); s["bs3"] = sum(w[4] @ w[3] for w in s["swin"])
+
+
+def static_est(s):
+    """A track's static estimate: (position, covariance), the information-weighted mean of its last STATIC_WIN_S."""
+    P = np.linalg.inv(s["Is"])
+    return P @ s["bs"], P
 
 
 def box_iou(a, b):
@@ -499,17 +677,35 @@ def box_iou(a, b):
 # by metres along the line of sight but by a pixel or two across it, and an error along the line of sight barely
 # moves its projection. A new 2D id is a lost track when the track's prediction lands in the new box (grown 30 %,
 # >= 4 px) and is not implausible in 3D; a parked object may have been hidden for REID_STATIC_S, a mover REID_MOVING_S.
-REID_STATIC_S, REID_MOVING_S = 10.0, 1.5
+# "Parked" is the motion test's verdict, not the filter's velocity (far objects carry ghost speeds of a few m/s, which
+# made a parked car a mover for 1.5 s only), and a parked object is predicted where it stood: its static estimate
+# (information-weighted, so its covariance is the averaged noise, not the filter's), compared with the new
+# measurement's own ray-aligned noise plus REID_SLACK_M of drift (a car pulling out a metre is still the car).
+REID_STATIC_S, REID_MOVING_S = 30.0, 1.5
+REID_CHI2, REID_SLACK_M = 25.0, 0.5
 # Two live tracks whose boxes overlap this much for 5 frames are one object (the detector's tiles and full-frame
 # pass, or ByteTrack, opened a second id on it).
 SAME_BOX_IOU = 0.7
+# A new track is tentative. The detector runs at a 0.1 floor, and a third of the tracks reported on the Labrador clip
+# live under a second: a flicker (a roof, a hedge, a shadow, a car seen for half a second) that nothing re-identifies
+# later. Once reported, the edge confirms it in 3 looks and the receiver keeps its lost contact for t_depart (60 s) next
+# to the real cars, and a flicker beside a parked car drags it into a group. A real object keeps being detected, so it
+# earns its report: a track is reported after REPORT_AFTER_S, or at once when the detector is sure of it
+# (REPORT_FAST_CONF). A track re-identified into an older one keeps the older one's age.
+REPORT_AFTER_S, REPORT_FAST_CONF = 0.7, 0.5
+# Two tracks that sit in the same place in 3D are one object only if their boxes also overlap: far objects are ranged
+# on the far terrain tier's 4 m cells, so different cars of a lot (and a mover passing a parked car on the same ray)
+# land on the very same coordinates, and without the image test they were fused into one track (40 tracks of the
+# Labrador clip held disjoint boxes in the same frame, 12.8k times), a moving car included.
+SAME_OBJECT_IOU = 0.3
 tracks = {}      # track id -> state
 alias = {}       # 2D id -> track id
 next_id = 1
 rows = []
 obs = defaultdict(list)  # track id -> [(frame, det index)]
 dt = 1.0 / args.fps
-merges = rejects = dups = riders_fast = 0
+merges = rejects = dups = riders_fast = split = 0
+vetoed = defaultdict(set)   # why a person track was held back -> track ids
 near = defaultdict(int)  # (older, younger) -> consecutive frames closer than one object's size
 # Closer than this, two tracks of a coarse class are one object (centre to centre, m).
 SAME_OBJECT_M = {0: 0.35, 1: 1.2}
@@ -520,6 +716,7 @@ for f in dets:
     t = i * dt
     seen = set()
     boxes_now = {}
+    pending = []
     live2d = {x["id"] for x in f["dets"]}
     for k, d in enumerate(f["dets"]):
         L = lifted.get((i, k))
@@ -537,15 +734,20 @@ for f in dets:
             Rm0 = meas_cov(L, i, d, 0.35 if COARSE[cl] == 1 else 0.25)
             for tid, s in tracks.items():
                 gap = t - s["last_t"]
-                moving = np.hypot(*s["kf"].x[2:]) > 1.0
+                moving = s["moving"]
                 if s["coarse"] != COARSE[cl] or gap <= 0 or gap > (REID_MOVING_S if moving else REID_STATIC_S) or tid in seen or s["live2d"] in live2d:
                     continue
-                pred = s["kf"].x[:2] + (s["kf"].x[2:] * gap if moving else 0)
+                if moving:
+                    pred = s["kf"].x[:2] + s["kf"].x[2:] * gap
+                    cov = s["kf"].P[:2, :2] + (gap * 1.0) ** 2 * np.eye(2)
+                else:
+                    pred, cov = static_est(s)
+                    cov = cov + REID_SLACK_M ** 2 * np.eye(2)
                 uv, z = to_image(np.r_[pred, p[2]], i)
                 if z <= 0 or not (x1 - grow <= uv[0] <= x2 + grow and y1 - grow <= uv[1] <= y2 + grow):
                     continue
                 dd = pred - p[:2]
-                if float(dd @ np.linalg.solve(s["kf"].P[:2, :2] + Rm0 + (gap * 1.0) ** 2 * np.eye(2), dd)) > 25.0:
+                if float(dd @ np.linalg.solve(cov + Rm0, dd)) > REID_CHI2:
                     continue
                 dist = float(np.hypot(uv[0] - (x1 + x2) / 2, uv[1] - (y1 + y2) / 2))
                 if dist < best_d:
@@ -558,6 +760,13 @@ for f in dets:
                 tracks[next_id] = new_track(p, cl, t, tid2, meas_cov(L, i, d, 0.35 if COARSE[cl] == 1 else 0.25))
                 next_id += 1
         tid = alias[tid2]
+        if tid in seen and box_iou(boxes_now[tid], d["box"]) < SAME_OBJECT_IOU:
+            # The track already took a detection in this frame, somewhere else in the image: this 2D id is another
+            # object (a re-identification or a merge fused two), not a second look at the same one.
+            alias[tid2] = tid = next_id
+            tracks[tid] = new_track(p, cl, t, tid2, meas_cov(L, i, d, 0.35 if COARSE[cl] == 1 else 0.25))
+            next_id += 1
+            split += 1
         s = tracks[tid]
         s["live2d"] = tid2
         accepted = False
@@ -570,6 +779,8 @@ for f in dets:
                 if s["misses"] >= 4:   # the filter lost it: restart at the measurements
                     s["kf"] = new_track(p, cl, t, tid2, Rm)["kf"]
                     s["misses"] = 0
+                    # Positions from before the jump are not part of the static estimate: it starts over here.
+                    s["swin"], accepted = [], True
             else:
                 s["misses"] = 0
                 accepted = True
@@ -577,27 +788,19 @@ for f in dets:
             accepted = True
         if s["hits"] == 0 or accepted:
             Ri = np.linalg.inv(Rm)
-            s["win"] = [w for w in s["win"] if t - w[0] <= MOTION_WIN_S] + [(t, p[:2].copy(), Ri)]
-            s["swin"] = [w for w in s["swin"] if t - w[0] <= STATIC_WIN_S] + [(t, p[:2].copy(), Ri)]
-            s["Is"] = sum(w[2] for w in s["swin"]); s["bs"] = sum(w[2] @ w[1] for w in s["swin"])
+            entry = (t, p[:2].copy(), Ri, p.copy(), np.linalg.inv(meas_cov3(L, i, d, np.sqrt(s["kf"].r))))
+            s["win"] = [w for w in s["win"] if t - w[0] <= MOTION_WIN_S] + [entry]
+            s["swin"] = [w for w in s["swin"] if t - w[0] <= STATIC_WIN_S] + [entry]
+            static_refit(s)
             mt = motion_test(s["win"])
-            if mt is not None:
-                want = mt[1] > MOTION_CHI2 and np.hypot(*mt[0]) > MOTION_MPS
-                if want != s["moving"]:
-                    s["flip_since"] = s["flip_since"] if s["flip_since"] is not None else t
-                    if t - s["flip_since"] >= MOTION_HOLD_S:
-                        s["moving"], s["flip_since"] = want, None
-                        if not want:   # stopped: the static estimate starts over from the motion window
-                            s["swin"] = list(s["win"])
-                            s["Is"] = sum(w[2] for w in s["swin"]); s["bs"] = sum(w[2] @ w[1] for w in s["swin"])
-                else:
-                    s["flip_since"] = None
-            if s["moving"]:          # the static estimate follows a mover from where it is
-                s["swin"] = [(t, p[:2].copy(), Ri)]
-                s["Is"] = Ri.copy(); s["bs"] = Ri @ p[:2]
+            s["want3"] = None if mt is None else bool(mt[1] > MOTION_CHI2 and np.hypot(*mt[0]) > MOTION_MPS)
+            s["last"] = entry
+        s["p3"] = p
         s["last_t"] = t
         s["hits"] += 1
         s["cls"][cl] += d["conf"]
+        if cl == 0:
+            s["asp"].append(silhouette(d, L, i))
         if s["coarse"] == 0 and s["hits"] >= 10 and np.hypot(*s["kf"].x[2:]) > RIDER_MPS:
             s["cls"][3] += 2 * d["conf"]
             if not s.get("rider"):
@@ -605,24 +808,66 @@ for f in dets:
         seen.add(tid)
         boxes_now[tid] = d["box"]
         obs[tid].append((i, k))
-        if s["hits"] >= args.min_hits:
-            x1, y1, x2, y2 = d["box"]
-            bb = [(x1 + x2) / 2 / meta["src_w"], (y1 + y2) / 2 / meta["src_h"], (x2 - x1) / meta["src_w"], (y2 - y1) / meta["src_h"]]
-            cls = max(s["cls"], key=s["cls"].get)
-            if s["moving"]:
-                x, Pp = s["kf"].x, s["kf"].P[:2, :2]
+        if s["hits"] >= args.min_hits and (t - s["first_t"] >= REPORT_AFTER_S or d["conf"] >= REPORT_FAST_CONF):
+            pending.append((tid, i, d, L, p))
+
+    # The motion decision of every track seen in this frame (the image test needs all of them).
+    fbox[i] = {}
+    for tid, bx in boxes_now.items():
+        fbox[i][tid] = ((bx[0] + bx[2]) / 2, (bx[1] + bx[3]) / 2)
+    for j in [j for j in fbox if j < i - 2 * round(max(w for w, _ in FLOW_WINS) * args.fps)]:
+        del fbox[j]
+    flows = flow_tests(i, seen)
+    for tid in seen:
+        s = tracks[tid]
+        want = flows[tid] if flows[tid] is not None else s["want3"]
+        s["want3"] = None
+        if want is not None:
+            if want != s["moving"]:
+                s["flip_since"] = s["flip_since"] if s["flip_since"] is not None else t
+                if t - s["flip_since"] >= MOTION_HOLD_S:
+                    s["moving"], s["flip_since"] = want, None
+                    if not want:   # stopped: the static estimate starts over from the motion window
+                        s["swin"] = list(s["win"])
+                        static_refit(s)
             else:
-                Pp = np.linalg.inv(s["Is"])
-                x = np.r_[Pp @ s["bs"], 0.0, 0.0]
-            ground = terrain(x[0], x[1])
-            u = float(ground) + H_C[cls] if np.isfinite(ground) else float(p[2])
-            # Error radius (1 sigma) in the reconstruction's frame: the estimate's spread plus the ranging error. The
-            # estimate averages frame noise away but not a terrain height's bias (the same cells under a parked car),
-            # so the ranging term of this sighting's tier stays (ray_terms).
-            ce_m = float(np.hypot(np.sqrt(0.5 * (Pp[0, 0] + Pp[1, 1])), ray_terms(L, i, d)[1] if L["ranged"] else 0.0))
-            if not L["ranged"]:
-                ce_m = max(ce_m, 3.0)
-            rows.append((round(i * TICK_HZ / args.fps), tid, cls, x[0], x[1], u, x[2], x[3], 0.0, min(255, round(255 * d["conf"])), *bb, ce_m))
+                s["flip_since"] = None
+        if s["moving"] and s["last"] is not None and s["last"][0] == t:   # the static estimate follows a mover from where it is
+            s["swin"] = [s["last"]]
+            static_refit(s)
+    for tid, i_, d, L, p in pending:
+        s = tracks[tid]
+        x1, y1, x2, y2 = d["box"]
+        bb = [(x1 + x2) / 2 / meta["src_w"], (y1 + y2) / 2 / meta["src_h"], (x2 - x1) / meta["src_w"], (y2 - y1) / meta["src_h"]]
+        cls = max(s["cls"], key=s["cls"].get)
+        if s["moving"]:
+            # A mover's filtered position lags and smooths along the line of sight, where the terrain under it may be
+            # metres higher or lower (20-77 px of vertical error at 380 m, enough to lose the match to a parked
+            # neighbour): its height is the one of the ray through its box.
+            x, Pp = s["kf"].x, s["kf"].P[:2, :2]
+            u = float(p[2])
+        else:
+            # A still object reports its 3D static estimate, height included (static_refit).
+            Pp = np.linalg.inv(s["Is"])
+            x3 = np.linalg.solve(s["Is3"], s["bs3"])
+            x, u = np.r_[x3[:2], 0.0, 0.0], float(x3[2])
+        if cls == 0:
+            why = person_veto(s, x)
+            if why is None:
+                s["person_ok"], s["person_bad_since"] = True, None
+            else:
+                s["person_bad_since"] = s["person_bad_since"] if s["person_bad_since"] is not None else t
+                if not s["person_ok"] or t - s["person_bad_since"] >= PERSON_HOLD_S:
+                    s["person_ok"] = False
+                    vetoed[why].add(tid)
+                    continue
+        # Error radius (1 sigma) in the reconstruction's frame: the estimate's spread plus the ranging error. The
+        # estimate averages frame noise away but not a terrain height's bias (the same cells under a parked car),
+        # so the ranging term of this sighting's tier stays (ray_terms).
+        ce_m = float(np.hypot(np.sqrt(0.5 * (Pp[0, 0] + Pp[1, 1])), ray_terms(L, i_, d)[1] if L["ranged"] else 0.0))
+        if not L["ranged"]:
+            ce_m = max(ce_m, 3.0)
+        rows.append((round(i_ * TICK_HZ / args.fps), tid, cls, x[0], x[1], u, x[2], x[3], 0.0, min(255, round(255 * d["conf"])), *bb, ce_m))
 
     # One object tracked twice (ByteTrack opened a new id while the old one lived): the younger
     # track joins the older one once they have stayed closer than one object for 5 frames.
@@ -632,7 +877,8 @@ for f in dets:
             sa, sb = tracks[a], tracks[b]
             if sa["coarse"] != sb["coarse"]:
                 continue
-            if np.linalg.norm(sa["kf"].x[:2] - sb["kf"].x[:2]) < SAME_OBJECT_M[sa["coarse"]] or box_iou(boxes_now[a], boxes_now[b]) >= SAME_BOX_IOU:
+            iou_ab = box_iou(boxes_now[a], boxes_now[b])
+            if (np.linalg.norm(sa["kf"].x[:2] - sb["kf"].x[:2]) < SAME_OBJECT_M[sa["coarse"]] and iou_ab >= SAME_OBJECT_IOU) or iou_ab >= SAME_BOX_IOU:
                 near[(a, b)] += 1
             else:
                 near.pop((a, b), None)
@@ -644,6 +890,7 @@ for f in dets:
                     alias[k2] = old
             for c2, w in tracks[young]["cls"].items():
                 tracks[old]["cls"][c2] += w
+            tracks[old]["asp"] += tracks[young]["asp"]
             del tracks[young]
             near.pop((a, b))
             dups += 1
@@ -752,8 +999,10 @@ with open(out / "tracks3d.csv", "w") as fh:
     for r, y in zip(rows, yaws):
         fh.write(f"{r[0]},{r[1]},{r[2]}," + ",".join(f"{v:.3f}" for v in r[3:9]) + f",{r[9]}," + ",".join(f"{v:.4f}" for v in r[10:14]) + f",{r[14]:.2f}," + ("nan" if np.isnan(y) else f"{y:.1f}") + "\n")
 print(f"yaw: {sum(not np.isnan(y) for y in yaws)} of {len(yaws)} rows; tracks by source {dict(yaw_kind)}")
-print(f"tracks: {next_id - 1} ({merges} 2D id switches re-joined in 3D, {dups} duplicates merged, {riders_fast} fast dismounts relabelled riders, "
+print(f"tracks: {next_id - 1} ({merges} 2D id switches re-joined in 3D, {split} 2D ids split off a track that held another object, {dups} duplicates merged, {riders_fast} fast dismounts relabelled riders, "
       f"{rejects} gated-out measurements), reported {len(reported)}, rows {len(rows)}")
+print("person tracks held back at least once, by the first test they failed: "
+      + ", ".join(f"{why} {len(ids)}" for why, ids in sorted(vetoed.items())) + f"; never reported: {len(set().union(*vetoed.values()) - reported)}")
 
 # ---- 4. appearance chips ---------------------------------------------------------------------------
 row_at = {(r[0], r[1]): r for r in rows}

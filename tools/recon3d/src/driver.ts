@@ -7,7 +7,9 @@
 //   npm start                      http://localhost:8092
 //   PORT=8093 SCENE=vd076 PROFILE=lora npm start      (scenes: every runs/recon3d/<run>/scene; RUN_DIR=a,b to pick)
 //   POS_RES=1 (default; 0 = 1 cm, 1 = 10 cm, 2 = 1 m, 3 = 10 m)   the session's position resolution
-//   LINK_M=3 CE_LINK=0              the edge's grouping link distance: max(LINK_M, CE_LINK * ce) metres
+//   LINK_M=2 CE_LINK=0              the edge's grouping link distance: max(LINK_M, CE_LINK * ce) metres
+//   U_TOL=0                         a height change (m) that makes a revision (0: heights ride on other revisions)
+//   REACQUIRE=0                     a new track within this many error radii of a lost contact of its class takes it over
 //   SEED=1                          the link's loss and the edge's nonce come from this seed (deterministic)
 //   CLOCK=manual                    no timer: the client steps the replay, {cmd:'step', n?, id?} advances n steps
 //                                   and answers with the final state to every client (state.t, state.ack = id);
@@ -49,9 +51,22 @@ const POS_RES = Number(process.env.POS_RES ?? 1);
 if (![0, 1, 2, 3].includes(POS_RES)) { console.error(`POS_RES must be 0..3, got ${process.env.POS_RES}`); process.exit(1); }
 const POS_RES_M = [0.01, 0.1, 1, 10][POS_RES];
 // Grouping: link_m metres, widened by ce_link times a track's error radius (the core's default of 2.0 is off here: 0).
-const LINK_M = Number(process.env.LINK_M ?? 3.0), CE_LINK = Number(process.env.CE_LINK ?? 0);
+// 2 m: a car is ~1.8 m wide and cars parked side by side stand >= ~2.3 m apart centre to centre, so two vehicle tracks
+// closer than that are one object seen twice; 3 m grouped neighbours of a parked row once lift.py stopped fusing them
+// (Labrador clip: 79 % of the inventory as individual contacts at 3 m, 86 % at 2 m; 1 m let duplicates through as singles).
+const LINK_M = Number(process.env.LINK_M ?? 2.0), CE_LINK = Number(process.env.CE_LINK ?? 0);
+// Re-acquisition: a new track within REACQUIRE error radii of a lost contact of its class takes that contact over (0 = off).
+const REACQUIRE = Number(process.env.REACQUIRE ?? 0);
+// A contact's height that moved more than U_TOL metres since it was last sent is a revision (0 = it rides on other revisions).
+const U_TOL = Number(process.env.U_TOL ?? 0);
 const MANUAL = process.env.CLOCK === 'manual', DUMP = process.env.DUMP || '';
 const SEED = Number(process.env.SEED) || 1;
+// How long a track's speed must stay above the class threshold before the edge calls it moving, and how long it must
+// stay calm before the edge calls it stopped or static (the core's defaults, 2 s and 5 s, stay the core's). lift.py has
+// already tested the track's motion and held the verdict for 0.5 s (motion_test, flow_tests), so what it reports is
+// evidence, not a filter's jitter, and the core's own waits on top only delay a mover's report (Labrador clip: movers
+// shown moving 36 % -> 62 % at 0.75 s / 1 s, parked cars shown moving 6 % -> 4 %).
+const T_MOVING_S = Number(process.env.T_MOVING_S ?? 0.75), T_STOPPING_S = Number(process.env.T_STOPPING_S ?? 1);
 // mulberry32: a tiny seeded PRNG, so a run (link loss, nonce) is reproducible from SEED alone.
 function mulberry32(a: number) {
   return () => {
@@ -176,7 +191,8 @@ class Replay {
       // Individuals on a fat link: a parked row of cars 5 m apart stays five objects. The edge still
       // coarsens on its own when the link cannot carry them (PROTOCOL.md 6.4). The grouping link is
       // max(link_m, ce_link * ce); ce_link 0 keeps it at link_m (a far track's ce of ~1.5 m would link a whole row).
-      contacts: { link_m: LINK_M, link_dismount_m: 1.5, ce_link: CE_LINK },
+      contacts: { link_m: LINK_M, link_dismount_m: 1.5, ce_link: CE_LINK, reacquire_ce: REACQUIRE, u_tol_m: U_TOL,
+        t_moving: Math.round(T_MOVING_S * TICK_HZ), t_stopping: Math.round(T_STOPPING_S * TICK_HZ) },
     }));
     this.rx = new WasmReceiver(P.budgetBps);
     this.pending = []; this.delivered = []; this.lastDigest = -1e9; this.bytesTotal = 0; this.frames = 0; this.dropped = 0;
