@@ -2,7 +2,7 @@
 //! last-writer-wins per contact by (rev, tick); events come from what the merge changed, stamped
 //! with the times inside the records; liveness and the error radius grow with silence.
 
-use crate::classes::max_speed;
+use crate::classes::{max_speed, motion_thresholds};
 use crate::geo::sincos_deg;
 use crate::scheduler::{expected_gap, timing, Timing};
 use crate::wire::*;
@@ -191,10 +191,20 @@ impl Receiver {
             }
             let ce = m8_to_m(c.ce);
             let overdue = (silence - ladder_last as f32 / TICK_HZ as f32).max(0.0);
+            let (hi, lo) = motion_thresholds(coarse);
             let mut ce_shown = ce;
             if !c.has(F_DEPARTED) {
-                if moving { ce_shown += speed * silence; }
-                if matches!(c.motion(), MOTION_MOVING | MOTION_STOPPED) { ce_shown += cap * overdue; }
+                match c.motion() {
+                    // Moving: the ghost follows the course; the circle grows at the contact's own
+                    // speed (covers a stop), at the class cap once overdue on the ladder.
+                    MOTION_MOVING if moving => { ce_shown += speed * silence + cap * overdue; }
+                    // Static: below `lo` by definition, and the edge revises past `ce`; the creep
+                    // the receiver can be wrong by is bounded by one more `ce`.
+                    MOTION_STATIC => { ce_shown += (lo * silence).min(ce); }
+                    // Stopped, unknown, or moving without a velocity: it may be walking off since
+                    // the last look, at `hi` or more; at the class cap once overdue.
+                    _ => { ce_shown += hi * silence + cap * overdue; }
+                }
             }
             let ce_shown = ce_shown.min(1000.0);
             let since_rev = now.saturating_sub(h.rev_heard);
@@ -311,12 +321,23 @@ mod tests {
         let s = rx.snapshot(400 * TICK_HZ);
         assert_eq!(s[0].liveness, "unheard");
         assert!(s[0].ce_shown >= 1000.0 - 1.0 || s[0].ce_shown > 400.0);
-        // A static contact's circle does not grow and it stays fresh for 3 floors.
+        // A static contact's circle creeps at the class's `lo` threshold (0.3 m/s for a vehicle)
+        // and stops at twice its ce; it stays fresh for 3 floors.
         let st = contact(2, 1, MOTION_STATIC | F_CONFIRMED, 50, 50, 0);
         rx.on_frame(&frame(2, 0, vec![Record::Contact(st)])).unwrap();
+        let s = rx.snapshot(10 * TICK_HZ);
+        let c2 = s.iter().find(|c| c.id == 2).unwrap();
+        assert!((c2.ce_shown - 9.0).abs() < 0.01, "6 + 0.3 x 10: {}", c2.ce_shown);
         let s = rx.snapshot(100 * TICK_HZ);
         let c2 = s.iter().find(|c| c.id == 2).unwrap();
-        assert_eq!(c2.ce_shown, 6.0); assert_eq!(c2.liveness, "fresh");
+        assert_eq!(c2.ce_shown, 12.0); assert_eq!(c2.liveness, "fresh");
+        // A stopped dismount may be walking off: `hi` (0.5 m/s) from the first second, the 3 m/s
+        // cap once overdue on the ladder (30 s at f = 1); the same for an unknown motion state.
+        let mut sp = contact(3, 1, MOTION_STOPPED | F_CONFIRMED, 0, 0, 0); sp.n_vehicle = 0; sp.n_dismount = 1;
+        rx.on_frame(&frame(3, 0, vec![Record::Contact(sp)])).unwrap();
+        let at = |rx: &Receiver, t: u32| rx.snapshot(t * TICK_HZ).iter().find(|c| c.id == 3).unwrap().ce_shown;
+        assert!((at(&rx, 10) - 11.0).abs() < 0.01, "{}", at(&rx, 10));
+        assert!((at(&rx, 40) - (6.0 + 20.0 + 30.0)).abs() < 0.01, "{}", at(&rx, 40));
     }
 
     #[test]

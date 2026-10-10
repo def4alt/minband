@@ -286,12 +286,24 @@ A moving contact (motion = 2, has velocity) is extrapolated along `course` at `s
 the class prior's max speed (core `classes.rs`), with the same deterministic predictor both ends
 share. The shown error radius is
 
-`ce_shown = ce + (moving ? speed : 0) x silence + (static ? 0 : class_max_speed x max(0, silence - T_ladder_last))`
+```
+moving (has velocity):  ce_shown = ce + speed x silence + class_max_speed x overdue
+static:                 ce_shown = ce + min(class_lo x silence, ce)
+stopped, unknown, or moving without a velocity:
+                        ce_shown = ce + class_hi x silence + class_max_speed x overdue
+overdue = max(0, silence - T_ladder_last)
+```
 
-where `silence` is the time since the record's observation (`frame tick - age`). A moving
-contact's circle grows with its speed at once; any non-static contact's circle also grows at the
-class cap once it is overdue on the ladder (the edge would have told us it moved). A static
-contact's circle does not grow: nothing moved, or the edge would have revised it.
+where `silence` is the time since the record's observation (`frame tick - age`), and `class_lo` /
+`class_hi` are the motion thresholds of the dominant coarse class (core `classes.rs`: 0.2 / 0.5 m/s
+for dismounts, 0.3 / 0.7 m/s otherwise). A moving contact's circle grows with its own speed at once
+(a stop is covered) and at the class cap once it is overdue on the ladder (the edge would have told
+us it moved). A static contact is below `class_lo` by definition and the edge revises it once it
+drifts past `ce`, so the receiver can be wrong by that creep plus one more `ce`: the circle creeps
+at `class_lo` and stops at `2 x ce`. A stopped or not-yet-classified contact may be walking off
+since the last look: its circle grows at `class_hi` at once and at the cap once overdue. Measured on
+footage (`docs/PROTOCOL_EVAL.md`) this keeps >= 84 % of held contacts inside `ce_shown` on every
+profile, against 70 % with a flat static circle.
 
 ### 5.4 Liveness
 
@@ -340,9 +352,13 @@ budget it last advertised.
 ### 6.3 Frame builder
 
 Each record has a *due time*. Whenever the link can take a frame of the target size, the builder
-fills it with the most overdue records first, class order on ties: focused, `Ego` if due, changed
-contacts on the ladder, `Session` if due, `Pose` (video/wide regime), floor repeats, tombstones,
-`Note`, chip symbols. A record that does not fit waits; the builder never splits a record. Chip
+fills it with due records in class order: focused, `Ego` if due, changed contacts on the ladder,
+`Session` if due, `Pose` (video/wide regime), floor repeats, tombstones, `Note`, chip symbols.
+Within the ladder class a record's *ladder step* comes before how overdue it is: a copy that has
+never been sent goes before the second or third copy of anything else (the receiver already holds
+that one with probability `1 - p^k`), so under saturation fresh news goes first and repeats fill
+what is left; ties go to the most overdue. A record that does not fit waits; the builder never
+splits a record. Chip
 symbols take the remaining bytes only, and never more than half the budget over any 10 s window.
 
 A contact's `rev` increments (and its ladder restarts) when any of these happens:

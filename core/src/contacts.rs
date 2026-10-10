@@ -32,6 +32,7 @@ pub struct Track {
 fn default_conf() -> u8 { 128 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ContactConfig {
     /// Minimum link distance for grouping (m); the actual link is max(link_m, 2 ce).
     pub link_m: f32,
@@ -48,6 +49,8 @@ pub struct ContactConfig {
     pub t_lost: u32,
     pub t_depart: u32,
     pub t_stopped: u32,
+    /// Position change threshold as a multiple of `max(ce, 2 pos_res)` (PROTOCOL.md §6.3); 1.0 is the spec.
+    pub dev_factor: f32,
     /// A track whose cluster differs from its contact's keeps its contact this long (split and
     /// merge hysteresis), so a flickering crowd does not mint ids.
     pub t_split: u32,
@@ -57,7 +60,7 @@ pub struct ContactConfig {
 impl Default for ContactConfig {
     fn default() -> Self {
         ContactConfig { link_m: 15.0, link_dismount_m: 8.0, stay_factor: 1.5, speed_tol: 1.5, course_tol_deg: 30.0, confirm_looks: 3, confirm_ticks: 2 * TICK_HZ,
-            t_moving: 2 * TICK_HZ, t_stopping: 5 * TICK_HZ, t_lost: 5 * TICK_HZ, t_depart: 60 * TICK_HZ, t_stopped: 30 * TICK_HZ, t_split: 3 * TICK_HZ, default_ce: 5.0 }
+            t_moving: 2 * TICK_HZ, t_stopping: 5 * TICK_HZ, t_lost: 5 * TICK_HZ, t_depart: 60 * TICK_HZ, t_stopped: 30 * TICK_HZ, t_split: 3 * TICK_HZ, default_ce: 5.0, dev_factor: 1.0 }
     }
 }
 
@@ -182,7 +185,9 @@ impl Contact {
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
-pub struct ContactStats { pub tracks: u32, pub contacts: u32, pub groups: u32, pub revisions: u64, pub births: u32, pub departures: u32 }
+pub struct ContactStats { pub tracks: u32, pub contacts: u32, pub groups: u32, pub revisions: u64, pub births: u32, pub departures: u32,
+    /// Why revisions moved: [first send, state machine or mix, position deviation, ce, course, speed].
+    pub rev_why: [u64; 6] }
 
 pub struct ContactManager {
     pub cfg: ContactConfig,
@@ -407,21 +412,21 @@ impl ContactManager {
         let pos_res = self.pos_res_m;
         for c in self.contacts.values_mut() {
             if c.dirty { continue; }
-            let s = match c.sent { Some(s) => s, None => { c.bump(now); changed.push(c.id); continue; } };
-            let mut why = false;
-            if s.motion != c.motion || s.confirmed != c.confirmed || s.lost != c.lost || s.departed != c.departed || s.mix != c.mix { why = true; }
-            if !why {
+            let s = match c.sent { Some(s) => s, None => { c.bump(now); changed.push(c.id); self.stats.rev_why[0] += 1; continue; } };
+            let mut why: Option<usize> = None;
+            if s.motion != c.motion || s.confirmed != c.confirmed || s.lost != c.lost || s.departed != c.departed || s.mix != c.mix { why = Some(1); }
+            if why.is_none() {
                 let (ge, gn) = c.ghost(now).unwrap();
                 let dev = ((c.e - ge).powi(2) + (c.n - gn).powi(2)).sqrt();
-                let thr = c.ce.max(2.0 * pos_res) * if c.focused { 0.5 } else { 1.0 };
-                if dev > thr { why = true; }
+                let thr = c.ce.max(2.0 * pos_res) * self.cfg.dev_factor * if c.focused { 0.5 } else { 1.0 };
+                if dev > thr { why = Some(2); }
             }
-            if !why && (c.ce > s.ce * 1.5 || c.ce < s.ce / 1.5) && (c.ce - s.ce).abs() > 2.0 * pos_res { why = true; }
-            if !why && c.motion == MOTION_MOVING {
+            if why.is_none() && (c.ce > s.ce * 1.5 || c.ce < s.ce / 1.5) && (c.ce - s.ce).abs() > 2.0 * pos_res { why = Some(3); }
+            if why.is_none() && c.motion == MOTION_MOVING {
                 let mut dc = (c.course - s.course).abs(); if dc > 180.0 { dc = 360.0 - dc; }
-                if dc > 30.0 || (c.speed - s.speed).abs() > 0.25 * s.speed.max(0.5) { why = true; }
+                if dc > 30.0 { why = Some(4); } else if (c.speed - s.speed).abs() > 0.25 * s.speed.max(0.5) { why = Some(5); }
             }
-            if why { c.bump(now); changed.push(c.id); }
+            if let Some(w) = why { c.bump(now); changed.push(c.id); self.stats.rev_why[w] += 1; }
         }
         self.stats.revisions += changed.len() as u64;
         changed

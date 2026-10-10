@@ -219,26 +219,29 @@ impl Edge {
         let t = self.timing;
         let header = HEADER_LEN + if self.cfg.crc { CRC_LEN } else { 0 };
         let room = target.max(header + 1).min(self.cfg.max_frame);
-        // Candidates: (class rank, -overdue, kind)
+        // Candidates: (class rank, ladder step, -overdue, kind). Within the ladder class the step
+        // comes before the overdue time: a copy that has never been sent is worth more than the
+        // second or third copy of something else (the receiver already has it with probability
+        // 1 - p^k), so under saturation fresh news goes first and repeats fill what is left.
         #[derive(Clone, Copy)] enum K { Contact(u16), Ego, Session, Pose }
-        let mut cands: Vec<(u8, i64, K)> = Vec::new();
+        let mut cands: Vec<(u8, u8, i64, K)> = Vec::new();
         for (id, e) in &self.entries {
             if e.due > now { continue; }
             let Some(c) = self.cm.contacts.get(id) else { continue };
             let rank = if c.focused { 0 } else if e.step < LADDER_LEN { 2 } else if c.departed { 6 } else { 5 };
-            cands.push((rank, -e.overdue(now), K::Contact(*id)));
+            cands.push((rank, e.step, -e.overdue(now), K::Contact(*id)));
         }
-        if now >= self.ego_due { cands.push((1, -(now as i64 - self.ego_due as i64), K::Ego)); }
-        if now >= self.session_due { cands.push((1, -(now as i64 - self.session_due as i64), K::Session)); }
-        if !self.poses.is_empty() { cands.push((4, 0, K::Pose)); }
+        if now >= self.ego_due { cands.push((1, 0, -(now as i64 - self.ego_due as i64), K::Ego)); }
+        if now >= self.session_due { cands.push((1, 0, -(now as i64 - self.session_due as i64), K::Session)); }
+        if !self.poses.is_empty() { cands.push((4, 0, 0, K::Pose)); }
         if cands.is_empty() { return None; }
-        cands.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        cands.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
 
         let mut records: Vec<Record> = Vec::new();
         let mut len = header;
         let mut sent_ids: Vec<u16> = Vec::new();
         let mut sent_ego = false; let mut sent_session = false;
-        for (_, _, k) in cands {
+        for (_, _, _, k) in cands {
             match k {
                 K::Contact(id) => {
                     let c = &self.cm.contacts[&id];
@@ -335,7 +338,7 @@ impl Edge {
     pub fn snapshot(&self, now: u32) -> EdgeSnapshot {
         let contacts = self.cm.contacts.values().map(|c| ContactView::from_contact(c, now, self.entries.get(&c.id))).collect();
         EdgeSnapshot { contacts, tracks: self.cm.tracks.values().map(|t| TrackView { id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce: t.ce, lost: t.lost, contact: t.contact, motion: motion_name(t.motion) }).collect(),
-            timing: self.timing, tokens: self.tokens, focus: self.focus.keys().copied().collect() }
+            timing: self.timing, tokens: self.tokens, focus: self.focus.keys().copied().collect(), stats: self.cm.stats.clone() }
     }
 }
 
@@ -359,4 +362,33 @@ impl ContactView {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct EdgeSnapshot { pub contacts: Vec<ContactView>, pub tracks: Vec<TrackView>, pub timing: Timing, pub tokens: f32, pub focus: Vec<u16> }
+pub struct EdgeSnapshot { pub contacts: Vec<ContactView>, pub tracks: Vec<TrackView>, pub timing: Timing, pub tokens: f32, pub focus: Vec<u16>, pub stats: crate::contacts::ContactStats }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn track(id: u32, e: f32) -> Track { Track { id, class: 2, e, n: 0.0, ve: 0.0, vn: 0.0, conf: 200, ce: Some(3.0), bbox: None } }
+    /// Under saturation a never-sent revision goes before the repeats of older ones: six static
+    /// contacts are due for their second copy (overdue 100 ticks), a newborn seventh is due for its
+    /// first (overdue 10). A 100 B frame takes three contacts; the newborn must be one of them.
+    #[test]
+    fn fresh_revisions_go_before_repeats() {
+        let cfg = EdgeConfig { budget_bps: 0, carrier_overhead: 0, ..Default::default() };
+        let mut edge = Edge::new(cfg);
+        let ego = EgoInput::default();
+        let tracks: Vec<Track> = (1..=7).map(|i| track(i, i as f32 * 200.0)).collect();
+        let mut now = 0;
+        while now <= 120 { edge.tick(&tracks, &ego, now); now += 12; }
+        assert_eq!(edge.cm.contacts.len(), 7);
+        let seven = edge.cm.tracks[&7].contact.unwrap();
+        let now = 2400;
+        for (id, e) in edge.entries.iter_mut() { if *id == seven { e.step = 0; e.due = now - 10; } else { e.step = 1; e.due = now - 100; } }
+        edge.ego_due = now + 1000; edge.session_due = now + 1000; edge.poses.clear();
+        let nav = EgoRec::nav_byte(ego.nav_mode, ego.gnss, 2, false);
+        let frame = edge.build_frame(&ego, nav, now, 100).expect("a frame");
+        let ids: Vec<u16> = frame.records.iter().filter_map(|r| match r { Record::Contact(c) => Some(c.id), _ => None }).collect();
+        assert_eq!(ids.len(), 3, "100 B frames take three 25 B contacts: {ids:?}");
+        assert_eq!(ids[0], seven, "the never-sent newborn goes first: {ids:?}");
+    }
+}
