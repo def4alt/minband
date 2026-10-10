@@ -27,6 +27,10 @@ for d in server viewer tools/eval e2e; do (cd $d && npm install); done
 (cd e2e && npx playwright install chromium)    # the cloud box had it preinstalled
 ```
 
+On macOS with Node 26, `npx playwright install chromium` (Playwright 1.56) hangs while extracting;
+under Node 22 it works: `(cd e2e && mise exec node@22 -- npx playwright install chromium)`. The tests
+themselves run on Node 26.
+
 Rebuild both WASM packages after any change in `core/` (a stale `pkg-node` once made cars cost a
 delta per frame).
 
@@ -58,8 +62,8 @@ curl -fsSL -o models/aerial-guardian.onnx https://raw.githubusercontent.com/Halo
 `models/`, `clips/`, `.venv/` and `*.onnx` are gitignored. The full battlefield reproduction (all
 clips, audit, tables) is "Reproducing" in `docs/FOOTAGE_FINDINGS.md`; the pipeline is described in
 `tools/footage/README.md`. Results land in `runs/footage/<clip>/`. 4K detection is CPU-bound, about 3-4.5 s per detection
-frame on 4 cores: a 90 s clip at 5 Hz takes about an hour, so run it in the background, without a
-time limit. With a GPU, `pip install onnxruntime-gpu` instead of `onnxruntime`.
+frame on 4 x86 cores (a 90 s clip at 5 Hz takes about an hour) and about 2 s on an Apple M4 (16 min);
+run it in the background, without a time limit. With a GPU, `pip install onnxruntime-gpu` instead of `onnxruntime`.
 
 Live replay of the tracks through the real server and viewer:
 `cd server && TRACKS=../runs/footage/<run>/tracks.csv TRACKS_CAMERA=<camera_m from summary.json> npm run sim`.
@@ -77,12 +81,15 @@ Before judging (people and hardware):
 
 Engineering:
 5. Battlefield detection, done on the held-out clips (pooled track recall 0.25 -> 0.48 at equal
-   precision; military clips 0.13 -> 0.38). Left, in "Unfinished" of `docs/FOOTAGE_FINDINGS.md`:
-   the MEVA 4K re-detection with the fixed detector (killed at 88 % by a time limit; about 45 min)
-   and the visual audit on MEVA 4K. Known weak spots: thermal recall, roof vents boxed as vehicles,
-   shadows and surf as false movers. No military appearance model is used (the one tried labelled
-   cars and portable toilets as armour), so nothing emits class 101 yet.
-6. Tracker quality on real footage is the largest cost: 273 tracks for about 80 objects, 183
-   births a minute, parked objects wander about 0.4 m. Fewer, longer tracks cut the link cost.
+   precision; military clips 0.13 -> 0.38). The MEVA 4K re-detection with the fixed detector is done
+   (round 2 in `docs/FOOTAGE_FINDINGS.md`; 16 min on an M4). Left: the frame-level visual audit on
+   MEVA 4K and of round 2. Known weak spots: thermal recall, roof vents boxed as vehicles, trees in
+   wind and roof edges under a hovering drone as false movers, surf (no dev clip has it). No military
+   appearance model is used (the one tried labelled cars and portable toilets as armour), so nothing
+   emits class 101 yet.
+6. Tracker round 2 (frozen at `a90e244`, tuned on dev only, held-out run once): MEVA 4K 247 -> 206
+   tracks, median track 14 -> 23 s, parked-object wander 0.74 -> 0.43 m; held-out false motion-only
+   time 61 -> 32 s. Still the largest cost on busy scenes (137 births a minute on MEVA 4K); the held-out
+   clips are too short for the long re-acquisition to show much (156 -> 148 tracks).
 7. Stretch, in the plan's order: S24 video first with pins (new), S6 compact codec, S1 quiet mode,
    S8 chips on demand, priority under budget.

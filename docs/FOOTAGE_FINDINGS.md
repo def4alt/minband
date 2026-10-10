@@ -1,13 +1,188 @@
 # Footage findings: detection and tracking on battlefield-like drone footage
 
-Status: 2026-10-10. Scope: detection and tracking for situational awareness with a human in the
+Status: 2026-10-10 (round 2 added the same day). Scope: detection and tracking for situational awareness with a human in the
 loop (MinBand's edge). Affiliation is never assessed. Nothing here is built or wired for targeting.
 
 What was measured: the footage pipeline in `tools/footage` (README there for the method) before and
 after the changes of this round, on drone clips it was never tuned on, without labels. The numbers
 come from `track.py` / `audit.py` runs in `runs/footage/` (not committed).
 
-## Protocol
+Two rounds. Round 1 (detector, MTI, fusion, tracker; cloud box, x86) is the "Round 1" sections.
+Round 2 (tracker churn and false movers, and the MEVA 4K re-detection; a local Mac) is the next
+section.
+
+## Round 2: tracker churn and false movers (2026-10-10)
+
+### How it was run
+
+- Machine: Apple M4 (arm64), ONNX Runtime 1.31 on the CPU (no GPU used), OpenCV 5.0, Python 3.14.
+  Every row in this section, round 1 included, was rerun on it from the same caches, so compare rows
+  within this section. Against the round-1 tables below (x86), the appearance detector gives slightly
+  different boxes at the 0.15 confidence edge: mvt-test10 4.58 boxes per frame here, 4.97 there
+  (OpenCV 4.14 and 5.0 give identical boxes here, so it is the inference numerics, not the decoder or
+  resize). Same direction and size everywhere; not bit-identical.
+- Tuning: only the MEVA 4K tuning clip (2018-03-13.16-00-14, 15-105 s, re-detected with the fixed
+  detector, below) and the dev clips amad-test1 and hituav-60m-30_1. Parameters frozen at `a90e244`;
+  each held-out clip then run once (`run_clip.sh`), nothing changed after. The held-out clips had been
+  run once before, in round 1; none of the round-2 changes was tried on them before freezing.
+- No dev clip has surf (it is only in the held-out mvt-test10), so nothing was tuned for surf. On this
+  machine no motion-only track on surf was reported in either round.
+- Round 1 is `round1.py` (track.py as frozen at `d59938b`, read from git) on the same detection caches;
+  round 2 is `track.py` at `a90e244`.
+
+### What changed (tracker only; detector, MTI and fusion unchanged)
+
+1. **Companions by size, not distance.** A motion-only track in lockstep (offset std <= 0.6 m over
+   1.5 s) with a confirmed track at most half its size (box diagonals on the ground) within 20 m is
+   not reported: the tip of a low-sun shadow sits 10-15 m behind its vehicle, beyond round 1's 8 m.
+   Round 1 hid any lockstep motion-only track within 8 m, whatever its size, which also hid walkers
+   in groups and convoy vehicles behind a smaller blob. Held back about 1 s while the test cannot yet
+   decide; a found companion stays hidden 1.5 s.
+2. **Parallax.** The camera centre at every frame comes from the plane-to-image homography. A tall
+   static object's top slides over the ground plane against the camera's motion at h / (H - h) of its
+   speed (dev: tree tops at 0.18-0.24 of the camera's 3.5 m/s at 30 m, i.e. 5-10 m trees). A
+   motion-only track that keeps within cos 0.5 of that direction, below 0.6 of the camera's speed, over
+   1.5 s, is not reported; only while the camera moves faster than 1 m/s.
+3. **Re-acquisition where an object stopped.** A track older than 5 s stays re-acquirable for 20 s at
+   the place it was last seen, with half the base gate. On MEVA 4K most remaining re-births were
+   walkers who stopped (waiting at the bus station) and were found 8-12 s later within 1 m of where
+   they were lost, while the Kalman prediction had carried their lost track 5 m on.
+4. **Static coasting 4 s** (reported) for parked objects the detector misses for a few seconds.
+5. **Riders.** A dismount track and a bicycle or motorcycle detection associate (VisDrone boxes a rider
+   either way; a quarter of the re-births on MEVA 4K were such label flips).
+
+### MEVA 4K with the fixed detector
+
+The re-detection that round 1 could not finish (killed at 88 % by a time limit): 450 detection frames,
+15-105 s, 60-95 boxes per frame, 16 minutes on this machine. Rows from the label-free table below:
+
+| Pipeline | Tracks | Births/min | Median track (s) | Entities/frame | Static: n, per-object wander (m RMS) | MinBand B/s at 0.15 m | per entity |
+|---|---:|---:|---:|---:|---|---:|---:|
+| old (old detector, original tracker) | 286 | 191 | 4.2 | 27.2 | 46, 1.01 | 2317 | 85 |
+| new detector, original tracker | 329 | 219 | 8.2 | 65.4 | 46, 0.64 | 5440 | 83 |
+| round 1 (det + MTI) | 247 | 165 | 14.0 | 75.8 | 48, 0.74 | 5910 | 78 |
+| round 2 (det + MTI) | 206 | 137 | 22.9 | 79.2 | 35, 0.43 | 6008 | 76 |
+
+The fixed detector finds about three times the objects of the old one (27 → 79 entities per frame);
+round 2 tracks them with fewer tracks than the old pipeline tracked a third of them (286 → 206), a
+median track of 23 s instead of 4 s, and less wander on parked objects. Bytes follow the entity count;
+per entity they fall (85 → 76 B/s). The visual audit on MEVA 4K was not done (see Unfinished).
+
+### Label-free metrics, all clips (this machine)
+
+Columns as in the round-1 table below. "new detector + round-2 tracker, no MTI" is the ablation with
+the round-2 tracker (in round 1 the same row used the round-1 tracker).
+
+| Clip | Split | Pipeline | Tracks | Births/min | Median track (s) | Entities/frame | Dets in a >=1 s track | Motion-only/frame | Static: n, std (m), KF speed (m/s) | MinBand B/s at 0.15 / 0.5 m | Mean error (cm) at 0.15 / 0.5 m |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---|
+| MEVA 16-00-14 (4K) | tuning | old | 286 | 191 | 4.2 | 27.2 | 0.75 | - | 46, 0.23, 0.10 | 2317 / 1506 | 3.5 / 11.0 |
+| MEVA 16-00-14 (4K) | tuning | new detector, old tracker | 329 | 219 | 8.2 | 65.4 | 0.81 | - | 46, 0.18, 0.10 | 5440 / 3349 | 3.7 / 12.6 |
+| MEVA 16-00-14 (4K) | tuning | new detector + round-2 tracker, no MTI | 185 | 123 | 25.8 | 76.8 | 0.86 | - | 33, 0.16, 0.00 | 5753 / 3540 | 3.8 / 10.9 |
+| MEVA 16-00-14 (4K) | tuning | round 1 (det + MTI) | 247 | 165 | 14.0 | 75.8 | 0.85 | 1.0 | 48, 0.16, 0.00 | 5910 / 3630 | 3.8 / 11.0 |
+| MEVA 16-00-14 (4K) | tuning | round 2 (det + MTI) | 206 | 137 | 22.9 | 79.2 | 0.86 | 1.0 | 35, 0.18, 0.00 | 6008 / 3681 | 3.7 / 10.8 |
+| amad-test1 (RGB 596x336) | dev | old | 2 | 8 | 5.8 | 1.0 | 0.60 | - | - | 142 / 75 | 3.1 / 16.9 |
+| amad-test1 (RGB 596x336) | dev | new detector, old tracker | 4 | 15 | 13.7 | 3.2 | 0.90 | - | - | 426 / 213 | 4.5 / 14.5 |
+| amad-test1 (RGB 596x336) | dev | new detector + round-2 tracker, no MTI | 4 | 15 | 10.7 | 2.9 | 0.88 | - | - | 361 / 172 | 4.7 / 14.0 |
+| amad-test1 (RGB 596x336) | dev | round 1 (det + MTI) | 13 | 49 | 5.6 | 6.5 | 0.84 | 3.0 | - | 746 / 513 | 3.3 / 10.7 |
+| amad-test1 (RGB 596x336) | dev | round 2 (det + MTI) | 12 | 46 | 4.2 | 5.3 | 0.81 | 3.0 | - | 666 / 447 | 3.5 / 12.2 |
+| hituav-60m-30_1 (thermal) | dev | old | 53 | 23 | 4.3 | 2.6 | 0.52 | - | 3, 0.60, 0.24 | 284 / 224 | 2.2 / 8.0 |
+| hituav-60m-30_1 (thermal) | dev | new detector, old tracker | 68 | 29 | 4.8 | 3.4 | 0.49 | - | 3, 0.42, 0.30 | 274 / 207 | 2.7 / 10.6 |
+| hituav-60m-30_1 (thermal) | dev | new detector + round-2 tracker, no MTI | 40 | 17 | 11.0 | 4.4 | 0.62 | - | 1, 0.35, 0.00 | 404 / 273 | 3.1 / 11.3 |
+| hituav-60m-30_1 (thermal) | dev | round 1 (det + MTI) | 104 | 45 | 9.2 | 9.8 | 0.85 | 3.7 | - | 879 / 633 | 2.5 / 10.6 |
+| hituav-60m-30_1 (thermal) | dev | round 2 (det + MTI) | 91 | 39 | 11.5 | 10.4 | 0.88 | 3.7 | 2, 0.37, 0.00 | 945 / 667 | 2.8 / 11.4 |
+| amad-test2 (RGB 596x336) | held-out | old | 0 | - | - | - | 0.00 | - | - | 0 / 0 | 0.0 / 0.0 |
+| amad-test2 (RGB 596x336) | held-out | new detector, old tracker | 4 | 21 | 7.2 | 2.6 | 0.65 | - | - | 285 / 200 | 3.9 / 9.2 |
+| amad-test2 (RGB 596x336) | held-out | new detector + round-2 tracker, no MTI | 4 | 21 | 6.6 | 2.7 | 0.66 | - | - | 283 / 202 | 3.9 / 9.0 |
+| amad-test2 (RGB 596x336) | held-out | round 1 (det + MTI) | 11 | 58 | 4.8 | 5.0 | 0.81 | 1.5 | - | 709 / 558 | 2.4 / 8.8 |
+| amad-test2 (RGB 596x336) | held-out | round 2 (det + MTI) | 10 | 53 | 3.8 | 4.6 | 0.81 | 1.5 | - | 672 / 533 | 2.5 / 8.6 |
+| mvt-test10 (RGB 720p) | held-out | old | 9 | 87 | 2.4 | 4.4 | 0.69 | - | - | 622 / 496 | 2.3 / 11.1 |
+| mvt-test10 (RGB 720p) | held-out | new detector, old tracker | 10 | 97 | 2.3 | 4.5 | 0.61 | - | - | 654 / 529 | 2.2 / 11.1 |
+| mvt-test10 (RGB 720p) | held-out | new detector + round-2 tracker, no MTI | 4 | 39 | 5.0 | 3.7 | 0.56 | - | - | 529 / 387 | 2.0 / 12.0 |
+| mvt-test10 (RGB 720p) | held-out | round 1 (det + MTI) | 13 | 126 | 3.0 | 7.5 | 0.63 | 0.5 | - | 860 / 615 | 2.5 / 7.9 |
+| mvt-test10 (RGB 720p) | held-out | round 2 (det + MTI) | 10 | 97 | 2.0 | 5.6 | 0.61 | 0.5 | - | 713 / 542 | 2.8 / 11.0 |
+| meva-uav-0307-1720 (RGB 1080p) | held-out | old | 68 | 116 | 3.8 | 10.9 | 0.65 | - | 6, 0.50, 0.22 | 1093 / 847 | 2.5 / 9.6 |
+| meva-uav-0307-1720 (RGB 1080p) | held-out | new detector, old tracker | 88 | 150 | 4.2 | 17.4 | 0.71 | - | 5, 0.22, 0.07 | 1375 / 1002 | 3.2 / 9.8 |
+| meva-uav-0307-1720 (RGB 1080p) | held-out | new detector + round-2 tracker, no MTI | 73 | 125 | 9.1 | 22.1 | 0.76 | - | 10, 0.34, 0.00 | 1872 / 1132 | 3.9 / 10.1 |
+| meva-uav-0307-1720 (RGB 1080p) | held-out | round 1 (det + MTI) | 79 | 135 | 7.0 | 20.6 | 0.75 | 0.1 | 8, 0.18, 0.00 | 1665 / 1073 | 3.7 / 9.7 |
+| meva-uav-0307-1720 (RGB 1080p) | held-out | round 2 (det + MTI) | 77 | 132 | 8.2 | 22.6 | 0.76 | 0.1 | 10, 0.34, 0.00 | 1914 / 1166 | 3.9 / 10.0 |
+| hituav-120m-30_3 (thermal) | held-out | old | 15 | 31 | 2.4 | 2.6 | 0.46 | - | 1, 0.28, 0.23 | 342 / 260 | 1.8 / 9.8 |
+| hituav-120m-30_3 (thermal) | held-out | new detector, old tracker | 10 | 21 | 4.0 | 2.1 | 0.46 | - | 1, 0.23, 0.41 | 276 / 199 | 1.8 / 10.4 |
+| hituav-120m-30_3 (thermal) | held-out | new detector + round-2 tracker, no MTI | 7 | 15 | 6.4 | 2.5 | 0.50 | - | - | 305 / 201 | 3.1 / 11.6 |
+| hituav-120m-30_3 (thermal) | held-out | round 1 (det + MTI) | 44 | 92 | 3.3 | 7.3 | 0.69 | 1.1 | - | 587 / 484 | 1.5 / 5.6 |
+| hituav-120m-30_3 (thermal) | held-out | round 2 (det + MTI) | 42 | 88 | 2.9 | 6.7 | 0.68 | 1.1 | - | 582 / 476 | 1.8 / 6.4 |
+| hituav-70m-90_1 (thermal) | held-out | old | 3 | 5 | 8.8 | 1.0 | 0.04 | - | - | 54 / 45 | 1.4 / 6.2 |
+| hituav-70m-90_1 (thermal) | held-out | new detector, old tracker | 4 | 7 | 19.1 | 2.2 | 0.28 | - | - | 139 / 122 | 1.9 / 8.7 |
+| hituav-70m-90_1 (thermal) | held-out | new detector + round-2 tracker, no MTI | 4 | 7 | 29.2 | 2.9 | 0.33 | - | - | 154 / 132 | 2.0 / 8.2 |
+| hituav-70m-90_1 (thermal) | held-out | round 1 (det + MTI) | 9 | 16 | 4.1 | 2.7 | 0.39 | 0.2 | - | 211 / 172 | 1.6 / 6.6 |
+| hituav-70m-90_1 (thermal) | held-out | round 2 (det + MTI) | 9 | 16 | 4.1 | 2.7 | 0.39 | 0.2 | - | 211 / 173 | 1.7 / 7.2 |
+
+### Motion-only tracks: real or not (post-hoc, developer, after freezing; not ground truth)
+
+`audit.py movers`: one crop per reported track whose majority class is the unclassified mover (100),
+at the detection nearest the middle of its reported span, the object and 4x its surroundings; the
+developer labels each real (a moving dismount or vehicle), false (shadow, parallax, vegetation, an
+edge, nothing visible) or unsure. Tracks (reported seconds):
+
+| Clip | Split | Round 1: real | Round 1: false | Round 1: unsure | Round 2: real | Round 2: false | Round 2: unsure |
+|---|---|---|---|---|---|---|---|
+| MEVA 16-00-14 (4K) | tuning | 0 (0 s) | 18 (85 s) | 0 (0 s) | 0 (0 s) | 13 (81 s) | 0 (0 s) |
+| amad-test1 (RGB 596x336) | dev | 1 (5 s) | 7 (30 s) | 0 (0 s) | 1 (9 s) | 6 (9 s) | 0 (0 s) |
+| hituav-60m-30_1 (thermal) | dev | 18 (111 s) | 2 (6 s) | 4 (15 s) | 18 (192 s) | 2 (6 s) | 4 (16 s) |
+| amad-test2 (RGB 596x336) | held-out | 3 (13 s) | 1 (0 s) | 0 (0 s) | 2 (8 s) | 0 (0 s) | 0 (0 s) |
+| mvt-test10 (RGB 720p) | held-out | 0 (0 s) | 4 (11 s) | 1 (2 s) | 0 (0 s) | 2 (4 s) | 0 (0 s) |
+| meva-uav-0307-1720 (RGB 1080p) | held-out | 0 (0 s) | 0 (0 s) | 0 (0 s) | 0 (0 s) | 0 (0 s) | 0 (0 s) |
+| hituav-120m-30_3 (thermal) | held-out | 2 (11 s) | 19 (50 s) | 9 (21 s) | 2 (9 s) | 16 (29 s) | 9 (19 s) |
+| hituav-70m-90_1 (thermal) | held-out | 5 (11 s) | 0 (0 s) | 0 (0 s) | 5 (11 s) | 0 (0 s) | 0 (0 s) |
+| held-out, all | | 10 (35 s) | 24 (61 s) | 10 (23 s) | 9 (28 s) | 18 (32 s) | 9 (19 s) |
+
+What the false ones were: amad-test1 (dev) shadow tips of the convoy behind a low sun (4 tracks),
+tree tops sliding with the drone's motion (2), a fragment on a truck; MEVA 4K tree tops and bushes in
+wind, lamp posts, curbs, bike racks, roof edges and roof units under a drone hovering at ~80 m;
+mvt-test10 a headland tip on the horizon, a tree top against the sky, footprints in sand, a second box
+on an amphibious vehicle; hituav-120m blobs with nothing visible at the box at 120 m (people are 2-5 px
+there, so 9 tracks stay unsure). amad-test2's one real track lost in round 2 is the same convoy vehicle:
+its motion blob is half the size of the vehicle ahead, in lockstep 14 m away, so it was held back as a
+companion for about 1.8 s, then classified as a car by appearance (no longer a motion-only track).
+
+### Reading it
+
+- **Churn, tuning clip.** MEVA 4K: 247 → 206 tracks (-17 %), 165 → 137 births per minute, median
+  track 14.0 → 22.9 s, per-object wander of parked objects 0.74 → 0.43 m. Against the original
+  pipeline on the same clip: 286 tracks for 27 entities per frame then, 206 for 79 now.
+- **Churn, held-out.** Small: 156 → 148 tracks over the five clips; the largest change is mvt-test10
+  (13 → 10 tracks, 126 → 97 births per minute). The short held-out clips (6-35 s) have little room
+  for the 20 s re-acquisition and the static coasting to act.
+- **False movers.** Held-out: 24 → 18 false motion-only tracks, 61 → 32 s of them on the link (-48 %),
+  for 35 → 28 s of real ones (the amad-test2 vehicle above; about 2 s less on one hituav-120m walker). Dev
+  amad-test1: 30 → 9 s false with the real vehicle 5 → 9 s; dev thermal: real 111 → 192 s with false
+  unchanged (6 s), because round 1's 8 m rule had hidden walkers in groups.
+- **What it does not fix.** A hovering drone over trees in wind and high-contrast roof edges (MEVA 4K:
+  13 false tracks, 81 s, left): the motion is not parallax, and neither net displacement nor
+  straightness over 3 s separates it from real walkers on these clips. Surf was not tuned for.
+- **Bytes** follow the entities kept. mvt-test10 860 → 713 B/s (fewer false movers), amad-test2
+  709 → 672; the held-out MEVA clip 1665 → 1914 B/s, because static coasting and the long
+  re-acquisition keep parked objects in the picture (20.6 → 22.6 entities per frame).
+
+### MinBand on the held-out tracks (round 2)
+
+As the round-1 table below, from the round-2 `tracks.csv`, x264 on this machine's ffmpeg.
+
+| Clip | Entities/frame | x264 CRF 23 native (kbit/s) | x264 lowest row (kbit/s) | MinBand 0.15 m (B/s) | err (cm) | telemetry 450 B/s, 5 % loss: B/s, err (cm) | lora 1500 B/s, 10 %: B/s, err | hf 8000 B/s, 1 %: B/s, err | x264 native / MinBand | x264 lowest / MinBand |
+|---|---:|---:|---:|---:|---:|---|---|---|---:|---:|
+| amad-test2 (RGB 596x336) | 4.6 | 648 | 313 (native CRF 28) | 672 | 2.5 | 529, 37 | 497, 85 | 776, 92 | 121x | 58x |
+| mvt-test10 (RGB 720p) | 5.6 | 3064 | 527 (360p CRF 28) | 713 | 2.8 | 638, 32 | 597, 82 | 847, 114 | 537x | 92x |
+| meva-uav-0307-1720 (RGB 1080p) | 22.6 | 5169 | 351 (360p CRF 28) | 1914 | 3.9 | 828, 48 | 1005, 65 | 1143, 69 | 338x | 23x |
+| hituav-120m-30_3 (thermal) | 6.7 | 796 | 309 (360p CRF 28) | 582 | 1.8 | 365, 57 | 397, 108 | 698, 103 | 171x | 66x |
+| hituav-70m-90_1 (thermal) | 1.7 | 713 | 257 (360p CRF 28) | 211 | 1.7 | 151, 32 | 169, 78 | 249, 72 | 423x | 152x |
+
+### Bugs found on the way
+
+- `tools/eval` replay: `Math.max(...errs)` overflowed the call stack on MEVA 4K (~211 000 rows), and
+  `minband.sh` hid the error and wrote empty results, so no MinBand numbers existed for the 4K clip
+  with the fixed detector. Fixed (a loop; a test with 500 000 values); `minband.sh` now fails loudly.
+- `h264.sh` used GNU `stat -c`; on macOS every x264 baseline failed. Fixed (`wc -c`).
+
+## Round 1: protocol
 
 - Clips: a manifest split `dev` / `heldout` before any detector work. Tuning used only MEVA
   2018-03-13.16-00-14 (4K, the existing tuning clip) and the dev clips `amad-test1` (real military
@@ -31,7 +206,7 @@ come from `track.py` / `audit.py` runs in `runs/footage/` (not committed).
   of small objects in compressed video. Precision and recall are given with Wilson 95 % intervals;
   recall counts objects, precision counts boxes (a second box on an object is a false positive).
 
-## What changed
+## Round 1: what changed
 
 1. **NMS bug (detector).** `cv2.dnn.NMSBoxes` takes x, y, w, h; it was given x1, y1, x2, y2, so every
    box was as large as its own coordinates and same-class neighbours suppressed each other. On 4K
@@ -66,7 +241,7 @@ class 101 (armoured) exists in MinBand but nothing emits it in the frozen pipeli
 (github.com/InvictusRex, .pt only, no licence) were not tried, because the held-out stock clips are
 that repository's own test videos; KasSahin/tank-datection-yolov8n (MIT) ships no weights.
 
-## Label-free metrics
+## Round 1: label-free metrics
 
 Per detector source (improved pipeline). Agreement: an MTI mover absorbed by an appearance box, or
 an appearance box that motion confirmed. Persistence: the fraction of a source's detections that end
@@ -142,8 +317,8 @@ Reading it:
 
 ### Tracker changes on the tuning clip (MEVA 4K, 15-105 s)
 
-On the detector cache with the old NMS (the fixed-NMS re-detection of this clip did not finish, see
-Unfinished). Same detections in every row; only the tracker (and MTI) change.
+On the detector cache with the old NMS (the fixed-NMS re-detection of this clip did not finish in
+round 1; it is in round 2 above). Same detections in every row; only the tracker (and MTI) change.
 
 | Tracker | Tracks | Births/min | Median track (s) | Entities/frame | Static: n, std (m), KF speed (m/s) | Static wander: global / per object (m RMS) | MinBand B/s at 0.15 / 0.5 m | Mean error (cm) at 0.15 / 0.5 m |
 |---|---:|---:|---:|---:|---|---|---|---|
@@ -163,7 +338,7 @@ Static jitter is per object, not global: on MEVA 4K the deviation of static trac
 mean is 0.81 m RMS per object but only 0.10 m in common across all of them (the registration); with
 the static mode it falls to 0.31 m per object.
 
-## Visual audit (post-hoc, developer, after freezing; not ground truth)
+## Round 1: visual audit (post-hoc, developer, after freezing; not ground truth)
 
 Per clip, old vs improved, at the detection level (every box the tracker saw) and the track level
 (boxes in confirmed tracks, what reaches the link):
@@ -204,7 +379,7 @@ Pooled (sums of TP, FP, FN over the clips of each group):
 - Residual false movers seen in the audit: the far end of long low-sun shadows (amad-test1), surf on
   the beach (mvt-test10), tree tops and roof edges under a fast-translating camera.
 
-## MinBand on the held-out tracks
+## Round 1: MinBand on the held-out tracks
 
 `npm run replay` on each clip's improved `tracks.csv`: clean link at θ 0.15 m, and the three link
 profiles (telemetry: 450 B/s budget, 5 % loss, 6-tick delay; lora: 1500 B/s, 10 %, 36 ticks; hf:
@@ -259,36 +434,29 @@ widths (3 m at any heading, +-50 %), with a bootstrap over the boxes.
 - The appearance model is a nano VisDrone model; thermal is out of its training distribution.
 - MTI needs motion: a parked or camouflaged-and-still object is invisible to it; slow, closely spaced
   walkers (the nadir thermal file) merge or fall under the threshold.
-- Shadows, surf and the parallax of tall structures under a fast camera leave false movers.
-- Fragmentation is still high on busy scenes (MEVA 4K: ~100 births per minute for ~80 objects).
+- Shadows, surf and the parallax of tall structures under a fast camera leave false movers (round 2
+  removes about half of the false-mover time on the held-out clips; trees in wind and roof edges
+  under a hovering drone remain, and surf was not tuned for).
+- Fragmentation is still high on busy scenes (MEVA 4K with the fixed detector: 137 births per minute
+  for 79 entities per frame in round 2, 165 in round 1).
 - The ground model is a flat plane with an assumed field of view.
 - MinBand numbers are replays at a fixed θ or a fixed link profile, not a field link.
 
 ## Unfinished
 
-- **MEVA 4K with the fixed detector.** The re-detection of MEVA 2018-03-13.16-00-14 (15-105 s) with
-  the NMS fix was killed by a timeout at frame 2832 of 3150, so the MEVA 4K tracker table above uses
-  the old-NMS detections, and there is no "improved" MEVA 4K row with the fixed detector. It is not
-  needed for the held-out conclusions (the held-out 1080p MEVA clip ran the full pipeline). To finish
-  locally (~45 min on 4 cores):
-
-  ```bash
-  cd tools/footage
-  .venv/bin/python -I track.py detect clips/2018-03-13.16-00-14.16-03-38.uav1.mp4 --model models/aerial-guardian.onnx \
-      --tile 640 --start 15 --end 105 --out ../../runs/footage/meva-2018-03-13.16-00-14
-  .venv/bin/python -I track.py mti clips/2018-03-13.16-00-14.16-03-38.uav1.mp4 --out ../../runs/footage/meva-2018-03-13.16-00-14
-  .venv/bin/python -I track.py track ../../runs/footage/meva-2018-03-13.16-00-14 --sources det,mti
-  .venv/bin/python -I track.py track ../../runs/footage/meva-2018-03-13.16-00-14 --sources det --legacy-tracker --no-overlay \
-      --out ../../runs/footage/meva-2018-03-13.16-00-14/det-legacy
-  .venv/bin/python -I audit.py metrics ../../runs/footage/meva-2018-03-13.16-00-14 ../../runs/footage/meva-2018-03-13.16-00-14/det-legacy
-  ./minband.sh ../../runs/footage/meva-2018-03-13.16-00-14/tracks.csv ../../runs/footage/meva-2018-03-13.16-00-14
-  ```
-
-- **Visual audit on MEVA 4K** (the tuning clip) was not done; the label-free metrics were. To do it:
-  `audit.py sample <run> <clip> --old <run>/old --out <run>/audit --tile-width 1280`, label
-  `<run>/audit/labels.json` (format in `audit.py`), `audit.py score <run>/audit`.
-- The per-clip audit labels (`runs/footage/<clip>/audit/labels.json`) are local, like the frames they
-  refer to; the numbers are in this file.
+- **MEVA 4K with the fixed detector**: done in round 2 (above), 16 minutes on an M4.
+- **Visual audit on MEVA 4K** (the tuning clip, frame level) was not done; the label-free metrics and
+  the motion-only track audit were. To do it: `audit.py sample <run> <clip> --old <run>/old --out
+  <run>/audit --tile-width 1280`, label `<run>/audit/labels.json` (format in `audit.py`), `audit.py
+  score <run>/audit`.
+- **Frame-level audit of round 2.** The precision / recall tables (round 1) were not redone for the
+  round-2 tracker; round 2 was audited only at the motion-only track level.
+- **Surf.** Only the held-out mvt-test10 has it, so no round-2 change was tuned for it. A licensed dev
+  clip with surf would allow it.
+- **Hovering-drone clutter** (trees in wind, roof edges, roof units on MEVA 4K): needs an appearance
+  cue (vegetation texture, a roof mask) or a longer motion test; not attempted.
+- The per-clip audit labels (`runs/footage/<clip>/audit/labels.json`, `runs/footage/<clip>/movers/labels.json`)
+  are local, like the frames they refer to; the numbers are in this file.
 
 ## Reproducing
 
@@ -310,16 +478,23 @@ curl -fsSL -o models/aerial-guardian.onnx https://raw.githubusercontent.com/Halo
 ./battlefield.sh clips/battlefield
 cd ../../core && wasm-pack build --target nodejs --out-dir pkg-node --release -- --features wasm
 cd ../tools/eval && npm ci && cd ../footage
-# Each clip: frozen pipeline + old pipeline + ablations + x264 + eval + replays (run_clip.sh header)
+# Each clip: frozen pipeline (round 2) + round 1 + old pipeline + ablations + x264 + eval + replays
+# (run_clip.sh header; detection caches that exist are reused, FORCE=1 redoes them)
 ./run_clip.sh clips/battlefield/amad-test1.mp4 ../../runs/footage/dev-amad-test1
 for c in hituav-60m-30_1 amad-test2 mvt-test10 meva-uav-0307-1720 hituav-120m-30_3 hituav-70m-90_1; do
   ./run_clip.sh clips/battlefield/$c.mp4 ../../runs/footage/$c; done
+# MEVA 4K tuning clip, 15-105 s (the detection is the slow part: ~16 min on an M4, ~1 h on 4 x86 cores)
+START=15 END=105 ./run_clip.sh clips/2018-03-13.16-00-14.16-03-38.uav1.mp4 ../../runs/footage/meva-2018-03-13.16-00-14-bf
+# Motion-only track audit (round 2 section): crops, label, score
+.venv/bin/python -I audit.py movers clips/battlefield/<clip>.mp4 ../../runs/footage/<clip>/round1 ../../runs/footage/<clip> \
+    --out ../../runs/footage/<clip>/movers
+.venv/bin/python -I audit.py movers-score ../../runs/footage/<clip>/movers
 # Visual audit (after freezing): sample, look, write labels.json, score
 .venv/bin/python -I audit.py sample ../../runs/footage/<clip> clips/battlefield/<clip>.mp4 \
     --old ../../runs/footage/<clip>/old --out ../../runs/footage/<clip>/audit
 .venv/bin/python -I audit.py score ../../runs/footage/<clip>/audit
 # Tables of this file
-for t in sources label_free audit minband ground; do .venv/bin/python -I tables.py $t; done
+for t in sources label_free audit minband ground movers; do .venv/bin/python -I tables.py $t; done
 .venv/bin/python -I pooled.py
 ```
 
