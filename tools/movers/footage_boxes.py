@@ -36,6 +36,12 @@ def main() -> int:
                     help="drop a person box this much (fraction of its area) inside a vehicle box of the same frame: a small detector calls the edge of a parked car a person, and that box hops between neighbouring cars (yolov8n: 40 of 103 movers had sat on a car)")
     ap.add_argument("--max-vehicle-width", type=float, default=0.0,
                     help="drop vehicle boxes wider than this fraction of the frame (MEVA, 28 m up: cars are 0.02-0.05 of a 4K frame; YOLO26s put a 0.13-wide 'car' on an empty road)")
+    ap.add_argument("--vehicle-min-conf", type=float, default=0.0,
+                    help="drop vehicle boxes below this confidence (YOLO26s on MEVA: cars score a median 0.6; the boxes on roof edges and between two parked cars 0.2-0.3)")
+    ap.add_argument("--max-vehicle-height", type=float, default=0.0,
+                    help="drop vehicle boxes taller than this fraction of the frame (a 'truck' over a roof edge was 0.2 of it; cars from 28 m up are under 0.06)")
+    ap.add_argument("--bus-min-conf", type=float, default=0.0,
+                    help="drop bus boxes below this confidence (the clip has no bus; its 'buses' were two parked cars or a building's edge)")
     ap.add_argument("--ground-from", help="take the camera's ground fit from this run's summary.json instead (same clip, another detector: the fit comes from people's box widths, which differ between models)")
     args = ap.parse_args()
 
@@ -90,7 +96,11 @@ def main() -> int:
             frame, x1, y1, x2, y2, conf, cls = row
             if int(cls) not in keep:
                 continue
-            if int(cls) in (2, 3, 5, 7) and args.max_vehicle_width and (x2 - x1) / w > args.max_vehicle_width:
+            if int(cls) in (2, 3, 5, 7) and (
+                    (args.max_vehicle_width and (x2 - x1) / w > args.max_vehicle_width)
+                    or (args.max_vehicle_height and (y2 - y1) / h > args.max_vehicle_height)
+                    or conf < args.vehicle_min_conf
+                    or (int(cls) == 5 and conf < args.bus_min_conf)):
                 dropped_vehicles += 1; continue
             if k in drop_ids:
                 dropped_vehicles += 1; continue
@@ -114,7 +124,7 @@ def main() -> int:
             wr.writerow([fr, f"{fr / fps:.3f}", int(cls), f"{conf:.3f}", f"{bx0:.4f}", f"{by0:.4f}", f"{bx1 - bx0:.4f}", f"{by1 - by0:.4f}",
                          f"{x1 / w:.4f}", f"{y1 / h:.4f}", f"{(x2 - x1) / w:.4f}", f"{(y2 - y1) / h:.4f}"])
             n += 1
-    print(f"{n} boxes ({dropped} person boxes and {dropped_vehicles} duplicate vehicle boxes dropped) -> {args.out} (camera f {ground['f_px']:.0f} px, pitch {ground['pitch_deg']:.1f} deg, {ground['height_m']:.1f} m up)")
+    print(f"{n} boxes ({dropped} person boxes and {dropped_vehicles} duplicate or implausible vehicle boxes dropped) -> {args.out} (camera f {ground['f_px']:.0f} px, pitch {ground['pitch_deg']:.1f} deg, {ground['height_m']:.1f} m up)")
     return 0
 
 

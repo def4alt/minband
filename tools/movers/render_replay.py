@@ -29,7 +29,9 @@ AMBER = (0, 170, 255)      # BGR
 GREY = (190, 190, 190)
 FAINT = (110, 110, 110)
 INK = (20, 20, 20)
-NAMES = {0: "person", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+# From above a pickup, a van and a car look alike and the detector calls them car or truck at
+# random: one honest label for all of them.
+NAMES = {0: "person", 2: "vehicle", 3: "vehicle", 5: "vehicle", 7: "vehicle"}
 VEHICLES = {2, 3, 5, 7}
 
 
@@ -50,7 +52,8 @@ def load_verdicts(path):
     """{replay frame: {detection index: (id or None, moving)}}"""
     out = defaultdict(dict)
     with open(path) as fh:
-        for r in csv.DictReader(fh):
+        # Lines starting with '#' are the classifier's flip log (why each track was tagged).
+        for r in csv.DictReader(l for l in fh if not l.startswith("#")):
             out[int(r["frame"])][int(r["i"])] = (int(r["id"]) if r["id"] else None, r["moving"] == "1")
     return out
 

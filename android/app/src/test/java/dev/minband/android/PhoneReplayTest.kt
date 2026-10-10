@@ -125,6 +125,8 @@ class PhoneReplayTest {
             }
             val tracks = tracker.tracks(t)
             val mv = motion.update(tracks, t, eye)
+            if (export != null) { for (l in motion.flips) export.println("# flip $l"); }
+            motion.flips.clear()
             if (export != null && pending.isNotEmpty()) {
                 // As Pipeline.overlay does: a box with a track carries its tag; one without shows it
                 // when its lifted point sits within NEAR_MOVER_M of a mover of its class.
@@ -175,7 +177,8 @@ class PhoneReplayTest {
         // Unlabelled; the bounds come from `track.py track` on the same YOLO26s run (23 walkers
         // at a median 1.1 m/s, 212 vehicles of which 35 drove, at a median 2.9 m/s: a parking lot
         // where most cars are parked) and from this chain on it (13 people at a walking pace,
-        // 288 vehicle ids, 52 MOVING, 39 of them above 2 m/s). A regression that loses the
+        // 276 vehicle ids, 35 MOVING, 27 of them above 2 m/s; 29 of the 35 moved 100+ px in the
+        // footage, before the steady-path rule 12 of 52 had not). A regression that loses the
         // walkers or the driving cars, or tags the parked ones, shows here.
         assertTrue("walkers tracked and moving: $r", r.walkers >= 8)
         assertTrue("driving cars are movers: $r", r.drivenVehicles >= 20)

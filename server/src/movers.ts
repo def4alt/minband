@@ -60,7 +60,7 @@ const PLACED = new Set([56, 62, 63]);              // chair, tv, laptop
 const CARRIED = new Set([24, 26, 39, 41, 67]);     // backpack, handbag, bottle, cup, cell phone
 const VEHICLES = new Set([2, 3, 5, 7]);           // car, motorcycle, bus, truck
 /** Displacement that makes an entity moving: placed objects and vehicles need twice a person's (a parked car's box centre wanders over its length), carried ones in between. */
-export const moveDist = (cls: number) => (PLACED.has(cls) || VEHICLES.has(cls) ? 1.0 : CARRIED.has(cls) ? 0.7 : MOVE_DIST);
+export const moveDist = (cls: number) => (VEHICLES.has(cls) ? 2.0 : PLACED.has(cls) ? 1.0 : CARRIED.has(cls) ? 0.7 : MOVE_DIST);
 export const STILL_DIST = 0.3, STILL_MS = 5000;
 export const HEADING_SPEED = 0.3;
 /** Dead reckoning for /api/movers is capped here: a request after a long gap gets the last snapshot. */

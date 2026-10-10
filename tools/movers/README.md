@@ -140,7 +140,8 @@ cd android && ./gradlew :app:testDebugUnitTest --tests "dev.minband.android.Phon
 
 # 1b. The same replay on drone footage (a tools/footage run: detect, track, then this). --max-height
 #     drops the tile detector's junk boxes (people are under 3 % of a 4K frame from 28 m up).
-tools/footage/.venv/Scripts/python tools/movers/footage_boxes.py runs/footage/<run> --max-height 0.05 --out android/app/src/test/resources/replay/drone-meva.csv
+#     With vehicles (YOLO26s run, the flags that clean its boxes; see --help for each):
+tools/footage/.venv/Scripts/python tools/movers/footage_boxes.py runs/footage/<run> --classes 0,2,3,5,7 --max-height 0.05     --person-on-vehicle 0.5 --max-vehicle-width 0.08 --max-vehicle-height 0.07 --bus-min-conf 0.5     --ground-from runs/footage/meva-uav-2018-03-07.11-08-44 --out android/app/src/test/resources/replay/drone-meva.csv
 
 # 1c. The chain's verdicts painted back onto the drone clip (a 1080p mp4 to show people): the JVM
 #     replay exports one verdict per box, render_replay.py draws them (amber MOVING, grey static).

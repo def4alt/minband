@@ -194,7 +194,14 @@ class OverlayMotion {
                         kotlin.math.sqrt(ax * ax + az * az) >= needAcross ||
                             (alongCounts && absf(along) >= needAlong && monotoneAlong(window, j.refPos, ux, uz))
                     } else d.length >= needAlong
-                    if (moved && speed >= SPEED_FLOOR) s.moving = true
+                    // A vehicle must also have driven: VEHICLE_MOVE_M one way, on a near-straight
+                    // path, at VEHICLE_SPEED. A parked car's track wobbles back and forth (box
+                    // jitter, the drone's registration, a hop to its neighbour's box and back);
+                    // a driving one goes one way. Measured on a drone clip: parked cars tagged
+                    // at 1.0-2.4 m within 3 s, driving ones at 1-10 m, so distance alone could
+                    // not tell them apart, the path's straightness could.
+                    val drove = !TrackedClass.vehicle(t.classId) || (t.hits >= VEHICLE_MIN_HITS && speed >= VEHICLE_SPEED && steady(window, j.refPos, d))
+                    if (moved && drove && speed >= SPEED_FLOOR) s.moving = true
                     if (s.moving || t.id == debugId) {
                         val line = "id %d %s t=%.1f d=(%.2f,%.2f) raw=(%.2f,%.2f) drift=(%.2f,%.2f) eyeDisp=%s observed=%d dragged=%s range=%.1f needAlong=%.2f needAcross=%.2f sigma=%.2f hits=%d speed=%.2f -> %s".format(
                             t.id, TrackedClass.name(t.classId), nowS, d.x, d.z, j.d.x, j.d.z, drift.x, drift.z, eyeDisp?.let { "(%.2f,%.2f)".format(it.x, it.z) } ?: "-", observed.size, dragged, range, needAlong, needAcross, t.sigma, t.hits, speed, if (s.moving) "MOVING" else "static")
@@ -234,6 +241,27 @@ class OverlayMotion {
         val dir = if (a.last() >= 0f) 1f else -1f
         for (k in 1 until a.size) if ((a[k] - a[k - 1]) * dir < -ALONG_SLACK) return false
         return true
+    }
+
+    /**
+     * The window's robust positions progress one way along the net displacement `d` (never
+     * stepping back by more than VEHICLE_SLACK_M) and the path is near straight (net over path
+     * length at least VEHICLE_STRAIGHTNESS).
+     */
+    private fun steady(window: List<Rob>, refPos: Vec3, d: Vec3): Boolean {
+        val net = kotlin.math.sqrt(d.x * d.x + d.z * d.z)
+        if (net < 1e-3f || window.size < 2) return false
+        val ux = d.x / net; val uz = d.z / net
+        var path = 0f; var prev: Vec3? = null; var prevA = 0f
+        for (w in window) {
+            val a = (w.pos.x - refPos.x) * ux + (w.pos.z - refPos.z) * uz
+            if (prev != null) {
+                if (a - prevA < -VEHICLE_SLACK_M) return false
+                path += ground(w.pos, prev)
+            }
+            prev = w.pos; prevA = a
+        }
+        return path < 1e-3f || net / path >= VEHICLE_STRAIGHTNESS
     }
 
     private fun ground(a: Vec3, b: Vec3): Float { val dx = a.x - b.x; val dz = a.z - b.z; return kotlin.math.sqrt(dx * dx + dz * dz) }
@@ -276,6 +304,13 @@ class OverlayMotion {
         const val DRAG_MIN_TRACKS = 2
         const val DRAG_MIN_M = 0.3f
         const val DRAG_TOLERANCE = 0.5f
+        /** A vehicle is a mover only after this many hits, at this speed, on a path this straight (net / length) that never steps back more than VEHICLE_SLACK_M (see `steady`). */
+        const val VEHICLE_MIN_HITS = 5
+        const val VEHICLE_SPEED = 0.5f
+        const val VEHICLE_STRAIGHTNESS = 0.7f
+        const val VEHICLE_SLACK_M = 0.3f
+        /** A vehicle's displacement over the window to be a mover: a parked car's track wandered up to 2.4 m in 3 s from a drone; a car driving at 1 m/s covers 3 m. */
+        const val VEHICLE_MOVE_M = 2.0f
         /**
          * No judgement while the camera moves faster than this (m/s): a hand holding the phone
          * still does not, a holder walking does (0.3-0.6 m/s in a room session, with a seated
@@ -285,11 +320,12 @@ class OverlayMotion {
 
         /**
          * Displacement that makes a track moving: placed objects need twice a person's (their lifts
-         * flip, they rarely move), carried objects in between; a vehicle 1 m (its box centre
-         * wanders a few tens of centimetres over a parked car's length, a moving one covers metres).
+         * flip, they rarely move), carried objects in between; a vehicle VEHICLE_MOVE_M (and a
+         * steady path, see `update`).
          */
         fun moveDist(cls: Int): Float = when {
-            TrackedClass.placed(cls) || TrackedClass.vehicle(cls) -> 1.0f
+            TrackedClass.vehicle(cls) -> VEHICLE_MOVE_M
+            TrackedClass.placed(cls) -> 1.0f
             TrackedClass.carried(cls) -> 0.7f
             else -> MOVE_DIST
         }
