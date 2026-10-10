@@ -974,6 +974,12 @@ def run_loopback(args) -> int:
         threading.Thread(target=bridge_a.udp_reader_loop, daemon=True),
         threading.Thread(target=bridge_a.stats_ticker_loop, daemon=True),
         threading.Thread(target=bridge_b.serial_reader_loop, daemon=True),
+        # bridge_b's own udp_reader_loop (P5a bugfix): without this, replies sent back by
+        # --udp-forward's target (e.g. the MinBand server's Ack) land on udp_b and are never
+        # read, so they never get relayed over the fake serial link back to side A. A live
+        # WasmEdge stuck waiting for its first Ack (core/src/edge.rs:403) then repeats Hello
+        # forever and never reaches Delta/Keyframe -- caught via P5a's bridge-loopback gate.
+        threading.Thread(target=bridge_b.udp_reader_loop, daemon=True),
         threading.Thread(target=bridge_b.stats_ticker_loop, daemon=True),
     ]
     if depth_a is not None:
