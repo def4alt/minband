@@ -38,6 +38,9 @@ const ORIGIN_LAT = 39.0466, ORIGIN_LON = -85.5207;
 const CLIPS = {
   cons2: 'runs/footage/meva-uav-0307-1720/cons2',
   best2: 'runs/footage/meva-uav-0307-1720/best2',
+  convoy1: 'runs/footage/dev-amad-test1/mil',
+  convoy2: 'runs/footage/amad-test2/mil',
+  amphib: 'runs/footage/mvt-test10/mil',
   busy: 'runs/footage/meva-2018-03-13.16-00-14-bf',
 };
 const PROFILES = {
@@ -216,6 +219,11 @@ function replay(clip, P, opt) {
       for (const c of holders) { excluded.add(c.id); W.ids.add(c.id); if (c.parent != null) excluded.add(c.parent); }
       // The click: a lone contact is focused (track); a group is split so its members show up.
       if (W.select && W.id == null && top) { W.id = top.id; W.mode = top.count > 1 ? 3 : 1; W.ids.add(top.id); W.stage = W.mode === 3 ? 'group' : 'one'; }
+      // The picked object was alone at the click but its contact has become a group by the time
+      // the receiver shows it (a neighbour joined before the Focus arrived): the operator splits it.
+      if (W.flow === 'drill' && W.stage === 'one' && W.id != null && W.mode === 1 && rxAll.some((c) => c.id === W.id && !c.child && !c.departed && c.count > 1)) {
+        W.mode = 3; W.stage = 'group'; W.lastSend = -1e9; W.ackT = W.ackT ?? null;
+      }
       // Drill-down (flow 'drill'): once the individuals are on the receiver's map, the operator
       // clicks the one they want; pick + release of the group go up in one frame, three times.
       if (W.flow === 'drill' && W.stage === 'group' && child && rxAll.some((c) => c.id === child.id && !c.departed)) {
@@ -227,7 +235,7 @@ function replay(clip, P, opt) {
         if (W.stage === 'drill' && t - W.lastSend >= 1) {
           W.lastSend = t; W.sends++; sendUp(rx.make_drill(W.id, W.group, 60, tick), t, up);
           if (++W.drills >= 3) W.stage = 'one';
-        } else if (W.stage !== 'drill' && ec && !ec.departed && t - W.lastSend >= (W.ackT == null ? (W.retry ?? 1) : 5)) { W.lastSend = t; W.sends++; sendUp(rx.make_focus(W.id, W.mode, 60, 1, tick), t, up); }
+        } else if (W.stage !== 'drill' && ec && !ec.departed && (W.lastSend < -1e8 || t - W.lastSend >= (W.ackT == null ? (W.retry ?? 1) : 5))) { W.lastSend = t; W.sends++; sendUp(rx.make_focus(W.id, W.mode, 60, 1, tick), t, up); }
       }
       if (tr) {
         W.steps++;

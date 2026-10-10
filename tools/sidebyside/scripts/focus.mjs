@@ -24,6 +24,9 @@ const TARGETS = [
   { name: 'parked car', clip: 'best2', track: 24, at: 16, note: 'parked beside another car' },
   { name: 'walker (busy)', clip: 'busy', track: 24, at: 14, until: 60, note: 'walks about 1 m/s through the crowd' },
   { name: 'moving car (busy)', clip: 'busy', track: 56, at: 4, until: 22, note: 'drives 33 m across the lot' },
+  // Military footage (stock previews, unlicensed: numbers only, no frames in the repo).
+  { name: 'IFV in convoy', clip: 'convoy1', track: 2, at: 5, note: 'tracked infantry vehicle moving with a column on a forest road' },
+  { name: 'truck in column', clip: 'convoy2', track: 1, at: 5, note: 'lead vehicle of a column on a dirt road, oblique view' },
 ];
 const only = flag('--target', '');
 const clips = {};

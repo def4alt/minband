@@ -27,8 +27,8 @@ const repo = path.resolve(here, '../../..');
 const PORT = Number(process.env.PORT || 8090);
 // Default clip: the MEVA 1080p pass at 24-28 m (cars ~190 px) with the track-level consensus of two VisDrone-fine-tuned detectors
 // (tools/footage/consensus.py); RUN_DIR/VIDEO switch to any other run.
-const RUN_DIR = process.env.RUN_DIR || path.join(repo, 'runs/footage/meva-uav-0307-1720/best2');
-const VIDEO = process.env.VIDEO || path.join(repo, 'runs/sidebyside/meva1080-720p.mp4');
+const RUN_DIR = path.resolve(repo, process.env.RUN_DIR || 'runs/footage/meva-uav-0307-1720/best2'); // env paths: absolute or relative to the repo
+const VIDEO = path.resolve(repo, process.env.VIDEO || 'runs/sidebyside/meva1080-720p.mp4');
 const WEB = path.join(here, '../web');
 const TICK_HZ = 120, STEP_S = 0.1;
 const UDP_IP_OVERHEAD = 28;
@@ -197,6 +197,9 @@ class Replay {
       firstSeen: c.first_seen, since: c.since, ageS: r1(c.silence_s), liveness: c.liveness, parent: c.parent, child: c.child, ray: c.ray, copies: c.copies,
       lat: c.lat, lon: c.lon }));
     for (const [id, f] of this.focus) if (!f.acked && rxContacts.some((c: any) => c.focused && !c.departed && (c.id === id || c.parent === id))) f.acked = true;
+    // A contact picked as one object that has since become a group (a neighbour joined before the
+    // Focus arrived) is split, so the picked object shows up as an individual to click again.
+    for (const [id, f] of this.focus) if (f.mode === 'track' && !f.drill && rxContacts.some((c: any) => c.id === id && !c.child && !c.departed && c.count > 1)) { f.mode = 'split'; f.acked = false; f.lastSend = -1e9; }
     const rawEgo = JSON.parse(this.rx.ego_json());
     const rxEgo = rawEgo ? {
       e: rawEgo.rec.dx, n: rawEgo.rec.dy, altAgl: rawEgo.rec.alt_agl, heading: Math.round(rawEgo.rec.heading * 360 / 256), speed: rawEgo.rec.speed / 4,

@@ -260,10 +260,15 @@ impl ContactManager {
         let cfg = self.cfg;
         let ids: Vec<u32> = self.tracks.values().filter(|t| !t.lost && t.confirmed(&cfg, now)).map(|t| t.id).collect();
         let n = ids.len();
+        // A track that is the only member of a focused contact stays alone: the operator picked
+        // that object, and letting a neighbour join would turn it into a group centroid.
+        let held: Vec<bool> = ids.iter().map(|id| self.tracks[id].contact.and_then(|c| self.contacts.get(&c))
+            .map_or(false, |c| c.focused && !c.split && !c.departed && c.members.len() == 1 && c.members[0] == *id)).collect();
         let mut parent: Vec<usize> = (0..n).collect();
         fn find(p: &mut Vec<usize>, i: usize) -> usize { let mut r = i; while p[r] != r { r = p[r]; } let mut j = i; while p[j] != r { let k = p[j]; p[j] = r; j = k; } r }
         for i in 0..n {
             for j in (i + 1)..n {
+                if held[i] || held[j] { continue; }
                 let (a, b) = (&self.tracks[&ids[i]], &self.tracks[&ids[j]]);
                 let same = a.contact.is_some() && a.contact == b.contact;
                 let base = if coarse(a.class) == COARSE_DISMOUNT && coarse(b.class) == COARSE_DISMOUNT { cfg.link_dismount_m } else { cfg.link_m };
@@ -596,6 +601,25 @@ mod tests {
         let scene = |t: u32| { let s = t as f32 / TICK_HZ as f32; vec![tr(1, CAR, 10.0 * s, 0.0, 10.0, 0.0), tr(2, PERSON, 50.0, 3.0, 0.0, 0.0)] };
         run(&mut cm, scene, 0, 10 * TICK_HZ, 12);
         assert_eq!(cm.contacts.values().filter(|c| !c.departed).count(), 2);
+    }
+
+    #[test]
+    fn a_focused_lone_contact_is_not_absorbed_by_a_neighbour() {
+        let mut cm = ContactManager::new(ContactConfig::default(), 1.0);
+        // Car 1 parked; car 2 parked 40 m away: two contacts. Focus car 1, then car 2 parks 5 m
+        // from it. Without focus they would group; with focus car 1 stays its own contact.
+        let scene = |near: bool| move |_t: u32| vec![tr(1, CAR, 0.0, 0.0, 0.0, 0.0), tr(2, CAR, if near { 5.0 } else { 40.0 }, 0.0, 0.0, 0.0)];
+        run(&mut cm, scene(false), 0, 10 * TICK_HZ, 12);
+        let c1 = cm.tracks[&1].contact.unwrap();
+        assert_ne!(Some(c1), cm.tracks[&2].contact);
+        cm.set_focus(c1, true, false);
+        run(&mut cm, scene(true), 10 * TICK_HZ + 12, 30 * TICK_HZ, 12);
+        assert_eq!(cm.contacts[&c1].members, vec![1], "the focused car stays alone");
+        assert_ne!(cm.tracks[&2].contact, Some(c1));
+        // Released, the two group after the merge patience.
+        cm.set_focus(c1, false, false);
+        run(&mut cm, scene(true), 30 * TICK_HZ + 12, 40 * TICK_HZ, 12);
+        assert_eq!(cm.tracks[&1].contact, cm.tracks[&2].contact, "they group once focus is released");
     }
 
     #[test]

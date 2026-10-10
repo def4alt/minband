@@ -32,6 +32,21 @@
         "start"
       ],
       "port": 8090
+    },
+    {
+      "name": "sidebyside-convoy",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=8091",
+        "RUN_DIR=runs/footage/dev-amad-test1/mil",
+        "VIDEO=runs/sidebyside/amad-test1.mp4",
+        "PROFILE=lora",
+        "npm",
+        "--prefix",
+        "tools/sidebyside",
+        "start"
+      ],
+      "port": 8091
     }
   ]
 }
