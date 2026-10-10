@@ -23,6 +23,7 @@ __pycache__/
 # footage: clips and model weights are never committed
 tools/footage/clips/
 tools/footage/models/
+viewer/public/clip/
 *.onnx
 *.pt
 docs/presentation/showcase/build/

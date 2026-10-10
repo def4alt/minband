@@ -36,6 +36,9 @@ MIN_HITS = 2
 # shorter range here since this fits the *scale*, not just a fallback decision).
 MAX_FIT_RANGE_M = 120.0
 MIN_GROUND_SAMPLES = 24  # refit only once there's enough signal; else keep the last (a, b)
+# ponytail: fixed fraction of the keyframe's own disparity span, not a calibrated depth-error
+# model; tighten if flat ground gets misclassified as obstacles, loosen if low obstacles vanish.
+OBSTACLE_MARGIN_FRAC = 0.08
 
 
 def ground_hit_range(K, R, p, u, v):
@@ -84,7 +87,11 @@ class DroneRecon:
         self.have_row = np.zeros(DEPTH_H, dtype=bool)
         self.ab = None  # (a, b), persists across keyframes
         self.voxels = {}  # (i, j, k) -> hit count
-        self.new_voxels = []  # occupied-this-tick, drained by the SSE broadcaster
+        self.voxel_log = []  # append-only, newest-occupied order; SSE clients each keep their own
+        # read cursor into this (see drain_deltas) so multiple simultaneous viewers each see every
+        # voxel once, including ones occupied before they connected -- a single shared "drained"
+        # queue (the previous design) meant whichever client's SSE loop ran first stole the event
+        # and every other client silently never saw it.
         self.K = None
         # Obstacle pixels seen before `self.ab` had enough ground samples to fit yet (e.g. the
         # very first keyframe, if a chunk with no ground in it streams in before one that has
@@ -125,6 +132,11 @@ class DroneRecon:
         steep = (np.abs(gx) + np.abs(gy)) > 0.25 * depth_range
         ground_disp, ground_inv_t = [], []
         obstacle_px = []  # (u, v, disp)
+        # Once a fit exists, a pixel whose ray geometrically crosses the ground plane is still an
+        # obstacle if its *measured* disparity reads closer than the ground-hit predicts (true for
+        # a nadir camera, where almost every ray crosses ground somewhere -- geometry alone can't
+        # tell ground from "car roof in the way", only the measured depth can).
+        a_b = self.ab
         for dv in range(nrows):
             v = row0 + dv
             for u in range(chunk["w"]):
@@ -132,12 +144,17 @@ class DroneRecon:
                 if disp <= 0 or steep[dv, u]:
                     continue  # dropped: no data (proto/DEPTH.md px=0), or a flying/edge pixel
                 hit = ground_hit_range(self.K, R, p, u, v)
-                if hit is not None:
-                    t, _ = hit
-                    ground_disp.append(disp)
-                    ground_inv_t.append(1.0 / t)
-                else:
-                    obstacle_px.append((u, v, disp))
+                if hit is None:
+                    continue  # ray never reaches ground (e.g. looking above horizon) -- no usable geometry
+                t, _ = hit
+                if a_b is not None:
+                    a, b = a_b
+                    pred_ground_disp = (1.0 / t - b) / a if a > 1e-9 else None
+                    if pred_ground_disp is not None and disp - pred_ground_disp > OBSTACLE_MARGIN_FRAC * depth_range:
+                        obstacle_px.append((u, v, disp))
+                        continue
+                ground_disp.append(disp)
+                ground_inv_t.append(1.0 / t)
         if len(ground_disp) >= MIN_GROUND_SAMPLES:
             fit = robust_fit(ground_disp, ground_inv_t)
             if fit is not None:
@@ -163,11 +180,11 @@ class DroneRecon:
         n = self.voxels.get(key, 0) + 1
         self.voxels[key] = n
         if n == MIN_HITS:
-            self.new_voxels.append(key)
+            self.voxel_log.append(key)
 
-    def drain_new_voxels(self):
-        out, self.new_voxels = self.new_voxels, []
-        return out
+    def voxels_since(self, cursor):
+        """-> (new keys since `cursor`, cursor to pass in next time)."""
+        return self.voxel_log[cursor:], len(self.voxel_log)
 
 
 class ReconServer:
@@ -187,13 +204,13 @@ class ReconServer:
             d = self.drones.setdefault(chunk["drone_id"], DroneRecon(self.hfov_deg, self.accumulate))
             d.ingest_chunk(chunk)
 
-    def drain_deltas(self):
-        """-> list of ("vox", [[i,j,k],...]) tuples, one per drone with new occupied voxels since
-        the last drain."""
+    def drain_deltas(self, cursors):
+        """-> list of [[i,j,k],...] voxel-key lists, one per drone with new occupied voxels since
+        `cursors` (a per-SSE-client {drone_id: index} dict, updated in place) last looked."""
         out = []
         with self.lock:
-            for d in self.drones.values():
-                add = d.drain_new_voxels()
+            for did, d in self.drones.items():
+                add, cursors[did] = d.voxels_since(cursors.get(did, 0))
                 if add:
                     out.append([list(k) for k in add])
         return out
@@ -235,9 +252,10 @@ def make_sse_handler(recon):
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
+            cursors = {}  # this connection's own read position into each drone's voxel_log
             try:
                 while True:
-                    for add in recon.drain_deltas():
+                    for add in recon.drain_deltas(cursors):
                         self.wfile.write(f"data: {json.dumps({'t': 'vox', 'add': add})}\n\n".encode())
                     self.wfile.write(f"data: {json.dumps({'t': 'stats', **recon.stats()})}\n\n".encode())
                     self.wfile.flush()

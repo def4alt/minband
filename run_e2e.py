@@ -175,7 +175,7 @@ def main() -> int:
 
         # 3. recon: depth-chunk reassembly + voxel SSE. (A plain GET to "/" streams forever, same
         # as "/events" -- tcp_wait only, an http_wait here would hang on the open connection.)
-        spawn("recon", [sys.executable, "recon.py", "--listen-port", "7790", "--sse-port", "8090"], REPO / "hub")
+        spawn("recon", [sys.executable, "recon.py", "--listen-port", "7790", "--sse-port", "8090", "--accumulate"], REPO / "hub")
         tcp_wait("127.0.0.1", 8090)
 
         # 4. edge-bridge: real WASM Edge between edge.py's tracks and the bridge's data ingress.

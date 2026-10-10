@@ -1,8 +1,8 @@
 // Recon page (P6): the real TwinScene (entities, rings, frustum) from MinBand's WS :8080, with a
-// voxel layer from hub/recon.py's SSE :8090 added via scene.addLayer(), a local-camera panel
-// labelled "edge view (not transmitted)" (the laptop stands in for the drone's own camera, which
-// never leaves the edge), and a bottom bar reading the bridge's own /telemetry (B/s per class vs
-// cap, ratio vs the H.264 baseline already in the snapshot, keyframe age, link state).
+// voxel layer from hub/recon.py's SSE :8090 added via scene.addLayer(), a source-clip panel
+// labelled "source clip (not transmitted)" (edge.py's own input footage -- the drone's actual
+// frame data never leaves the edge), and a bottom bar reading the bridge's own /telemetry (B/s
+// per class vs cap, ratio vs the H.264 baseline already in the snapshot, keyframe age, link state).
 import * as THREE from 'three';
 import { TwinScene } from './scene';
 import { fmtBps, h264 } from './link';
@@ -114,16 +114,12 @@ function linkState(): string {
   return parts.length ? parts.join(' · ') : 'live';
 }
 
-// ---- edge view: local camera stands in for the drone's own feed, which never leaves the edge --
-async function startCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) { $('edgePlaceholder').hidden = false; return; }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    const v = $<HTMLVideoElement>('cam');
-    v.srcObject = stream;
-    await v.play().catch(() => {});
-  } catch {
-    $('edgePlaceholder').hidden = false;
-  }
+// ---- edge view: the same source clip edge.py is reading, looped -- this is what the drone's
+// own camera sees, not a live feed (that frame data never leaves the edge).
+function playSourceClip() {
+  const v = $<HTMLVideoElement>('cam');
+  v.src = '/clip/source.mp4';
+  v.loop = true;
+  v.play().catch(() => { $('edgePlaceholder').hidden = false; });
 }
-startCamera();
+playSourceClip();
