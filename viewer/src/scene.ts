@@ -39,13 +39,16 @@ const KINDS: Kind[] = ['person', 'carried', 'static', 'vehicle', 'cycle'];
 // COCO ids. Person = capsule, things people carry = small sphere, road vehicles (car, bus, truck) = a
 // low car-sized box, two-wheelers (bicycle, motorcycle) = a smaller one, everything else = box.
 // Class 0 is shown as "dismount" (the military term); the wire and the code keep COCO's person.
+// From 100 up, MinBand's own ids (core/src/classes.rs): 100 an unclassified ground mover from motion
+// detection, drawn as the small heading box because its size is unknown; 101 armoured, a vehicle.
 const CARRIED = new Set([24, 25, 26, 27, 28, 39, 40, 41, 42, 43, 44, 64, 65, 67, 73, 76, 79]);
-const VEHICLES = new Set([2, 5, 7]), CYCLES = new Set([1, 3]);
+const VEHICLES = new Set([2, 5, 7, 101]), CYCLES = new Set([1, 3, 100]);
 const kindOf = (cls: number): Kind => cls === 0 ? 'person' : VEHICLES.has(cls) ? 'vehicle' : CYCLES.has(cls) ? 'cycle' : CARRIED.has(cls) ? 'carried' : 'static';
 const CLASS_NAME: Record<number, string> = {
   0: 'dismount', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck',
   24: 'backpack', 25: 'umbrella', 26: 'handbag', 28: 'suitcase', 39: 'bottle', 41: 'cup',
   56: 'chair', 57: 'couch', 58: 'plant', 59: 'bed', 60: 'table', 62: 'tv', 63: 'laptop', 67: 'phone', 73: 'book',
+  100: 'mover', 101: 'armoured',
 };
 const className = (cls: number) => CLASS_NAME[cls] ?? `class ${cls}`;
 
