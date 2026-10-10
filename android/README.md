@@ -206,7 +206,34 @@ Differences from iOS, said plainly:
   walker approaching comes steadily closer), a classifier state survives a tick without its track
   (`KEEP_S`), and a new track inherits MOVING only from a mover the detector has lost (`LOST_S`),
   not from one still being hit beside it. On the phone's own tracks of that run the slow pass is
-  tagged 2.5 s after it starts and the neighbour is not.
+  tagged 2.5 s after it starts and the neighbour is not. The run after that (41 s: a walk 6 m
+  away and back past the phone) tagged a standing person for a second as the walker passed them
+  at 1.5 m on the same bearing: the walker's box filled 94 % of the frame, the detector's box
+  ended at the knees short of the border, the floor ray at its bottom said 3.1 m with a feet
+  ray's 0.1 m sigma, and the standing person's squat track (sigma 1.7 m, so an along-ray gate of
+  metres) took the hit 1.4 m from them. Three things: `Lift3D` judges feet visibility on the
+  box's edge (the feet point sits 3 % inside the box, which a frame-filling box puts past the
+  margin) and refuses a floor ray for a person taller in pixels than anyone at that range
+  (`TALL_RATIO`: the width prior instead); the tracker refuses a hit whose box is over twice as
+  tall or short as the track's recent median, by more than 40 px (`Tracker.Config.sizeRatio`,
+  `sizeSlackPx`: drone boxes are 15-35 px and flicker by that); and the tag on an unmatched box
+  beside a mover needs the mover's class (a chair was tagged as the walker passed it). The same
+  run had a chair MOVING for 3 s at its start while ARCore's VIO logged `Insufficient inliers`
+  and the pose ran 1.2 m in 4 s with everything in the room following it (the replay's drag
+  correction held the chair, the phone's borderline run did not): judgement now pauses while
+  `Camera.trackingState` is not TRACKING, and every static -> moving flip is logged with its
+  numbers (`flip:` in logcat, `OverlayMotion.flips`), so the next wrong tag is read off the log.
+  Those lines paid off in the run after that (the holder walked at 0.3-0.6 m/s with the phone
+  lowered, the walker came up to the lens): a track just born in a dragged scene was tagged with
+  `raw=(0,0) drift=(0.48,-0.17)`, the first track's three seconds of camera drift subtracted from
+  a newborn's nothing, so the drift subtracted is now the camera's displacement over each track's
+  own window; the drag correction engaged only past 0.5 m of camera displacement while a person
+  needs 0.4 m, so a slow drift tagged people (and session 16's chair, at 0.48 m) before it could
+  help (`DRAG_MIN_M` 0.3, the server the same); judgement pauses above 0.5 m/s of camera speed
+  (`EYE_MAX_SPEED`: a holder walking, not a hand); and a person box 90 % of the frame wide
+  across gravity is not lifted at all (`Lift3D.FULL_WIDTH_FRACTION`: such lifts sat 0.01-0.4 m
+  from the camera and moved with every step of the holder). A track that starts MOVING by
+  inheritance is logged too.
 - **Detector input** is letterboxed, not stretched, and ONNX Runtime runs on the CPU with
   NNAPI (GPU/NPU) when the device can run the graph there, else XNNPACK then plain CPU (`Detector.createWithProvider`, each a full session attempt so the detector never dies). On the Dimensity 8200 the GPU cannot run the whole yolov8 graph (ORT_EP_FAIL if forced GPU-only), so NNAPI partitions it back to the CPU and yolov8n-256 takes ~110-160 ms cool, ~230-300 ms throttled hot (3-6 Hz); no net GPU gain there. YUV conversion ~5 ms.
 - **Camera** picks the widest GPU texture ARCore offers (1920x1080) with a 640x480 CPU image;

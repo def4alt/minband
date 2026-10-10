@@ -47,6 +47,12 @@ data class WorldPoint(
     val eye: Vec3? = null,
     /** Position noise across the ray (bearing, m; 0 = same as `sigma`): a box centre is good to a degree or two whatever the range cue did. */
     val sigmaAcross: Float = 0f,
+    /**
+     * The box's extent along gravity in pixels (0 = unknown). The tracker refuses a hit whose box
+     * is far taller or shorter than the track's recent ones: no range change within a frame
+     * explains it, a passer-by filling the view in front of the person does.
+     */
+    val heightPx: Float = 0f,
 )
 
 /** A detection box ready for the overlay: `rect` in normalized view coordinates (origin top-left). */

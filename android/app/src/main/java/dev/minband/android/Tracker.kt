@@ -93,6 +93,21 @@ class Tracker(val config: Config = Config()) {
                 else -> 0.1f
             }
         },
+        /**
+         * A hit whose box is more than this many times taller or shorter (along gravity, in
+         * pixels) than the track's recent boxes is someone else, whatever the ray gates allow:
+         * the box of the person a track follows changes a few percent between hits, a passer-by
+         * filling the frame in front of a standing person is 2-3x taller. Without it that box,
+         * lifted onto the same bearing, went through the standing person's wide along-ray gate
+         * (a squat lift's sigma is metres) and jumped them 1.4 m: MOVING for a second. 0 disables.
+         */
+        val sizeRatio: Float = 2f,
+        /**
+         * ...and differs by at least this many pixels: the drone clip's people are 15-35 px tall
+         * and their boxes flicker by half of that between frames (the ratio alone there split
+         * 248 ids into 365); the phone's passer-by was 380 px taller.
+         */
+        val sizeSlackPx: Float = 40f,
         /** Detection confidence smoothing (EMA weight of a new hit). */
         val confAlpha: Float = 0.2f,
         /** Change in 0..255 units below which the reported conf does not move (stops core conf-bucket flapping). */
@@ -120,6 +135,7 @@ class Tracker(val config: Config = Config()) {
         var confEMA: Float,
         var confOut: Int,
         firstSigma: Float,
+        firstHeight: Float,
     ) {
         /**
          * Sigmas of the last SIGMA_WINDOW hits; the track's sigma is their median, so one poor
@@ -129,9 +145,16 @@ class Tracker(val config: Config = Config()) {
         private val sigmas = FloatArray(SIGMA_WINDOW)
         private var sigmaN = 0
         private var sigmaAt = 0
-        init { pushSigma(firstSigma) }
+        /** Box heights (px along gravity) of the last SIGMA_WINDOW hits that had one; the median gates the next hit's size. */
+        private val heights = FloatArray(SIGMA_WINDOW)
+        private var heightN = 0
+        private var heightAt = 0
+        init { pushSigma(firstSigma); pushHeight(firstHeight) }
         fun pushSigma(v: Float) { sigmas[sigmaAt] = v; sigmaAt = (sigmaAt + 1) % SIGMA_WINDOW; if (sigmaN < SIGMA_WINDOW) sigmaN++ }
+        fun pushHeight(v: Float) { if (v <= 0f) return; heights[heightAt] = v; heightAt = (heightAt + 1) % SIGMA_WINDOW; if (heightN < SIGMA_WINDOW) heightN++ }
         val sigma: Float get() { val a = sigmas.copyOf(sigmaN); a.sort(); return a[sigmaN / 2] }
+        /** Median box height of the recent hits, 0 when none reported one. */
+        val heightPx: Float get() { if (heightN == 0) return 0f; val a = heights.copyOf(heightN); a.sort(); return a[heightN / 2] }
     }
 
     private val entries = ArrayList<Entry>()
@@ -176,6 +199,10 @@ class Tracker(val config: Config = Config()) {
             val range = if (eye != null) Vec2(pt.pos.x - eye.x, pt.pos.z - eye.z).length else 0f
             for ((t, e) in entries.withIndex()) {
                 if (e.classId != pt.classId) continue
+                if (config.sizeRatio > 0f && pt.heightPx > 0f) {
+                    val h = e.heightPx
+                    if (h > 0f && absf(pt.heightPx - h) > config.sizeSlackPx && (pt.heightPx > config.sizeRatio * h || h > config.sizeRatio * pt.heightPx)) continue
+                }
                 val d = pt.pos - e.s.p
                 val sigma = sqrt(e.s.ppp + r)
                 if (u != null) {
@@ -214,6 +241,7 @@ class Tracker(val config: Config = Config()) {
                 if (sp > vmax) e.s.v = e.s.v * (vmax / sp)       // the state too, not only the report
                 e.hits += 1
                 e.pushSigma(sqrt(r))
+                e.pushHeight(pt.heightPx)
                 e.lastHit = maxOf(e.lastHit, time)
                 updateConf(e, pt.conf)
                 if (e.id == null && e.hits >= config.birthHits) { e.id = nextId; nextId += 1 }
@@ -222,7 +250,7 @@ class Tracker(val config: Config = Config()) {
                 val r = noise(pt)
                 val vs = config.initialVelocitySigma(pt.classId)
                 val c = clampf(pt.conf, 0f, 1f)
-                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt(), sqrt(r))
+                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt(), sqrt(r), pt.heightPx)
                 if (config.birthHits <= 1) { e.id = nextId; nextId += 1; result[m] = e.id }
                 entries.add(e)
             }

@@ -164,6 +164,26 @@ class TrackerTest {
         assertTrue("no track moves: $tracks", tracks.all { it.vel.length < 0.1f })
     }
 
+    @Test fun aBoxTwiceAsTallIsSomeoneElseWhateverTheRayGatesAllow() {
+        // A seated person 4.5 m out whose lifts are poor (sigma 1.7 m: the along-ray gate reaches
+        // metres). A passer-by fills the frame in front of them on the same bearing, lifted to
+        // 3.1 m with a box 2.7x taller: not theirs, however well it fits the ray (the phone took
+        // it and the seated person jumped 1.4 m, MOVING for a second). A box 15 % taller is theirs.
+        val tr = Tracker(Tracker.Config.SLOW_DETECTOR)
+        fun person(z: Float, sigma: Float, heightPx: Float) = WorldPoint(TrackedClass.PERSON, v(0f, 0f, z), 0.8f, 0, sigma, eye, heightPx = heightPx)
+        var t = 0.0
+        repeat(5) { tr.update(listOf(person(-4.5f, 1.7f, 220f)), t); t += 0.4 }
+        val id = tr.tracks(t - 0.4).single().id
+        assertEquals("the passer-by's box is not the seated person's hit", listOf<Int?>(null), tr.update(listOf(person(-3.1f, 0.1f, 600f)), t))
+        assertEquals(-4.5f, tr.tracks(t).first { it.id == id }.pos.z, 0.1f)
+        t += 0.4
+        assertEquals("their own next box is", listOf<Int?>(id), tr.update(listOf(person(-4.3f, 1.7f, 250f)), t))
+        // Points without a box size (the server's, older logs) are never refused for it.
+        val plain = Tracker(Tracker.Config.SLOW_DETECTOR)
+        repeat(3) { plain.update(listOf(person(-4.5f, 1.7f, 220f)), t); t += 0.4 }
+        assertEquals(listOf<Int?>(1), plain.update(listOf(hit(v(0f, 0f, -4.4f), sigma = 1.7f)), t))
+    }
+
     @Test fun aWalkerStillAssociatesAcrossTheRayAtTheSlowRate() {
         // 1.3 m/s sideways at 2.5 Hz is 0.52 m across the ray per hit; the second hit (velocity
         // unknown) must still be taken, and a few hits in the track follows at the right speed.

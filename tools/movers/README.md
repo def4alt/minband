@@ -148,6 +148,10 @@ python tools/movers/gt_summary.py gt-<unix>.csv
 # 3. The session's own hits (every lifted detection) replayed through the tracker on the JVM.
 adb pull /sdcard/Android/data/dev.minband.android/files/det-<unix>.csv .
 MINBAND_DET_LOG=$PWD/det-<unix>.csv ./gradlew -p android :app:testDebugUnitTest --tests "*DetLogReplay*" -i
+
+# 4. Why a track was tagged, without a replay: the phone logs every static -> moving flip with
+#    the numbers behind it (displacement, drift subtracted, camera displacement, range, sigma, hits).
+adb logcat -d -v time | grep "MinBand Pipeline" | grep "flip:\|moving:\|pose:"
 ```
 
 A healthy session has one long-lived id per person (tens of seconds) with a median speed near

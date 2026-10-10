@@ -53,6 +53,13 @@ object Lift3D {
         for ((i, d) in dets.withIndex()) {
             val isPerson = d.classId == TrackedClass.PERSON
             val centre = Vec2(d.bbox.midX, d.bbox.midY)
+            val heightPx = boxHeightPx(d.bbox, down, k)
+            // A person whose box spans the frame across gravity is nearer than any lift can say
+            // (a 0.55 m person fills a 480 px image at 0.6 m; the box is cut on both sides, the
+            // width prior lands anywhere from the lens to 0.6 m, and with the phone tilted down
+            // that is a track at the camera's feet that moves with every step). No point: the
+            // box stays on the overlay, nothing is tracked until they step back.
+            if (isPerson && boxWidthPx(d.bbox, down, k) >= FULL_WIDTH_FRACTION * boxWidthPx(FULL_FRAME, down, k)) continue
             var world: Vec3? = null
             var how = Lift.FLOOR
 
@@ -73,10 +80,23 @@ object Lift3D {
                 // and the width prior swings as the box takes in arms or torso. Either lift is kept
                 // but with a large sigma, so the tracker barely moves a seated person and the
                 // MOVING rule asks metres of them; a walker briefly cut off is just slower to tag.
-                val squat = isPerson && boxHeightPx(d.bbox, down, k) < SQUAT_ASPECT * boxWidthPx(d.bbox, down, k)
+                val squat = isPerson && heightPx < SQUAT_ASPECT * boxWidthPx(d.bbox, down, k)
                 val feet = bottomPoint(d.bbox, down, k.width.toFloat(), k.height.toFloat())
-                val feetVisible = feet.x >= BORDER_MARGIN && feet.y >= BORDER_MARGIN && feet.x <= 1f - BORDER_MARGIN && feet.y <= 1f - BORDER_MARGIN
-                if (feetVisible && geo.floorY != null) world = rayToFloor(feet, k, cam, geo.floorY)?.also { if (squat) how = Lift.SQUAT }
+                // Visibility is judged on the box's own edge: the feet point sits 3 % inside it,
+                // which for a box spanning the frame is past the margin, and a person flush with
+                // the border (legs below the frame) was placed by a floor ray at the frame's
+                // bottom, metres behind them, with a feet ray's small sigma.
+                val edge = bottomPoint(d.bbox, down, k.width.toFloat(), k.height.toFloat(), inset = 1f)
+                val feetVisible = edge.x >= BORDER_MARGIN && edge.y >= BORDER_MARGIN && edge.x <= 1f - BORDER_MARGIN && edge.y <= 1f - BORDER_MARGIN
+                if (feetVisible && geo.floorY != null) {
+                    val onFloor = rayToFloor(feet, k, cam, geo.floorY)
+                    // A person taller in pixels than anyone can be at the range the floor ray
+                    // gives has their feet below the frame (the detector's box ended at the knees,
+                    // short of the border): that range is too far, the width prior is nearer.
+                    val tooTall = onFloor != null && isPerson &&
+                        heightPx > TALL_RATIO * PERSON_HEIGHT_M * k.fx / maxOf(0.1f, onFloor.distance(camPos))
+                    if (onFloor != null && !tooTall) { world = onFloor; if (squat) how = Lift.SQUAT }
+                }
                 if (world == null) world = fromWidth(d, centre, down, k, cam, maxRange)?.also { how = if (squat) Lift.SQUAT else Lift.WIDTH }
                 if (world != null && world.distance(camPos) > maxRange) world = null
             } else {
@@ -108,7 +128,7 @@ object Lift3D {
                 // paths agree.
                 m = Vec3(m.x, floorInMarker, m.z)
             }
-            out.add(WorldPoint(d.classId, m, d.conf, i, sigma, eye, sigmaAcross))
+            out.add(WorldPoint(d.classId, m, d.conf, i, sigma, eye, sigmaAcross, heightPx))
         }
         return out
     }
@@ -172,6 +192,19 @@ object Lift3D {
 
     /** Shoulder-width prior for the no-floor distance estimate (tools/footage uses the same); the other classes are in `TrackedClass.widthPrior`. */
     const val PERSON_WIDTH_M = 0.55f
+    /** A standing adult, for the "too tall for that range" check on a floor-ray lift. */
+    const val PERSON_HEIGHT_M = 1.7f
+    /**
+     * A person box taller than this many times PERSON_HEIGHT_M at the floor ray's range has its
+     * feet cut off. Measured: a walker passing the phone at ~1.5 m filled 94 % of the frame
+     * (602 px) and the ray at the box's bottom gave 3.1 m, where a person is 270 px; the
+     * standing person behind them took that hit and was MOVING for a second. 1.5 leaves room
+     * for a 2 m person and a box with some margin.
+     */
+    const val TALL_RATIO = 1.5f
+    /** A person box at least this fraction of the frame wide (across gravity) is not lifted: they are closer than the lift's reach. Measured: a person at the phone gave boxes 0.95-0.99 of the frame and lifts 0.01-0.4 m from the camera. */
+    const val FULL_WIDTH_FRACTION = 0.9f
+    private val FULL_FRAME = RectF(0f, 0f, 1f, 1f)
 
     /** Box extent in pixels across gravity (a person's width, whichever way the sensor is turned). */
     fun boxWidthPx(box: RectF, down: Vec2, k: Intrinsics): Float {
@@ -197,13 +230,17 @@ object Lift3D {
         return if (l < 1e-3f) Vec2(1f, 0f) else Vec2(d.x / l, d.y / l)
     }
 
-    /** Point just inside `box` from its centre along `down` (the feet of an upright person). Normalized coordinates in, normalized out; `down` is a unit pixel direction, so the box is measured in pixels. */
-    fun bottomPoint(box: RectF, down: Vec2, imageWidth: Float = 1f, imageHeight: Float = 1f): Vec2 {
+    /**
+     * Point just inside `box` from its centre along `down` (the feet of an upright person), `inset`
+     * of the way to the edge (1 = the edge itself). Normalized coordinates in, normalized out;
+     * `down` is a unit pixel direction, so the box is measured in pixels.
+     */
+    fun bottomPoint(box: RectF, down: Vec2, imageWidth: Float = 1f, imageHeight: Float = 1f, inset: Float = 0.97f): Vec2 {
         val c = Vec2(box.midX * imageWidth, box.midY * imageHeight)
         val hw = box.width * imageWidth / 2f; val hh = box.height * imageHeight / 2f
         val tx = if (absf(down.x) > 1e-6f) hw / absf(down.x) else Float.POSITIVE_INFINITY
         val ty = if (absf(down.y) > 1e-6f) hh / absf(down.y) else Float.POSITIVE_INFINITY
-        val p = c + down * (minOf(tx, ty) * 0.97f)
+        val p = c + down * (minOf(tx, ty) * inset)
         return Vec2(p.x / imageWidth, p.y / imageHeight)
     }
 

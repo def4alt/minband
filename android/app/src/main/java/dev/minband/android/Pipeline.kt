@@ -135,7 +135,7 @@ class Pipeline(private val context: Context, private val listener: Listener) {
     /** Track ids currently moving (OverlayMotion), for the on-screen "MOVING" label. GL thread only. */
     private var movingIds: Set<Int> = emptySet()
     /** Positions of the moving tracks, so a box the tracker has not matched yet can still carry the tag when it sits on a mover. */
-    private var movingPos: List<Vec3> = emptyList()
+    private var movers: List<Track> = emptyList()
     private var lastCamera: Mat4? = null
     @Volatile private var lastReceiveMs = 0L
     private var status = ""
@@ -263,7 +263,7 @@ class Pipeline(private val context: Context, private val listener: Listener) {
         isRunning = false
         transport?.close(); groundTruth?.close(); detLog?.close()
         transport = null; edge = null; groundTruth = null; detLog = null
-        lastTrackCount = 0; movingIds = emptySet(); movingPos = emptyList()
+        lastTrackCount = 0; movingIds = emptySet(); movers = emptyList()
         latestResult = null; publishedResult = null
         publishState()
         publishOverlay(Overlay(emptyList(), emptyList()))
@@ -328,10 +328,13 @@ class Pipeline(private val context: Context, private val listener: Listener) {
             if (locked) groundTruth?.append(tick, tracks)
             for (d in edge.tick(tracks, tick)) send(d)
             lastTrackCount = tracks.size
-            val mv = overlayMotion.update(tracks, ts, if (locked) origin.toMarker(cameraToWorld.origin) else null)
+            val mv = overlayMotion.update(tracks, ts, if (locked) origin.toMarker(cameraToWorld.origin) else null, camera.trackingState == TrackingState.TRACKING)
+            // Every flip with the numbers behind it, so a wrong tag can be read off logcat.
+            for (line in overlayMotion.flips) Log.i(TAG, "flip: $line")
+            overlayMotion.flips.clear()
             if (mv != movingIds) Log.i(TAG, "moving: ${mv.sorted()} (tracks ${tracks.map { it.id }})")
             movingIds = mv
-            movingPos = tracks.filter { it.id in mv }.map { it.pos }
+            movers = tracks.filter { it.id in mv }
         }
 
         // Pose offered at 2 Hz once the origin means something; the core returns an empty array
@@ -373,7 +376,7 @@ class Pipeline(private val context: Context, private val listener: Listener) {
                 else -> "tracking limited"
             }
         }
-        if (s != status) { status = s; publishState() }
+        if (s != status) { status = s; publishState(); Log.i(TAG, "pose: ${s.ifEmpty { "tracking" }}") }
     }
 
     private fun handleTrackables(frame: Frame, cam: Mat4) {
@@ -509,9 +512,10 @@ class Pipeline(private val context: Context, private val listener: Listener) {
             val x0 = xs.min(); val x1 = xs.max(); val y0 = ys.min(); val y1 = ys.max()
             val tid = r.trackIds.getOrNull(i)
             // A box without a track yet (the second box on a walker, or the first hit after the
-            // tracker lost them) keeps the tag when its lifted point sits on a mover.
+            // tracker lost them) keeps the tag when its lifted point sits on a mover of its own
+            // class: a chair's box beside a walker is a chair (one was tagged as they passed).
             val onMover = tid == null && r.points.firstOrNull { it.detectionIndex == i }?.let { p ->
-                movingPos.any { m -> val dx = m.x - p.pos.x; val dz = m.z - p.pos.z; dx * dx + dz * dz <= NEAR_MOVER_M * NEAR_MOVER_M }
+                movers.any { m -> m.classId == p.classId && run { val dx = m.pos.x - p.pos.x; val dz = m.pos.z - p.pos.z; dx * dx + dz * dz <= NEAR_MOVER_M * NEAR_MOVER_M } }
             } == true
             boxes.add(OverlayBox(i, RectF(x0, y0, x1 - x0, y1 - y0), d.classId, d.conf, tid, moving = (tid != null && tid in movingIds) || onMover))
         }

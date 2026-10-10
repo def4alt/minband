@@ -12,7 +12,8 @@ package dev.minband.android
  *    a walker filling the view, and everything in the room "moved" with it. So: if the tracks
  *    being observed (hits still coming) moved together the way the camera did, the scene is being
  *    dragged by a drifting pose and the camera's displacement is subtracted. Nothing is judged
- *    while the camera moves faster than [EYE_MAX_SPEED]: a hand does not, a drifting pose does.
+ *    while the camera moves faster than [EYE_MAX_SPEED] (a hand does not, a drifting pose does)
+ *    or while ARCore says its pose is not tracking (`poseTracking` false).
  *  - static -> moving: the robust position moved, from where it was [MOVE_WINDOW_S] ago, at
  *    least [moveDist] (its class) across the ray from the camera (bearing: the one thing a
  *    monocular lift gets right whatever hid the feet), or along it by [SIGMA_DIST] times the
@@ -65,6 +66,8 @@ class OverlayMotion {
     /** Set to a track id to collect one line per update about its judgement in [debugLines] (tests). */
     var debugId: Int? = null
     val debugLines = ArrayList<String>()
+    /** One line per static -> moving flip since the caller last cleared it, with the numbers behind the judgement (the phone logs them: a wrong tag can then be read off logcat without a replay). */
+    val flips = ArrayList<String>()
 
     /**
      * A new track born within [INHERIT_DIST] of a mover (alive, or gone less than [GHOST_S] ago)
@@ -89,9 +92,10 @@ class OverlayMotion {
      * `eye`: the camera position in the marker frame, so the displacement can be split into
      * across the ray from it (bearing, trusted whatever the range cue did) and along it (range,
      * which needs [SIGMA_DIST] sigma), and so a drifting pose can be told from motion. Without it
-     * the displacement is judged as a whole.
+     * the displacement is judged as a whole. `poseTracking` false (ARCore lost or limited
+     * tracking) holds every judgement, as a fast camera does.
      */
-    fun update(tracks: List<Track>, nowS: Double, eye: Vec3? = null): Set<Int> {
+    fun update(tracks: List<Track>, nowS: Double, eye: Vec3? = null, poseTracking: Boolean = true): Set<Int> {
         val seen = HashSet<Int>(tracks.size)
         val moving = HashSet<Int>()
         var eyeMed: Vec3? = null
@@ -111,7 +115,7 @@ class OverlayMotion {
             var s = states[t.id]
             if (s == null) {
                 s = State(t.classId)
-                if (inherits(t.pos, t.classId, nowS)) s.moving = true
+                if (inherits(t.pos, t.classId, nowS)) { s.moving = true; flips.add("id %d %s t=%.1f born within %.1f m of a lost mover -> MOVING".format(t.id, TrackedClass.name(t.classId), nowS, INHERIT_DIST)) }
                 s.lastHitAt = nowS; s.hits = t.hits
                 states[t.id] = s
             }
@@ -142,9 +146,8 @@ class OverlayMotion {
         val eyeDisp = observed.firstOrNull { it.eyeDisp != null }?.eyeDisp
         val dragged = eyeDisp != null && observed.size >= DRAG_MIN_TRACKS && ground(eyeDisp, Vec3.ZERO) >= DRAG_MIN_M &&
             ground(medianOf(observed.map { it.d }), eyeDisp) <= DRAG_TOLERANCE * ground(eyeDisp, Vec3.ZERO) + 0.3f
-        val drift = if (dragged) eyeDisp!! else Vec3.ZERO
-        lastDrift = drift
-        val poseOk = eyeSpeed <= EYE_MAX_SPEED
+        lastDrift = if (dragged) eyeDisp!! else Vec3.ZERO
+        val poseOk = eyeSpeed <= EYE_MAX_SPEED && poseTracking
 
         // Pass 2: decisions.
         for (j in judged) {
@@ -156,6 +159,10 @@ class OverlayMotion {
                 // it must never count, and a third hit comes 0.4 s after birth for a real walker.
                 if (t.hits >= MIN_HITS && poseOk) {
                     val base = moveDist(t.classId)
+                    // The camera's displacement over this track's own window (a track just born
+                    // has none): subtracting the first track's 3 s of drift from a newborn's zero
+                    // made it "move" 0.5 m the other way.
+                    val drift = if (dragged) (j.eyeDisp ?: Vec3.ZERO) else Vec3.ZERO
                     val d = j.d - drift
                     val rx = if (eye != null) cur.x - eye.x else 0f
                     val rz = if (eye != null) cur.z - eye.z else 0f
@@ -182,8 +189,12 @@ class OverlayMotion {
                             (alongCounts && absf(along) >= needAlong && monotoneAlong(window, j.refPos, ux, uz))
                     } else d.length >= needAlong
                     if (moved && speed >= SPEED_FLOOR) s.moving = true
-                    if (t.id == debugId) debugLines.add("t=%.1f d=(%.2f,%.2f) raw=(%.2f,%.2f) drift=(%.2f,%.2f) eyeDisp=%s observed=%d dragged=%s range=%.1f needAlong=%.2f speed=%.2f -> %s".format(
-                        nowS, d.x, d.z, j.d.x, j.d.z, drift.x, drift.z, eyeDisp?.let { "(%.2f,%.2f)".format(it.x, it.z) } ?: "-", observed.size, dragged, range, needAlong, speed, if (s.moving) "MOVING" else "static"))
+                    if (s.moving || t.id == debugId) {
+                        val line = "id %d %s t=%.1f d=(%.2f,%.2f) raw=(%.2f,%.2f) drift=(%.2f,%.2f) eyeDisp=%s observed=%d dragged=%s range=%.1f needAlong=%.2f sigma=%.2f hits=%d speed=%.2f -> %s".format(
+                            t.id, TrackedClass.name(t.classId), nowS, d.x, d.z, j.d.x, j.d.z, drift.x, drift.z, eyeDisp?.let { "(%.2f,%.2f)".format(it.x, it.z) } ?: "-", observed.size, dragged, range, needAlong, t.sigma, t.hits, speed, if (s.moving) "MOVING" else "static")
+                        if (s.moving) flips.add(line)
+                        if (t.id == debugId) debugLines.add(line)
+                    }
                 }
             } else {
                 val oldest = s.robust.first()
@@ -250,12 +261,21 @@ class OverlayMotion {
         const val KEEP_S = 1.0
         /** A live mover without a hit for this long counts as lost (a new track beside it may be it). */
         const val LOST_S = 0.6
-        /** The scene counts as dragged by the pose when at least this many observed tracks' median displacement is within DRAG_TOLERANCE of the camera's, which moved at least DRAG_MIN_M over the window. */
+        /**
+         * The scene counts as dragged by the pose when at least this many observed tracks' median
+         * displacement is within DRAG_TOLERANCE of the camera's, which moved at least DRAG_MIN_M
+         * over the window. DRAG_MIN_M sits under MOVE_DIST: at 0.5 m a slow drift (0.15 m/s) tagged
+         * a chair, and would tag a person, before the correction engaged (session 16: 0.48 m).
+         */
         const val DRAG_MIN_TRACKS = 2
-        const val DRAG_MIN_M = 0.5f
+        const val DRAG_MIN_M = 0.3f
         const val DRAG_TOLERANCE = 0.5f
-        /** No judgement while the camera moves faster than this (m/s): a hand does not, a drifting pose does. */
-        const val EYE_MAX_SPEED = 1.0f
+        /**
+         * No judgement while the camera moves faster than this (m/s): a hand holding the phone
+         * still does not, a holder walking does (0.3-0.6 m/s in a room session, with a seated
+         * person at 2.5 m tagged while they walked), a drifting pose does.
+         */
+        const val EYE_MAX_SPEED = 0.5f
 
         /** Displacement that makes a track moving: placed objects need twice a person's (their lifts flip, they rarely move), carried objects in between. */
         fun moveDist(cls: Int): Float = when {

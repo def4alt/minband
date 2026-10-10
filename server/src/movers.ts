@@ -54,8 +54,8 @@ export const ROBUST_MS = 1000, ROBUST_STEP_MS = 500;
 export const INHERIT_DIST = 1.0, GHOST_MS = 2000;
 /** An entity absent from the update for up to this long keeps its state (a snapshot without it is not a new entity). */
 export const KEEP_MS = 1000;
-/** The scene counts as dragged by the pose when at least this many observed entities' median displacement is within DRAG_TOLERANCE of the device's, which moved at least DRAG_MIN_M over the window. */
-export const DRAG_MIN_ENTITIES = 2, DRAG_MIN_M = 0.5, DRAG_TOLERANCE = 0.5;
+/** The scene counts as dragged by the pose when at least this many observed entities' median displacement is within DRAG_TOLERANCE of the device's, which moved at least DRAG_MIN_M over the window (under MOVE_DIST: a slow drift must be corrected before it reaches a person's threshold). */
+export const DRAG_MIN_ENTITIES = 2, DRAG_MIN_M = 0.3, DRAG_TOLERANCE = 0.5;
 const PLACED = new Set([56, 62, 63]);              // chair, tv, laptop
 const CARRIED = new Set([24, 26, 39, 41, 67]);     // backpack, handbag, bottle, cup, cell phone
 /** Displacement that makes an entity moving: placed objects need twice a person's, carried ones in between. */
@@ -158,15 +158,17 @@ export class Motion {
     const eyeDisp = observed.find(j => j.eyeDisp)?.eyeDisp ?? null;
     const dragged = !!eyeDisp && observed.length >= DRAG_MIN_ENTITIES && ground(eyeDisp, [0, 0, 0]) >= DRAG_MIN_M &&
       ground(medianOf(observed.map(j => j.d)), eyeDisp) <= DRAG_TOLERANCE * ground(eyeDisp, [0, 0, 0]) + 0.3;
-    const drift: Vec3 = dragged ? eyeDisp! : [0, 0, 0];
 
     // Pass 2: decisions.
-    const out = judged.map(({ e, s, cur, d: d0, refT, refPos }) => {
+    const out = judged.map(({ e, s, cur, d: d0, eyeDisp: ownEyeDisp, refT, refPos }) => {
       const speed = Math.hypot(e.vel[0], e.vel[1], e.vel[2]);
 
       if (!s.moving) {
         if (nowMs - s.since >= MIN_AGE_MS) {
           const base = moveDist(e.class);
+          // The device's displacement over this entity's own window (one just born has none):
+          // subtracting another entity's 3 s of drift from a newborn's zero made it "move".
+          const drift: Vec3 = dragged ? (ownEyeDisp ?? [0, 0, 0]) : [0, 0, 0];
           const dx = d0[0] - drift[0], dz = d0[2] - drift[2];
           const eye = eyeOf?.(e) ?? null;
           const rx = eye ? cur[0] - eye[0] : 0, rz = eye ? cur[2] - eye[2] : 0, range = Math.hypot(rx, rz);

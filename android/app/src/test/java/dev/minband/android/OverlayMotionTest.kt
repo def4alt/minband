@@ -40,6 +40,37 @@ class OverlayMotionTest {
         assertTrue(1 in run(m, 0.95 + 1.0 / 30, 1.6, walker))
     }
 
+    @Test fun aNewbornInADraggedSceneIsNotMovedByTheOthersDrift() {
+        // The pose drifts 0.6 m over 3 s and two observed tracks follow it (dragged scene). A track
+        // born at the end of that has no displacement of its own; the drift subtracted from it must
+        // be the camera's displacement over its own (empty) window, not the others' 0.6 m.
+        val m = OverlayMotion()
+        val drift = { t: Double -> (0.2 * t).toFloat() }
+        val eye = { t: Double -> Vec3(drift(t), 1.3f, 0f) }
+        var hits = 3
+        val scene = { t: Double ->
+            val two = listOf(track(1, Vec3(drift(t) - 1f, 0f, -3f), Vec3(0.2f, 0f, 0f), hits = hits), track(2, Vec3(drift(t) + 1f, 0f, -4f), Vec3(0.2f, 0f, 0f), hits = hits))
+            if (t >= 3.0) two + track(3, Vec3(0f, 0f, -2.5f), Vec3(0.3f, 0f, 0f), hits = hits) else two
+        }
+        var t = 0.0; var out = emptySet<Int>()
+        while (t <= 4.0) { out = m.update(scene(t), t, eye(t)); hits += 1; t += 1.0 / 30 }
+        assertTrue("the scene was dragged: ${m.lastDrift}", m.lastDrift.x > 0.4f)
+        assertFalse("newborn 3 static: $out", 3 in out)
+        assertFalse(1 in out); assertFalse(2 in out)
+    }
+
+    @Test fun nothingIsJudgedWhileThePoseIsNotTracking() {
+        // ARCore reports limited tracking (its pose drifts then, and the whole scene with it): a
+        // walker is not tagged until tracking is back, and then within the usual window.
+        val m = OverlayMotion()
+        val eye = Vec3(0f, 1.3f, 0f)
+        val walker = { t: Double -> listOf(track(1, Vec3(t.toFloat(), 0f, -3f), Vec3(1f, 0f, 0f))) }
+        var t = 0.0; var out = emptySet<Int>()
+        while (t <= 3.0) { out = m.update(walker(t), t, eye, poseTracking = false); t += 1.0 / 30 }
+        assertFalse(1 in out)
+        assertTrue(1 in run(m, t, t + 1.0, walker, eye))
+    }
+
     @Test fun speedAloneIsNotMotion() {
         // A seated person placed by the width prior: born with 0.7 m/s from two noisy hits, position
         // jittering 0.2 m around the same spot. Never MOVING, however long the velocity lingers.
