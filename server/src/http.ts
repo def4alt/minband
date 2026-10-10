@@ -2,7 +2,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { sanitizeShaper } from './shaper.js';
 import { anchorFromQuery, anchorInfo } from './geo.js';
-import { currentCotEvents, eventsXml, type CotOptions } from './cot.js';
+import { classLabel, currentCotEvents, eventsXml, type CotOptions } from './cot.js';
+import { moversFeed } from './movers.js';
 import { linkError } from './link.js';
 import type { World } from './world.js';
 
@@ -17,6 +18,7 @@ const ENDPOINTS = [
   'GET  /api/fusion?enabled=0|1',
   'GET  /api/geo?lat=&lon=&heading=&alt= | ?mgrs=&heading= | ?clear=1',
   'GET  /api/cot  (current CoT events, XML)',
+  'GET  /api/movers?all=0|1  (moving entities in the marker frame, dead-reckoned to now; all=1 includes static ones)',
   'POST /api/ground-truth?deviceId=  (body: CSV tick,id,class,x,y,z,vx,vy,vz,conf)',
 ];
 
@@ -120,6 +122,13 @@ export function createApi(world: World, opts: { cot?: CotOptions } = {}) {
           if (!world.geo) { send(res, 409, { error: 'no geodetic anchor: set MINBAND_GEO or GET /api/geo?lat=&lon=&heading=' }); return; }
           res.writeHead(200, { ...CORS, 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'no-store' });
           res.end(eventsXml(currentCotEvents(world, world.now(), opts.cot)));
+          return;
+        }
+        case '/api/movers': {
+          const unknown = Object.keys(q).filter(k => k !== 'all');
+          if (unknown.length) { send(res, 400, { error: `unknown parameter(s): ${unknown.join(', ')}` }); return; }
+          if (q.all !== undefined && !['0', '1', 'true', 'false'].includes(q.all)) { send(res, 400, { error: 'all must be 0/1' }); return; }
+          send(res, 200, moversFeed(world.lastSnapshot, world.now(), q.all === '1' || q.all === 'true', classLabel));
           return;
         }
         case '/api/ground-truth': {

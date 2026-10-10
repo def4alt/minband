@@ -245,6 +245,27 @@ The CoT events one send round would carry now, as one XML document
 (`<events count="n"><event .../>...</events>`; on the wire each event is its own document).
 Works with or without `MINBAND_COT`; 409 without an anchor.
 
+### `GET /api/movers?all=0|1`
+
+The fused entities that are in motion, for an external 3D renderer that animates only the actors
+on top of a static reconstruction (`tools/movers/`, Open3D client and frame alignment). Positions
+are in the marker frame (metres, +Y up, +X right, -Z forward), dead-reckoned from the last 30 Hz
+snapshot to the request time (at most 1 s); `headingDeg` is the direction of travel (0 along -Z,
+90 along +X, clockwise from above), held while the entity is slow. `all=1` lists the static
+entities too, with `moving: false`.
+
+```jsonc
+{ "t": 1791600000123, "ageMs": 12,
+  "frame": { "origin": "marker centre (...)", "units": "m", "up": "+Y", "forward": "-Z", "right": "+X", "heading": "deg, 0 along -Z, 90 along +X, clockwise from above" },
+  "movers": [{ "gid": "g3", "class": 0, "name": "dismount", "pos": [1.21, 0, -3.4], "vel": [0.9, 0, -0.4], "speed": 0.98,
+               "headingDeg": 66, "moving": true, "ce": 0.15, "coasting": false, "stale": false, "sources": [{ "deviceId": 34223, "id": 7 }] }] }
+```
+
+Moving / static is decided with hysteresis in `src/movers.ts`: static -> moving when the entity is
+>= 0.5 m from where it was 2 s ago or has kept >= 0.4 m/s for 0.5 s; moving -> static when for
+5 s it never left a 0.3 m ball around its current position. New entities start static. The same
+`moving` and `headingDeg` are on every `GlobalEntity` of the WebSocket snapshot.
+
 ### `POST /api/ground-truth?deviceId=<u32>`
 
 Body: CSV `tick,id,class,x,y,z,vx,vy,vz,conf` (header optional, `#` comments ignored), ticks of
@@ -278,7 +299,8 @@ Server -> viewer:
   `DeviceView.airtimeShare`, `ShaperConfig.queue`; from core's protocol v1 (S14, S15, S19):
   `EntityView.theta / coasting / ce`, `DeviceView.cadence` (ms, the heartbeat periods of the budget
   last advertised to that edge) and `DeviceView.coasting`, `GlobalEntity.ce` (lowest `ce` among the
-  non-stale sources, else among all) and `GlobalEntity.coasting` (every source coasting).
+  non-stale sources, else among all) and `GlobalEntity.coasting` (every source coasting);
+  `GlobalEntity.moving` / `headingDeg` (the movers classifier, see `/api/movers`).
   `packets` is every datagram since the previous snapshot (V3): each one arriving at the socket
   (`dir: "up"`, including those the shaper drops, `dropped: true`; the reason is in the shaper
   counters) and each ack sent (`dir: "down"`), as

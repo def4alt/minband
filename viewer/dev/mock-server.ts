@@ -566,6 +566,8 @@ class Mock {
         gid, class: ms[0].e.class, pos: p, vel: vel.map(v => v / w) as V3,
         sources: ms.map(({ d, e }) => ({ deviceId: d.deviceId, id: e.id })), stale: ms.every(m => m.e.stale),
         ce: Math.min(...ms.map(m => m.e.ce)), coasting: ms.every(m => m.e.coasting), geo: this.geo ? geoOf(p) : null,
+        // The real server classifies with hysteresis (server/src/movers.ts); the mock takes the speed.
+        moving: Math.hypot(...vel.map(v => v / w)) >= 0.3, headingDeg: null,
       };
     });
   }

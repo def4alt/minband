@@ -8,6 +8,10 @@
   Linux and run under qemu-user: the Pi 5's architecture without a Pi. [Below](#golden-vectors-on-aarch64-golden-aarch64sh).
 - `test/` - plain-bash tests for `pi-link.sh`.
 - `build-ios.sh` - cross-compile the core for iOS and build the XCFramework.
+- `movers/` - the movers feed (`GET /api/movers`: only the entities in motion, marker frame,
+  dead-reckoned) for an external 3D renderer: an Open3D client that animates one figure per mover
+  on top of a static reconstruction, and `align.py` for the frame transform from 3 picked points.
+  Details: [movers/README.md](movers/README.md).
 - `eval/` (M7) - offline evaluation. Replays ground-truth logs (synthetic, or `gt-*.csv` from the
   phone) through the WASM `Edge` and `Receiver` in-process over a simulated lossy link, sweeps the
   thresholds, computes the baselines and renders the presentation charts. No server, no sockets.

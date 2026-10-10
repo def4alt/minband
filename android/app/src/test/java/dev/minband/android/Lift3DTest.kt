@@ -29,12 +29,64 @@ class Lift3DTest {
         assertEquals(1f, d.x, 1e-5f); assertEquals(0f, d.y, 1e-5f)
     }
 
+    @Test fun boxHeightAndWidthFollowGravity() {
+        // Portrait phone: gravity is +x in the landscape sensor image, so a standing person's
+        // height is the box's x extent and their width its y extent.
+        val box = RectF(0.1f, 0.1f, 0.4f, 0.2f)
+        assertEquals(0.4f * 640, Lift3D.boxHeightPx(box, Vec2(1f, 0f), k), 1e-3f)
+        assertEquals(0.2f * 480, Lift3D.boxWidthPx(box, Vec2(1f, 0f), k), 1e-3f)
+        // Landscape phone: the other way round.
+        assertEquals(0.2f * 480, Lift3D.boxHeightPx(box, Vec2(0f, 1f), k), 1e-3f)
+        assertEquals(0.4f * 640, Lift3D.boxWidthPx(box, Vec2(0f, 1f), k), 1e-3f)
+    }
+
     @Test fun bottomPointFollowsDown() {
         val box = RectF(0.4f, 0.4f, 0.2f, 0.2f)
         val p = Lift3D.bottomPoint(box, Vec2(1f, 0f))
         assertEquals(0.4f + 0.2f * 0.97f + 0.1f * (1f - 0.97f), p.x, 0.02f)
         assertEquals(0.5f, p.y, 1e-5f)
         assertTrue(p.x < box.maxX)
+    }
+
+    // Lifts of a portrait phone (gravity along the captured image's x) 1.4 m up, level, floor at y = 0.
+    private val portrait = Mat4.fromColumns(Vec3(0f, -1f, 0f), Vec3(1f, 0f, 0f), Vec3(0f, 0f, 1f), Vec3(0f, 1.4f, 0f))
+    private val origin = Origin().apply { observeHorizontalPlane(0f, isFloor = true); lockManual(portrait) }
+    private val geo = Lift3D.FrameGeometry(portrait, k, 0f)
+    private fun lift(box: RectF) = Lift3D.lift(listOf(Detection(TrackedClass.PERSON, box, 0.9f)), geo, null, origin).single()
+    private fun range(p: WorldPoint) = Vec2(p.pos.x - p.eye!!.x, p.pos.z - p.eye!!.z).length
+
+    @Test fun feetVisibleIsJudgedOnTheBoxEdgeNotTheInsetFeetPoint() {
+        // A box flush with the frame's bottom (x + w = 0.997): its feet point, 3 % inside, is past the
+        // margin, but there are no feet in it. The width prior must place it (sigma >= 0.25), not a
+        // floor ray at the frame's edge (sigma ~0.1, metres behind the person).
+        val flush = lift(RectF(0.6f, 0.3f, 0.397f, 0.2f))
+        assertTrue("width prior, sigma ${flush.sigma}", flush.sigma >= Lift3D.WIDTH_SIGMA_MIN)
+        // The same box 5 % short of the edge has feet: a floor ray, a feet ray's sigma.
+        val inside = lift(RectF(0.55f, 0.3f, 0.397f, 0.2f))
+        assertTrue("floor ray, sigma ${inside.sigma}", inside.sigma < Lift3D.WIDTH_SIGMA_MIN)
+        assertEquals(0.397f * 640, inside.heightPx, 1e-3f)
+    }
+
+    @Test fun aPersonTooTallForTheirFloorRangeIsPlacedByWidthInstead() {
+        // The session's passer-by: a box over 94 % of the frame's height (602 px), bottom 5.6 % short
+        // of the edge, where the floor ray says 2.7 m; at 2.7 m a person is 315 px. Feet cut off:
+        // the width prior (0.26 of the frame's 480 px: 2.2 m along the ray) with its sigma, not a
+        // 0.1 m feet ray.
+        val tall = lift(RectF(0.003f, 0.74f, 0.941f, 0.26f))
+        assertTrue("width prior, sigma ${tall.sigma}", tall.sigma >= Lift3D.WIDTH_SIGMA_MIN)
+        assertEquals(500f * 0.55f / (0.26f * 480f), range(tall), 0.25f)
+        // A standing person at 2.5 m is ~290 px tall: the floor ray stands.
+        val far = lift(RectF(0.49f, 0.4f, 0.455f, 0.15f))
+        assertTrue("floor ray, sigma ${far.sigma}", far.sigma < Lift3D.WIDTH_SIGMA_MIN)
+        assertEquals(2.5f, range(far), 0.3f)
+    }
+
+    @Test fun aPersonFillingTheFrameAcrossGravityIsNotLifted() {
+        // Portrait: a box 95 % of the image's 480 px across gravity (someone at the phone; such
+        // lifts landed 0.01-0.4 m from the camera and walked with the holder). Dropped. At 80 % it
+        // is still a person a metre away, lifted.
+        assertTrue(Lift3D.lift(listOf(Detection(TrackedClass.PERSON, RectF(0.1f, 0.02f, 0.8f, 0.95f), 0.9f)), geo, null, origin).isEmpty())
+        assertEquals(1, Lift3D.lift(listOf(Detection(TrackedClass.PERSON, RectF(0.1f, 0.1f, 0.8f, 0.8f), 0.9f)), geo, null, origin).size)
     }
 
     @Test fun rayToFloorHitsBelowTheCamera() {

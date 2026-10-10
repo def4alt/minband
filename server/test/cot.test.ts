@@ -68,7 +68,7 @@ const child = (n: XNode, name: string) => { const c = n.children.find(x => x.nam
 const SEOUL: GeoAnchor = { lat: 37.5665, lon: 126.978, headingDeg: 90, altM: null };
 const T0 = Date.UTC(2026, 9, 10, 9, 0, 0);
 function ent(o: Partial<GlobalEntity> = {}): GlobalEntity {
-  return { gid: 'g1', class: 0, pos: [0, 0, -10], vel: [0, 0, -1.2], sources: [{ deviceId: 100, id: 3 }], stale: false, ce: 0.35, coasting: false, geo: null, ...o };
+  return { gid: 'g1', class: 0, pos: [0, 0, -10], vel: [0, 0, -1.2], sources: [{ deviceId: 100, id: 3 }], stale: false, ce: 0.35, coasting: false, geo: null, moving: true, headingDeg: 0, ...o };
 }
 function source(global: GlobalEntity[], geo: GeoAnchor | null = SEOUL, t = T0) {
   const s = { geo, now: () => t, lastSnapshot: { t, global }, snapshot: () => s.lastSnapshot, set: (g: GlobalEntity[]) => { s.lastSnapshot = { t, global: g }; } };

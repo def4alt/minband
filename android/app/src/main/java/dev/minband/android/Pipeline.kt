@@ -71,6 +71,8 @@ class Pipeline(private val context: Context, private val listener: Listener) {
     companion object {
         private const val TAG = "MinBand Pipeline"
         const val TICKS_PER_SECOND = 120.0
+        /** A box without a track id shows MOVING when its lifted point is this close (ground, m) to a moving track. */
+        const val NEAR_MOVER_M = 0.7f
         const val DETECT_INTERVAL = 1.0 / 12
         const val TRACK_INTERVAL = 1.0 / 30
         const val POSE_INTERVAL = 0.5
@@ -97,7 +99,12 @@ class Pipeline(private val context: Context, private val listener: Listener) {
     }
 
     val origin = Origin()
-    private val tracker = Tracker()
+    // The detector is CPU-bound and throttles to ~1-4 Hz on a warm phone (measured 235-832 ms per
+    // frame). The default tracker timeouts (tentative 0.35 s, confirmed 1.0 s) are shorter than the
+    // gap between detections then, so a tentative track dies before its second hit and no track is
+    // ever born (lift works, tracks stay 0 -> no MOVING). Report after 2 hits and hold tracks long
+    // enough to bridge a slow frame; the edge's own coasting still bounds what reaches the wire.
+    private val tracker = Tracker(Tracker.Config.SLOW_DETECTOR)
     private val main = Handler(Looper.getMainLooper())
     private val detectExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "minband.detect").apply { priority = Thread.NORM_PRIORITY + 1 } }
     private var detector: Detector? = null          // detect thread only
@@ -110,6 +117,7 @@ class Pipeline(private val context: Context, private val listener: Listener) {
     private var transport: Transport? = null
     private var edge: EdgeBridge? = null
     private var groundTruth: GroundTruthLog? = null
+    private var detLog: DetectionLog? = null
     @Volatile private var isRunning = false
     private var sessionStartNs = 0L
     private var lastDetectionTime = 0.0
@@ -122,6 +130,12 @@ class Pipeline(private val context: Context, private val listener: Listener) {
     private var sentBytesAtStats = 0L
     private var datagramsSinceStats = 0
     private var lastTrackCount = 0
+    private var liftLogCount = 0
+    private val overlayMotion = OverlayMotion()
+    /** Track ids currently moving (OverlayMotion), for the on-screen "MOVING" label. GL thread only. */
+    private var movingIds: Set<Int> = emptySet()
+    /** Positions of the moving tracks, so a box the tracker has not matched yet can still carry the tag when it sits on a mover. */
+    private var movers: List<Track> = emptyList()
     private var lastCamera: Mat4? = null
     @Volatile private var lastReceiveMs = 0L
     private var status = ""
@@ -129,15 +143,20 @@ class Pipeline(private val context: Context, private val listener: Listener) {
     private val deviceId = DeviceIdentity.id(context)
 
     /** Latest detection result (detect thread -> GL thread), in captured-image coordinates. */
-    private class DetectionResult(val dets: List<Detection>, val trackIds: List<Int?>, val lifted: List<Pair<WorldPoint, Int>>)
+    private class DetectionResult(val dets: List<Detection>, val trackIds: List<Int?>, val lifted: List<Pair<WorldPoint, Int>>, val points: List<WorldPoint>)
     @Volatile private var latestResult: DetectionResult? = null
     private var publishedResult: DetectionResult? = null
 
     init {
         detectExecutor.execute {
-            val d = YoloOnnxDetector(context)
+            // Prefer TFLite with the GPU delegate (the one path that offloads the convolutions off
+            // the CPU on this class of phone); fall back to the ONNX detector (NNAPI/XNNPACK/CPU)
+            // when there is no .tflite in assets or it fails to load.
+            val tf = TfliteDetector(context)
+            val d: Detector = if (tf.isAvailable) tf else { tf.close(); YoloOnnxDetector(context) }
             detector = d
-            detectorStatus = if (d.isAvailable) "model ${d.modelName}" else "no detector: ${d.lastError}"
+            val prov = when (d) { is TfliteDetector -> d.provider; is YoloOnnxDetector -> d.provider; else -> "?" }
+            detectorStatus = if (d.isAvailable) "model ${d.modelName} ($prov)" else "no detector: ${d.lastError}"
             publishState()
         }
     }
@@ -233,6 +252,7 @@ class Pipeline(private val context: Context, private val listener: Listener) {
         }
         edge = EdgeBridge(deviceId, 1 + java.util.Random().nextInt(Int.MAX_VALUE - 1))
         groundTruth = GroundTruthLog(GroundTruthLog.directory(context))
+        detLog = DetectionLog(GroundTruthLog.directory(context))
         status = ""
         isRunning = true
         publishState()
@@ -241,9 +261,9 @@ class Pipeline(private val context: Context, private val listener: Listener) {
 
     fun stop() {
         isRunning = false
-        transport?.close(); groundTruth?.close()
-        transport = null; edge = null; groundTruth = null
-        lastTrackCount = 0
+        transport?.close(); groundTruth?.close(); detLog?.close()
+        transport = null; edge = null; groundTruth = null; detLog = null
+        lastTrackCount = 0; movingIds = emptySet(); movers = emptyList()
         latestResult = null; publishedResult = null
         publishState()
         publishOverlay(Overlay(emptyList(), emptyList()))
@@ -258,7 +278,7 @@ class Pipeline(private val context: Context, private val listener: Listener) {
     }
 
     /** Writes buffered ground-truth rows so the file can be shared. */
-    fun flushLog() { groundTruth?.flush() }
+    fun flushLog() { groundTruth?.flush(); detLog?.flush() }
 
     val running: Boolean get() = isRunning
 
@@ -308,6 +328,13 @@ class Pipeline(private val context: Context, private val listener: Listener) {
             if (locked) groundTruth?.append(tick, tracks)
             for (d in edge.tick(tracks, tick)) send(d)
             lastTrackCount = tracks.size
+            val mv = overlayMotion.update(tracks, ts, if (locked) origin.toMarker(cameraToWorld.origin) else null, camera.trackingState == TrackingState.TRACKING)
+            // Every flip with the numbers behind it, so a wrong tag can be read off logcat.
+            for (line in overlayMotion.flips) Log.i(TAG, "flip: $line")
+            overlayMotion.flips.clear()
+            if (mv != movingIds) Log.i(TAG, "moving: ${mv.sorted()} (tracks ${tracks.map { it.id }})")
+            movingIds = mv
+            movers = tracks.filter { it.id in mv }
         }
 
         // Pose offered at 2 Hz once the origin means something; the core returns an empty array
@@ -349,7 +376,7 @@ class Pipeline(private val context: Context, private val listener: Listener) {
                 else -> "tracking limited"
             }
         }
-        if (s != status) { status = s; publishState() }
+        if (s != status) { status = s; publishState(); Log.i(TAG, "pose: ${s.ifEmpty { "tracking" }}") }
     }
 
     private fun handleTrackables(frame: Frame, cam: Mat4) {
@@ -408,15 +435,22 @@ class Pipeline(private val context: Context, private val listener: Listener) {
                 image.close()
                 val trackIds = arrayOfNulls<Int>(dets.size)
                 val lifted = ArrayList<Pair<WorldPoint, Int>>()
+                var points: List<WorldPoint> = emptyList()
                 if (locked) {
-                    val points = Lift3D.lift(dets, geo, depth, origin)
+                    points = Lift3D.lift(dets, geo, depth, origin)
                     val ids = tracker.update(points, time)
                     for ((p, id) in points.zip(ids)) {
                         if (p.detectionIndex in dets.indices) trackIds[p.detectionIndex] = id
                         if (id != null) lifted.add(Pair(p, id))
                     }
+                    detLog?.append((time * TICKS_PER_SECOND).toLong(), dets, points, ids)
+                    // Where the chain breaks when no track (and so no MOVING) appears: boxes found,
+                    // how many lifted to 3D, how many got a track id, and the floor used.
+                    if (liftLogCount++ % 12 == 0) Log.i(TAG, "lift: locked boxes=${dets.size} lifted3d=${points.size} tracks=${ids.count { it != null }} floorY=${floor?.let { String.format("%.2f", it) } ?: "none"}")
+                } else if (liftLogCount++ % 12 == 0) {
+                    Log.i(TAG, "lift: origin not locked, no tracks (boxes=${dets.size})")
                 }
-                latestResult = DetectionResult(dets, trackIds.toList(), lifted)
+                latestResult = DetectionResult(dets, trackIds.toList(), lifted, points)
                 detectionsSinceStats += 1
             } catch (e: Throwable) {
                 Log.e(TAG, "detection", e)
@@ -476,8 +510,17 @@ class Pipeline(private val context: Context, private val listener: Listener) {
             frame.transformCoordinates2d(Coordinates2d.IMAGE_NORMALIZED, pts, Coordinates2d.VIEW_NORMALIZED, out)
             val xs = floatArrayOf(out[0], out[2], out[4], out[6]); val ys = floatArrayOf(out[1], out[3], out[5], out[7])
             val x0 = xs.min(); val x1 = xs.max(); val y0 = ys.min(); val y1 = ys.max()
-            boxes.add(OverlayBox(i, RectF(x0, y0, x1 - x0, y1 - y0), d.classId, d.conf, r.trackIds.getOrNull(i)))
+            val tid = r.trackIds.getOrNull(i)
+            // A box without a track yet (the second box on a walker, or the first hit after the
+            // tracker lost them) keeps the tag when its lifted point sits on a mover of its own
+            // class: a chair's box beside a walker is a chair (one was tagged as they passed).
+            val onMover = tid == null && r.points.firstOrNull { it.detectionIndex == i }?.let { p ->
+                movers.any { m -> m.classId == p.classId && run { val dx = m.pos.x - p.pos.x; val dz = m.pos.z - p.pos.z; dx * dx + dz * dz <= NEAR_MOVER_M * NEAR_MOVER_M } }
+            } == true
+            boxes.add(OverlayBox(i, RectF(x0, y0, x1 - x0, y1 - y0), d.classId, d.conf, tid, moving = (tid != null && tid in movingIds) || onMover))
         }
+        // What the screen is about to show: each box's track id and whether it carries MOVING.
+        Log.i(TAG, "overlay: " + boxes.joinToString(" ") { "${TrackedClass.name(it.classId)}:${it.trackId ?: "-"}${if (it.moving) "*MOVING" else ""}" })
         val marks = ArrayList<LiftMark>(r.lifted.size)
         if (r.lifted.isNotEmpty()) {
             val view = FloatArray(16); val proj = FloatArray(16)

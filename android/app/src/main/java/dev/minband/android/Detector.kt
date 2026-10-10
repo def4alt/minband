@@ -37,6 +37,7 @@ interface Detector {
  */
 class YoloOnnxDetector(context: Context) : Detector {
     companion object {
+        /** Default confidence; per class in `TrackedClass.confidence` (people 0.25). */
         const val CONFIDENCE_THRESHOLD = 0.35f
         const val IOU_THRESHOLD = 0.45f
         private const val TAG = "MinBand Detector"
@@ -61,6 +62,8 @@ class YoloOnnxDetector(context: Context) : Detector {
     override var isAvailable = false; private set
     override var modelName: String? = null; private set
     override var lastError: String? = null; private set
+    /** The execution provider in use: "nnapi-fp16" (GPU/NPU), "xnnpack", or "cpu". */
+    var provider: String = "cpu"; private set
 
     private var env: OrtEnvironment? = null
     private var session: OrtSession? = null
@@ -82,28 +85,22 @@ class YoloOnnxDetector(context: Context) : Detector {
                 try {
                     val bytes = assets.open(name).use { it.readBytes() }
                     val e = OrtEnvironment.getEnvironment()
-                    // CPU (XNNPACK-free default kernels, 4 threads): predictable 20-60 ms for
-                    // yolov8n at 320 on a 2024 mid-range SoC. NNAPI partitions YOLO badly and is
-                    // often slower; add it here if a measured run on the demo phone says otherwise.
-                    val opts = OrtSession.SessionOptions().apply {
-                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                        // XNNPACK runs the convolutions on its own 4-thread pool (ORT's intra-op
-                        // threads then stay at 1, as its docs ask); on a 2024 mid-range SoC it
-                        // roughly halves yolov8n-320 against the default CPU kernels.
-                        try {
-                            addXnnpack(mapOf("intra_op_num_threads" to "4"))
-                            setIntraOpNumThreads(1)
-                        } catch (_: Throwable) {
-                            setIntraOpNumThreads(4)
-                        }
-                    }
-                    val s = e.createSession(bytes, opts)
+                    // Try the GPU/NPU first (NNAPI, the only accelerator path ORT has on Android),
+                    // then fall back to XNNPACK and plain CPU. Each provider gets its own
+                    // createSession attempt: on the MediaTek Dimensity 8200 the GPU cannot run the
+                    // whole yolov8 graph (ORT_EP_FAIL when forced; it partitions to the CPU otherwise
+                    // with no net gain), so the detector must stay alive on the CPU path. The whole
+                    // graph creation, not just the provider registration, is what can fail, so the
+                    // fallback wraps createSession itself.
+                    val (s, ep) = createWithProvider(e, bytes)
                     inputName = s.inputNames.first()
                     val info = s.inputInfo[inputName]?.info as? TensorInfo
                     val shape = info?.shape
                     if (shape != null && shape.size == 4 && shape[2] > 0) inputSize = shape[2].toInt()
                     env = e; session = s
+                    provider = ep
                     modelName = name.removeSuffix(".onnx")
+                    Log.i(TAG, "session: model=$modelName ep=$ep input=$inputSize")
                     isAvailable = true
                     break
                 } catch (e: Throwable) {
@@ -115,6 +112,48 @@ class YoloOnnxDetector(context: Context) : Detector {
         square = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
         pixels = IntArray(inputSize * inputSize)
         floats = FloatArray(3 * inputSize * inputSize)
+    }
+
+    /**
+     * Create the session on the fastest provider that can actually run the whole graph: NNAPI
+     * (GPU/NPU) first, then XNNPACK, then plain CPU. Each is a full createSession attempt, because
+     * NNAPI can accept the options and still fail at graph compile (ORT_EP_FAIL) on a device whose
+     * accelerator does not support every op. Returns the session and a short provider tag; throws
+     * only if even the default CPU session fails.
+     */
+    private fun createWithProvider(env: OrtEnvironment, bytes: ByteArray): Pair<OrtSession, String> {
+        // NNAPI: FP16 on the accelerator, the rest on ORT's CPU kernels. BASIC_OPT so ORT's own
+        // fusions do not take nodes out of NNAPI's reach. No CPU_DISABLED: forcing GPU-only fails
+        // for yolov8 on the MediaTek GPU (measured ORT_EP_FAIL), and then nothing runs.
+        val nnapi = {
+            OrtSession.SessionOptions().apply {
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
+                addNnapi(java.util.EnumSet.of(ai.onnxruntime.providers.NNAPIFlags.USE_FP16))
+            }
+        }
+        // XNNPACK on its own 4-thread pool (ORT intra-op then 1, as its docs ask).
+        val xnnpack = {
+            OrtSession.SessionOptions().apply {
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                addXnnpack(mapOf("intra_op_num_threads" to "4"))
+                setIntraOpNumThreads(1)
+            }
+        }
+        val cpu = {
+            OrtSession.SessionOptions().apply {
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                setIntraOpNumThreads(4)
+            }
+        }
+        for ((tag, build) in listOf("nnapi-fp16" to nnapi, "xnnpack" to xnnpack, "cpu" to cpu)) {
+            try {
+                return env.createSession(bytes, build()) to tag
+            } catch (t: Throwable) {
+                Log.w(TAG, "provider $tag failed, trying next: ${t.message?.take(120)}")
+            }
+        }
+        // Last resort: default options (no provider), let it throw to the caller if even this fails.
+        return env.createSession(bytes, OrtSession.SessionOptions()) to "cpu-default"
     }
 
     override fun detect(image: Image, rotationDegrees: Int): List<Detection> {
@@ -159,7 +198,7 @@ class YoloOnnxDetector(context: Context) : Detector {
                     val out = result[0].value as Array<Array<FloatArray>>
                     val dets = decode(out[0], rot)
                     val t4 = android.os.SystemClock.elapsedRealtimeNanos()
-                    if (++frames % 24 == 0) Log.i(TAG, "yuv ${(t1 - t0) / 1_000_000} ms, prep ${(t2 - t1) / 1_000_000} ms, run ${(t3 - t2) / 1_000_000} ms, decode ${(t4 - t3) / 1_000_000} ms, ${dets.size} boxes")
+                    if (++frames % 24 == 0) Log.i(TAG, "[$provider] yuv ${(t1 - t0) / 1_000_000} ms, prep ${(t2 - t1) / 1_000_000} ms, run ${(t3 - t2) / 1_000_000} ms, decode ${(t4 - t3) / 1_000_000} ms, ${dets.size} boxes")
                     return dets
                 }
             }
@@ -182,7 +221,7 @@ class YoloOnnxDetector(context: Context) : Detector {
                 val sc = rows[4 + c][j]
                 if (sc > bestScore) { bestScore = sc; best = c }
             }
-            if (best < 0 || bestScore < CONFIDENCE_THRESHOLD || best !in TrackedClass.all) continue
+            if (best < 0 || best !in TrackedClass.phone || bestScore < TrackedClass.confidence(best)) continue
             // Input pixels -> normalized upright image, undoing the letterbox; clipped to the image.
             val x0 = clampf((rows[0][j] - rows[2][j] / 2f - letterDx) / letterW, 0f, 1f)
             val y0 = clampf((rows[1][j] - rows[3][j] / 2f - letterDy) / letterH, 0f, 1f)

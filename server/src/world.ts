@@ -28,6 +28,7 @@
 import { WasmReceiver } from 'minband-core';
 import { ClockOffset } from './clock.js';
 import { Fusion } from './fusion.js';
+import { Motion } from './movers.js';
 import { Shaper, UDP_IP_OVERHEAD } from './shaper.js';
 import { peek, type Peek } from './peek.js';
 import { Link, NO_AIRTIME, airtimeMs, type LinkDeps } from './link.js';
@@ -212,6 +213,8 @@ export class World {
   /** Every address (latest and aliases) -> device. */
   private readonly byAddr = new Map<string, Device>();
   readonly fusion = new Fusion();
+  /** Moving / static state of the fused entities (GlobalEntity.moving, headingDeg; /api/movers). */
+  readonly motion = new Motion();
   readonly shaper: Shaper;
   readonly link: Link;
   readonly baselineA: BaselineA;
@@ -416,7 +419,16 @@ export class World {
     this.expire(nowMs);
     const devices = this.views(nowMs);
     for (const v of devices) if (!v.provisional) this.ring(v.deviceId).push(v.edgeTick, v.entities);
-    const global = this.fusion.update(devices, nowMs).map(g => ({ ...g, geo: this.geo && geoPoint(g.pos, this.geo) }));
+    // Position of the device that sees an entity (its first source with a locked origin): the
+    // classifier trusts motion across the ray from it and asks more of motion along it.
+    const eyeOf = (e: { sources: { deviceId: number }[] }): [number, number, number] | null => {
+      for (const src of e.sources) {
+        const p = devices.find(d => d.deviceId === src.deviceId)?.pose;
+        if (p?.originLocked) return p.pos;
+      }
+      return null;
+    };
+    const global = this.motion.update(this.fusion.update(devices, nowMs), nowMs, eyeOf).map(g => ({ ...g, geo: this.geo && geoPoint(g.pos, this.geo) }));
     const entityCount = devices.reduce((a, d) => a + d.entities.length, 0);
     const baselineA = this.baselineA.get();
     const snap: Snapshot = {
