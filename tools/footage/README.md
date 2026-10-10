@@ -1,5 +1,7 @@
 # Real drone footage
 
+`consensus.py`: keep only the detections two detectors agree on (precision for the side-by-side page; `tools/sidebyside/README.md`).
+
 MinBand on footage from a real drone instead of the phone: detect and track the objects the way a
 drone edge would, then feed the tracks to the same WASM edge, eval and live server as a phone log.
 
@@ -71,6 +73,28 @@ clips it was never tuned on. Results, per clip and before/after: `docs/FOOTAGE_F
 
 `olddet.py` runs the old `detect.py` (read from git at 6f21d55) for the before/after rows; the full
 from-scratch sequence (venv, model, clip URLs, runs, audit, tables) is in docs/FOOTAGE_FINDINGS.md.
+
+### Consensus recipe on military footage (`mil`)
+
+The MEVA `best2` recipe (two VisDrone models agreeing at >= 0.75) keeps almost nothing on military
+vehicles: VisDrone never saw armour, so both models sit at 0.4-0.7 on an IFV or a military truck.
+`mil` is `best2` with the vehicle agreement floor at 0.5, tuned on the dev clip `amad-test1` only
+and run once on the held-out `amad-test2` and `mvt-test10` (results in docs/PROTOCOL_EVAL.md
+section 8):
+
+```bash
+R=../../runs/footage/amad-test2   # likewise dev-amad-test1, mvt-test10
+.venv/bin/python -I track.py detect clips/battlefield/amad-test2.mp4 --model models/vd26m.onnx --tag vd26m --out $R --conf 0.15
+.venv/bin/python -I track.py detect clips/battlefield/amad-test2.mp4 --model models/vd11m.onnx --tag vd11m --out $R --conf 0.15
+.venv/bin/python -I consensus.py $R --a vd26m --b vd11m --out cons-mil --iou 0.3 --a-conf 0.5 --b-conf 0.5 --a-conf-person 0.6 --b-conf-person 0.6 --solo 1.0 --class-aware-person --class-best --keep 0.3
+.venv/bin/python -I track.py track $R --sources cons-mil --high 0.5 --low 0.3 --min-age 3.0 --birth-agreed --sure-hits 3 --max-vehicle-m 14 --out $R/mil
+cp $R/detect.json $R/mil/
+.venv/bin/python -I tiles.py $R/mil clips/battlefield/amad-test2.mp4 --out /tmp/scratch/amad2   # eye audit, outside the repo
+```
+
+`tiles.py` is the eye audit used for every precision claim: one row per reported track with three
+crops from its life, and full frames with every reported box. The stock-preview and unknown-licence
+clips must never have frames in the repo, so write its output to a scratch directory.
 
 ### Moving-target indication (`mti.py`)
 
