@@ -1,7 +1,8 @@
 // The world twin (docs/STYLE.md). Wire is the environment: one procedural contour field at --ink-4,
 // device frustums, trails and axes as 1 px lines (device = line style). Fill is what the twin
 // believes exists: entities are matte monochrome solids under soft hemispheric light (class =
-// silhouette: dismount capsule, carried sphere, static box). Trust decays in steps: live = bright
+// silhouette: dismount capsule, carried sphere, static box, vehicle a low car-sized box turned to its
+// heading, two-wheeler a smaller one). Trust decays in steps: live = bright
 // solid -> coasting (the device missed its heartbeat) = the same solid at --ink-2 -> stale = fading
 // toward --ink-3 -> dotted outline -> gone. Each entity stands on a hairline ground ring whose
 // radius is its honest error `ce` (V2): theta while the heartbeat holds, widening at the class max
@@ -33,13 +34,17 @@ export const LINE_STYLES = [
   { name: 'dotted', dash: 0.02, gap: 0.07, svg: '1 3' },
 ] as const;
 
-type Kind = 'person' | 'carried' | 'static';
-// COCO ids. Person = capsule, things people carry = small sphere, everything else = box. Class 0 is
-// shown as "dismount" (the military term); the wire and the code keep COCO's person.
+type Kind = 'person' | 'carried' | 'static' | 'vehicle' | 'cycle';
+const KINDS: Kind[] = ['person', 'carried', 'static', 'vehicle', 'cycle'];
+// COCO ids. Person = capsule, things people carry = small sphere, road vehicles (car, bus, truck) = a
+// low car-sized box, two-wheelers (bicycle, motorcycle) = a smaller one, everything else = box.
+// Class 0 is shown as "dismount" (the military term); the wire and the code keep COCO's person.
 const CARRIED = new Set([24, 25, 26, 27, 28, 39, 40, 41, 42, 43, 44, 64, 65, 67, 73, 76, 79]);
-const kindOf = (cls: number): Kind => (cls === 0 ? 'person' : CARRIED.has(cls) ? 'carried' : 'static');
+const VEHICLES = new Set([2, 5, 7]), CYCLES = new Set([1, 3]);
+const kindOf = (cls: number): Kind => cls === 0 ? 'person' : VEHICLES.has(cls) ? 'vehicle' : CYCLES.has(cls) ? 'cycle' : CARRIED.has(cls) ? 'carried' : 'static';
 const CLASS_NAME: Record<number, string> = {
-  0: 'dismount', 24: 'backpack', 25: 'umbrella', 26: 'handbag', 28: 'suitcase', 39: 'bottle', 41: 'cup',
+  0: 'dismount', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck',
+  24: 'backpack', 25: 'umbrella', 26: 'handbag', 28: 'suitcase', 39: 'bottle', 41: 'cup',
   56: 'chair', 57: 'couch', 58: 'plant', 59: 'bed', 60: 'table', 62: 'tv', 63: 'laptop', 67: 'phone', 73: 'book',
 };
 const className = (cls: number) => CLASS_NAME[cls] ?? `class ${cls}`;
@@ -89,14 +94,27 @@ function revolve(profile: Profile, rings: number[], meridians: number, steps = 2
   }
   return segs(p);
 }
-interface KindGeo { solid: THREE.BufferGeometry; outline: THREE.BufferGeometry; half: number }
+interface KindGeo {
+  solid: THREE.BufferGeometry; outline: THREE.BufferGeometry; half: number;
+  /** Horizontal half-extent along the heading (m): where a velocity arrow starts in wide mode. */
+  reach: number;
+  /** Wide mode: the glyph's longest dimension (m) is drawn at least `minPx` CSS px long, like a map symbol. */
+  size: number; minPx: number;
+  /** Turns to its heading while it moves (vehicles; the long axis is local x). */
+  heads: boolean;
+}
+/** Box glyph, length (x) by height (y) by width (z), metres. */
+const box = (x: number, y: number, z: number) => ({ solid: new THREE.BoxGeometry(x, y, z), outline: dashed(new THREE.EdgesGeometry(new THREE.BoxGeometry(x, y, z))), half: y / 2 });
 let KIND: Record<Kind, KindGeo> | null = null;
 function kinds(): Record<Kind, KindGeo> {
   if (KIND) return KIND;
   KIND = {
-    person: { solid: new THREE.CapsuleGeometry(0.2, 1.3, 8, 24), outline: dashed(revolve(capsuleProfile(0.2, 1.3), [0.12, 0.5, 0.88], 4, 28, 36, Math.PI / 4)), half: 0.85 },
-    carried: { solid: new THREE.SphereGeometry(0.14, 28, 18), outline: dashed(revolve(capsuleProfile(0.14, 0), [0.5], 3, 20, 28)), half: 0.14 },
-    static: { solid: new THREE.BoxGeometry(0.4, 0.4, 0.4), outline: dashed(new THREE.EdgesGeometry(new THREE.BoxGeometry(0.4, 0.4, 0.4))), half: 0.2 },
+    person: { solid: new THREE.CapsuleGeometry(0.2, 1.3, 8, 24), outline: dashed(revolve(capsuleProfile(0.2, 1.3), [0.12, 0.5, 0.88], 4, 28, 36, Math.PI / 4)), half: 0.85, reach: 0.2, size: 1.7, minPx: 22, heads: false },
+    carried: { solid: new THREE.SphereGeometry(0.14, 28, 18), outline: dashed(revolve(capsuleProfile(0.14, 0), [0.5], 3, 20, 28)), half: 0.14, reach: 0.14, size: 0.28, minPx: 7, heads: false },
+    static: { ...box(0.4, 0.4, 0.4), reach: 0.2, size: 0.4, minPx: 8, heads: false },
+    // Car-sized for car, bus and truck alike (the tag names which); bicycle and motorcycle smaller.
+    vehicle: { ...box(4.4, 1.5, 1.8), reach: 2.2, size: 4.4, minPx: 20, heads: true },
+    cycle: { ...box(1.9, 1.1, 0.6), reach: 0.95, size: 1.9, minPx: 13, heads: true },
   };
   return KIND;
 }
@@ -174,7 +192,8 @@ function frustumGeo(): THREE.BufferGeometry {
 type RingStyle = 'live' | 'coasting' | 'stale';
 interface Ent {
   gid: string; cls: number; kind: Kind;
-  group: THREE.Group; body: THREE.Group;
+  /** `body` is the glyph's centre (arrow and tag hang off it); `glyph` holds the solid and outline, turned to `yaw`. */
+  group: THREE.Group; body: THREE.Group; glyph: THREE.Group; yaw: number;
   solid: THREE.Mesh; outline: THREE.LineSegments;
   arrow: THREE.LineSegments; drop: THREE.Line; trail: THREE.Line; trailStyle: number;
   ring: THREE.Line; ringTicks: THREE.LineSegments;
@@ -191,6 +210,8 @@ type Channel = 'solid' | 'tone' | 'outline' | 'arrow' | 'drop' | 'trail' | 'ring
 const CHANNELS: Channel[] = ['solid', 'tone', 'outline', 'arrow', 'drop', 'trail', 'ring'];
 const TRAIL_MS = 3000, TRAIL_MAX = 120;
 const ARROW_MIN = 0.3; // m/s
+/** Vehicles turn to their velocity above this speed (m/s); slower, a parked car's jitter would spin it. */
+const HEADING_MIN = 1;
 // Decay schedule, seconds since the entity went stale: solid fading to --ink-3, then dotted outline, then gone.
 const SOLID_S = 3, OUTLINE_S = 8;
 /** Coasting tone: the solid at about --ink-2, between live and the stale fade. */
@@ -344,6 +365,8 @@ export class TwinScene {
       // Opaque while fully present (correct depth), blended only while fading.
       (e.solid.material as THREE.Material).transparent = e.a.solid < 0.94;
       set(e.arrow, e.a.arrow); set(e.drop, e.a.drop); set(e.trail, e.a.trail);
+      const yaw = e.glyph.rotation.y;
+      if (yaw !== e.yaw) e.glyph.rotation.y = Math.abs(e.yaw - yaw) < 1e-3 ? e.yaw : yaw + (e.yaw - yaw) * k;
       this.updateRing(e, dt);
       const lo = e === focus && !e.dying ? 1 : 0;
       if (lo !== e.labelOpacity) { e.labelOpacity = lo; e.label.visible = lo > 0; }
@@ -409,12 +432,13 @@ export class TwinScene {
 
   private makeEntity(g: GlobalEntity): Ent {
     const kind = kindOf(g.class), K = kinds()[kind];
-    const group = new THREE.Group(), body = new THREE.Group();
+    const group = new THREE.Group(), body = new THREE.Group(), glyph = new THREE.Group();
     const solid = new THREE.Mesh(K.solid, new THREE.MeshLambertMaterial({ color: INK, transparent: true, opacity: 0, fog: false }));
     const outline = new THREE.LineSegments(K.outline, dottedMat(0));
     const ag = new THREE.BufferGeometry(); ag.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(18), 3));
     const arrow = new THREE.LineSegments(ag, lineMat(0, 0));
-    body.add(solid, outline, arrow);
+    glyph.add(solid, outline);
+    body.add(glyph, arrow);
     const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
     const drop = new THREE.Line(dg, dottedMat(0));
     const tg = new THREE.BufferGeometry();
@@ -434,7 +458,7 @@ export class TwinScene {
     group.add(body, drop, trail, ring, ringTicks);
     this.scene.add(group);
     return {
-      gid: g.gid, cls: g.class, kind, group, body, solid, outline, arrow, drop, trail, trailStyle: 0,
+      gid: g.gid, cls: g.class, kind, group, body, glyph, yaw: 0, solid, outline, arrow, drop, trail, trailStyle: 0,
       ring, ringTicks, ringR: -1, ringTarget: null, ringStyle: 'live', ringKey: '',
       label, labelText: '', labelOpacity: 0, pts: [], coasting: false, coastSince: null, staleSince: null, dying: false,
       a: { solid: 0, tone: 0, outline: 0, arrow: 0, drop: 0, trail: 0, ring: 0 },
@@ -468,6 +492,13 @@ export class TwinScene {
     // Velocity: a 1 px shaft with a chevron head, only when the entity is actually moving.
     const ap = e.arrow.geometry.getAttribute('position') as THREE.BufferAttribute;
     const v = new THREE.Vector3(...g.vel), len = v.length();
+    // Vehicles turn to their heading. The box is symmetric, so it takes the nearer of the two ends
+    // (no half-turns when a slow car's velocity flips); a new one starts on its heading.
+    if (K.heads && Math.hypot(v.x, v.z) > HEADING_MIN) {
+      const d = Math.atan2(-v.z, v.x) - e.yaw;
+      e.yaw += d - Math.PI * Math.round(d / Math.PI);
+      if (!e.pts.length) e.glyph.rotation.y = e.yaw;
+    }
     if (len > ARROW_MIN) {
       const L = Math.min(len, 2), d = v.clone().divideScalar(len), tip = d.clone().multiplyScalar(L);
       const side = new THREE.Vector3(-d.z, 0, d.x); if (side.lengthSq() < 1e-6) side.set(1, 0, 0); side.normalize();

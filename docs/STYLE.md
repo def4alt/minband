@@ -27,7 +27,9 @@ Light theme is not supported; the product is dark by design.
   plane, like the mountain reference) at `--ink-4`, with the marker origin at the flattest point.
   Grid helper lines, if any, are `--ink-4` and sparse.
 - Class is conveyed by silhouette, not colour: person (shown as "dismount") = tall capsule,
-  carried object = small sphere, static object = box. Device is conveyed by line style: solid,
+  carried object = small sphere, static object = box, vehicle (car, bus, truck) = a low car-sized
+  box (4.4 x 1.8 x 1.5 m) turned to its heading, two-wheeler (bicycle, motorcycle) = a smaller
+  one; the tag names the class (`car`, `truck`). Device is conveyed by line style: solid,
   dashed, dotted (frustums, trails, ghosts; never the error ring, see below).
 - **Entities are solid, not wire** (decided 2026-10-09). Tracked objects are filled, matte
   monochrome meshes: `--ink` at 85 to 100 % with soft hemispheric lighting so they read as
