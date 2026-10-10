@@ -16,6 +16,8 @@
 //   npm run mock                               scripted loop (PHASES below), ws://localhost:8080
 //   MOCK_PHASE=blackout@8 npm run mock         start 8 s into the blackout (entities stale)
 //   MOCK_PHASE=lora MOCK_HOLD=1 npm run mock   stay in the lora phase
+//   MOCK_PHASE=wide npm run mock               real-drone scale (its own world, outside the loop):
+//                                              a drone 59 m up, dismounts and vehicles over ~165 x 85 m
 //   MOCK_FREEZE=1                              freeze time after start-up (pixel-stable screenshots)
 //   MOCK_GEO=0 | MOCK_MEASURED=1 | MOCK_PORT=8080 | MOCK_SEED=7
 //   MOCK_LEGACY=1                              snapshots without the hackathon fields (today's server)
@@ -69,7 +71,13 @@ const PHASES: Phase[] = [
   { name: 'lora', s: 16, profile: 'lora' },
   { name: 'telemetry', s: 14, profile: 'telemetry' },
 ];
-const phaseStartMs = (i: number) => PHASES.slice(0, i).reduce((a, p) => a + p.s * 1000, 0);
+// The wide world (real-drone scale, `wideTruth`) is not part of the loop: MOCK_PHASE=wide replays
+// it on its own, with its own drone, so a jump into it never leaves the room devices silent.
+const WIDE_PHASES: Phase[] = [{ name: 'wide', s: 30, profile: 'clean' }];
+type World = 'room' | 'wide';
+const worldOf = (phase: string): World => WIDE_PHASES.some(p => p.name === phase) ? 'wide' : 'room';
+const phasesOf = (w: World) => w === 'wide' ? WIDE_PHASES : PHASES;
+const phaseStartMs = (phases: Phase[], i: number) => phases.slice(0, i).reduce((a, p) => a + p.s * 1000, 0);
 
 // ---- H.264 Baseline A ---------------------------------------------------------------------------
 const BASELINE_CONFIGURED: BaselineAEntry[] = [
@@ -98,7 +106,9 @@ interface Prior { damping: number; maxSpeed: number; ground: boolean }
 const prior = (cls: number): Prior =>
   cls === 0 ? { damping: 0.85, maxSpeed: 3, ground: true }
     : [56, 62, 63].includes(cls) ? { damping: 0.1, maxSpeed: 1, ground: false }
-      : { damping: 0.6, maxSpeed: 3, ground: false };
+      : [2, 3, 5, 7].includes(cls) ? { damping: 0.95, maxSpeed: 30, ground: true }
+        : cls === 1 ? { damping: 0.9, maxSpeed: 12, ground: true }
+          : { damping: 0.6, maxSpeed: 3, ground: false };
 
 interface State { id: number; cls: number; pos: V3; vel: V3; conf: number; t: number; theta: number }
 function predict(s: State, at: number): State {
@@ -140,6 +150,29 @@ function truth(t: number): Truth[] {
   ];
 }
 
+// The wide world: the layout of the MEVA clip the footage tools replay (runs/footage/smoke-tracks.csv):
+// a school's forecourt seen from a drone, a group of six dismounts walking past and back, two at the
+// door and one walking the yard, a car park of six, a bus at the kerb, two cars, a truck and a
+// motorcycle on the road, a cyclist on the path. About 165 x 85 m; class ids are COCO.
+const ROAD: [number, number][] = [[-58, 24], [104, 24], [104, -52], [-58, -52]];
+const GROUP: [number, number][] = [[0, 0], [1.1, 0.7], [-0.9, 1], [0.5, -1.1], [1.9, -0.3], [-1.6, -0.5]];
+function wideTruth(t: number): Truth[] {
+  const out: Truth[] = [];
+  const add = (cls: number, m: { pos: V3; vel: V3 }, conf = 200) => out.push({ id: out.length + 1, cls, pos: m.pos, vel: m.vel, conf });
+  const still = (x: number, z: number) => ({ pos: [x, 0, z] as V3, vel: [0, 0, 0] as V3 });
+  const walk = along([[-30, -4], [40, -4]], 1.3, t + 10);
+  for (const [dx, dz] of GROUP) add(0, { pos: [walk.pos[0] + dx, 0, walk.pos[2] + dz], vel: walk.vel }, 220);
+  add(0, still(-18, 9)); add(0, still(-16.8, 9.6));
+  add(0, along([[28, 4], [52, 4], [52, -18], [28, -18]], 1.4, t), 210);
+  for (let i = 0; i < 6; i++) add(2, still(-46, -34 + 2.9 * i), 190);
+  add(5, still(72, 14), 190);
+  add(2, along(ROAD, 9, t), 200); add(2, along(ROAD, 7, t + 30), 200);
+  add(7, along([[-58, 32], [104, 32]], 5, t), 190);
+  add(3, along(ROAD, 11, t + 12), 180);
+  add(1, along([[-8, 12], [60, 12], [60, -30], [-8, -30]], 4.5, t), 180);
+  return out;
+}
+
 /** Rotation whose -Z axis looks from `from` to `to` (frustums look down -Z). */
 function lookAt(from: V3, to: V3): Quat {
   const f = norm([to[0] - from[0], to[1] - from[1], to[2] - from[2]]), z: V3 = [-f[0], -f[1], -f[2]];
@@ -159,6 +192,11 @@ const DEVS: DevSpec[] = [
   // The phone on a pole at the left, a drone-like viewpoint behind: both frustums stay clear of the viewer's default camera.
   { id: 101, addr: '10.42.0.23:51234', sees: { 1: 1, 2: 2, 3: 3, 4: 4 }, pose: { pos: [-5.6, 1.6, 4.4], quat: lookAt([-5.6, 1.6, 4.4], [0, 0.6, 0]) } },
   { id: 102, addr: '10.42.0.31:40112', sees: { 1: 7, 2: 8 }, pose: { pos: [4.2, 3.4, -5.8], quat: lookAt([4.2, 3.4, -5.8], [0, 0, 0]) } },
+];
+/** The wide world's drone: where the MEVA clip was filmed from (summary.json camera_m), looking at the origin. */
+const DRONE: V3 = [20.15, 59, 36.55];
+const WIDE_DEVS: DevSpec[] = [
+  { id: 103, addr: '10.42.0.40:50322', sees: Object.fromEntries(wideTruth(0).map(t => [t.id, t.id])), pose: { pos: DRONE, quat: lookAt(DRONE, [0, 0, 0]) } },
 ];
 
 // ---- geodesy (S3): WGS84 -> UTM -> MGRS, enough for a grid reference on screen ---------------------
@@ -331,13 +369,18 @@ class Mock {
   packets: PacketEvent[] = [];
   log: string[] = [];
   counters = { offered: 0, offeredBytes: 0, passed: 0, passedBytes: 0, delivered: 0, deliveredBytes: 0, dropped: 0, droppedBytes: 0, droppedLoss: 0, droppedCap: 0, inFlight: 0 };
-  devs: Dev[] = DEVS.map(spec => ({ spec, edge: new Edge(spec), rx: new Rx() }));
+  devs: Dev[];
+  phases: Phase[];
   script = { on: true, hold: false, idx: 0, since: 0 };
   contested = { down: false, next: 0 };
   err: { t: number; d: number }[] = [];
   linkMsgs = new Window(); linkAir = new Window();
 
-  constructor(public geo: boolean, public measured: boolean) { this.enter(0); }
+  constructor(public geo: boolean, public measured: boolean, readonly world: World = 'room') {
+    this.devs = (world === 'wide' ? WIDE_DEVS : DEVS).map(spec => ({ spec, edge: new Edge(spec), rx: new Rx() }));
+    this.phases = phasesOf(world);
+    this.enter(0);
+  }
 
   // ---- control ----
   setShaper(c: Partial<ShaperConfig>) {
@@ -363,18 +406,18 @@ class Mock {
     this.contested = { down: false, next: this.sim + 4000 };
   }
   private enter(i: number) {
-    const p = PHASES[i];
+    const p = this.phases[i];
     this.script.idx = i; this.script.since = this.sim;
     this.applyProfile(p.profile);
     if (p.blackoutS) this.setFor({ enabled: true, loss: 1 }, p.blackoutS * 1000);
   }
-  phaseName(): string { return PHASES[this.script.idx].name; }
+  phaseName(): string { return this.phases[this.script.idx].name; }
 
   // ---- one 30 Hz step ----
   step() {
     this.sim += STEP_MS;
     const now = this.sim;
-    if (this.script.on && !this.script.hold && now - this.script.since >= PHASES[this.script.idx].s * 1000) this.enter((this.script.idx + 1) % PHASES.length);
+    if (this.script.on && !this.script.hold && now - this.script.since >= this.phases[this.script.idx].s * 1000) this.enter((this.script.idx + 1) % this.phases.length);
     if (this.revert && now >= this.revert.at) { this.shaper = this.revert.prev; this.revert = null; }
     if (this.profile === 'contested' && !this.revert && now >= this.contested.next) {
       // Intermittent jamming: 4-8 s of lora, then a 1-5 s blackout (HACKATHON_PLAN 3.3).
@@ -382,7 +425,7 @@ class Mock {
       this.shaper = { ...this.shaper, loss: this.contested.down ? 1 : profileOf('contested')!.loss };
       this.contested.next = now + (this.contested.down ? 1000 + 4000 * this.rng() : 4000 + 4000 * this.rng());
     }
-    const cad = cadence(this.budget), world = truth(now / 1000);
+    const cad = cadence(this.budget), world = (this.world === 'wide' ? wideTruth : truth)(now / 1000);
     const perDev = this.budget > 0 ? this.budget / this.devs.length : 0; // stand-in: the budget is shared
     for (const dev of this.devs) {
       const tracks = world.filter(t => dev.spec.sees[t.id] !== undefined).map(t => {
@@ -508,10 +551,10 @@ class Mock {
   private fuse(devices: DeviceView[]): GlobalEntity[] {
     const groups = new Map<string, { d: DeviceView; e: EntityView }[]>();
     for (const d of devices) {
-      const spec = DEVS.find(s => s.id === d.deviceId)!;
+      const spec = this.devs.find(v => v.spec.id === d.deviceId)!.spec;
       for (const e of d.entities) {
         const tid = Number(Object.keys(spec.sees).find(k => spec.sees[+k] === e.id));
-        const gid = this.fusion || spec.id === 101 ? `g${tid}` : `g${10 + tid}`;
+        const gid = this.fusion || spec === this.devs[0].spec ? `g${tid}` : `g${10 + tid}`;
         groups.set(gid, [...(groups.get(gid) ?? []), { d, e }]);
       }
     }
@@ -534,9 +577,9 @@ let frozen = false;
 const flags = { geo: env.MOCK_GEO !== '0', measured: env.MOCK_MEASURED === '1', legacy: env.MOCK_LEGACY === '1' };
 
 function goto(phase: string, atS: number, hold: boolean) {
-  const i = Math.max(0, PHASES.findIndex(p => p.name === phase));
-  mock = new Mock(flags.geo, flags.measured);
-  const target = phaseStartMs(i) + Math.max(0, Math.min(atS, PHASES[i].s - 0.001)) * 1000;
+  const world = worldOf(phase), phases = phasesOf(world), i = Math.max(0, phases.findIndex(p => p.name === phase));
+  mock = new Mock(flags.geo, flags.measured, world);
+  const target = phaseStartMs(phases, i) + Math.max(0, Math.min(atS, phases[i].s - 0.001)) * 1000;
   while (mock.sim + STEP_MS <= target) mock.step();
   mock.script.hold = hold;
 }
@@ -561,7 +604,7 @@ function control(q: Record<string, unknown>) {
 }
 const state = () => ({
   phase: mock.phaseName(), at: +((mock.sim - mock.script.since) / 1000).toFixed(2), script: mock.script.on, hold: mock.script.hold,
-  frozen, geo: mock.geo, measured: mock.measured, legacy: flags.legacy, profile: mock.profile, phases: PHASES.map(p => `${p.name} ${p.s} s`),
+  frozen, geo: mock.geo, measured: mock.measured, legacy: flags.legacy, profile: mock.profile, phases: [...PHASES, ...WIDE_PHASES].map(p => `${p.name} ${p.s} s`),
 });
 
 /** MOCK_LEGACY: the snapshot as the server sends it before the hackathon fields, to exercise the viewer's fallbacks. */

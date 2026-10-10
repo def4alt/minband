@@ -14,6 +14,17 @@ const LINK_IN = css('--series-1'), SENT = css('--series-4'); // graph series: co
 const scene = new TwinScene($('scene'));
 // Dev server only: lets dev/smoke.ts find an entity on screen to hover.
 if (import.meta.env.DEV) Object.assign(window, { __minband: { scene } });
+// Wide area (real drone footage): the FRAME control and the grid spacing in the key; F re-frames too.
+scene.onWide = (wide, cellM) => {
+  $('frame').hidden = !wide; $('keyGrid').hidden = !wide;
+  if (wide) setText('keyGridV', `${cellM} m grid`);
+};
+$('frame').onclick = () => scene.frame();
+addEventListener('keydown', e => {
+  if (e.key.toLowerCase() !== 'f' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable]')) return;
+  scene.frame();
+});
 const WS_URL = (import.meta.env.VITE_WS_URL as string | undefined) ?? `ws://${location.hostname}:8080`;
 // The HTTP API is served by the same server as the WebSocket.
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? WS_URL.replace(/^ws/, 'http');
