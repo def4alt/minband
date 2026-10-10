@@ -25,9 +25,9 @@ const { WasmEdge, WasmReceiver, describe_frame } = core;
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../../..');
 const PORT = Number(process.env.PORT || 8090);
-// Default clip: the MEVA 1080p pass at 24-28 m (cars ~190 px) with the track-level two-detector consensus tracks
+// Default clip: the MEVA 1080p pass at 24-28 m (cars ~190 px) with the track-level consensus of two VisDrone-fine-tuned detectors
 // (tools/footage/consensus.py); RUN_DIR/VIDEO switch to any other run.
-const RUN_DIR = process.env.RUN_DIR || path.join(repo, 'runs/footage/meva-uav-0307-1720/best');
+const RUN_DIR = process.env.RUN_DIR || path.join(repo, 'runs/footage/meva-uav-0307-1720/best2');
 const VIDEO = process.env.VIDEO || path.join(repo, 'runs/sidebyside/meva1080-720p.mp4');
 const WEB = path.join(here, '../web');
 const TICK_HZ = 120, STEP_S = 0.1;

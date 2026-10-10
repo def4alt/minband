@@ -41,16 +41,21 @@ def main():
     p.add_argument('--solo-person', type=float, help='solo threshold for person boxes (default: --solo; 1.0 = agreement only)')
     p.add_argument('--solo-vehicle', type=float, help='solo threshold for vehicle boxes (default: --solo)')
     p.add_argument('--b-conf', type=float, default=0.2, help='B boxes below this do not count as agreement')
+    p.add_argument('--a-conf', type=float, default=0.0, help='A boxes below this do not count as agreed (two sister models share their doubts)')
+    p.add_argument('--a-conf-person', type=float, help='the same for person boxes (default: --a-conf)')
+    p.add_argument('--b-conf-person', type=float, help='B person boxes count as agreement from this conf (default: --b-conf)')
     p.add_argument('--class-aware', action='store_true', help='agreement also needs the same coarse class (person vs vehicle)')
     p.add_argument('--class-aware-person', action='store_true', help='agreement on a person box needs a B person box; vehicles any class')
     p.add_argument('--keep', type=float, help='track-level mode: also write A boxes at or above this conf, flagged as not agreed (8th column)')
+    p.add_argument('--class-best', action='store_true', help="an agreed box takes the class of the surer of the two boxes (A's by default)")
     a = p.parse_args()
     name = lambda t: 'detections.npy' if t == 'det' else f'detections-{t}.npy'
     jname = lambda t: 'detect.json' if t == 'det' else f'detect-{t}.json'
     A = np.load(os.path.join(a.dir, name(a.a)))[:, :7]; B = np.load(os.path.join(a.dir, name(a.b)))[:, :7]
-    B = B[B[:, 5] >= a.b_conf]
-    agreed = np.zeros(len(A), bool)
-    person = A[:, 6] == 0
+    bp = a.b_conf if a.b_conf_person is None else a.b_conf_person
+    B = B[np.where(B[:, 6] == 0, B[:, 5] >= bp, B[:, 5] >= a.b_conf)]
+    A = A.copy(); agreed = np.zeros(len(A), bool)
+    person = A[:, 6] == 0; relabelled = 0
     for f in np.unique(A[:, 0]):
         ia = np.where(A[:, 0] == f)[0]; ib = np.where(B[:, 0] == f)[0]
         if len(ib):
@@ -62,6 +67,11 @@ def main():
                 ok = (A[ia, 6:7] != 0) | (B[ib, 6] == 0)[None, :]
                 m = np.where(ok, m, 0.0)
             agreed[ia] = m.max(axis=1) >= a.iou
+            if a.class_best:  # the surer model names the object (vd26m: moto 0.3; vd11m: car 0.6)
+                jb = ib[m.argmax(axis=1)]; sw = agreed[ia] & (B[jb, 5] > A[ia, 5]) & (B[jb, 6] != A[ia, 6])
+                A[ia[sw], 6] = B[jb[sw], 6]; relabelled += int(sw.sum())
+    ap = a.a_conf if a.a_conf_person is None else a.a_conf_person
+    agreed &= np.where(person, A[:, 5] >= ap, A[:, 5] >= a.a_conf)
     solo_p = a.solo if a.solo_person is None else a.solo_person
     solo_v = a.solo if a.solo_vehicle is None else a.solo_vehicle
     sure = agreed | np.where(person, A[:, 5] >= solo_p, A[:, 5] >= solo_v)
@@ -69,14 +79,14 @@ def main():
     out = np.column_stack([A[keep], sure[keep].astype(np.float64)]) if a.keep is not None else A[keep]
     np.save(os.path.join(a.dir, name(a.out)), out)
     meta = json.load(open(os.path.join(a.dir, jname(a.a))))
-    meta['consensus'] = {'a': a.a, 'b': a.b, 'iou': a.iou, 'solo': a.solo, 'solo_person': solo_p, 'solo_vehicle': solo_v, 'b_conf': a.b_conf,
-                         'class_aware': a.class_aware, 'class_aware_person': a.class_aware_person, 'keep': a.keep,
+    meta['consensus'] = {'a': a.a, 'b': a.b, 'iou': a.iou, 'solo': a.solo, 'solo_person': solo_p, 'solo_vehicle': solo_v, 'b_conf': a.b_conf, 'b_conf_person': bp, 'a_conf': a.a_conf, 'a_conf_person': ap,
+                         'class_aware': a.class_aware, 'class_aware_person': a.class_aware_person, 'keep': a.keep, 'class_best': a.class_best, 'relabelled': relabelled,
                          'kept': int(keep.sum()), 'of': int(len(A)), 'agreed': int(agreed.sum()), 'sure': int(sure.sum())}
     json.dump(meta, open(os.path.join(a.dir, jname(a.out)), 'w'))
     by_cls = {int(c): (int((A[:, 6] == c).sum()), int((out[:, 6] == c).sum()), int((out[:, 6] == c)[sure[keep]].sum())) for c in np.unique(A[:, 6])}
     print(f'kept {keep.sum()} of {len(A)} ({agreed.sum()} by agreement, {(sure & ~agreed).sum()} solo >= {solo_p}/{solo_v} person/vehicle'
           f'{f", {(keep & ~sure).sum()} unsure >= {a.keep} for continuation" if a.keep is not None else ""}); per class (before, after, sure): {by_cls}')
-    print(f'B had {len(B)} boxes >= {a.b_conf} on {len(np.unique(B[:, 0]))} frames')
+    print(f'B had {len(B)} boxes >= {a.b_conf} on {len(np.unique(B[:, 0]))} frames' + (f'; {relabelled} agreed boxes took the class of the surer B box' if a.class_best else ''))
 
 
 if __name__ == '__main__':

@@ -554,6 +554,7 @@ class Track:
         self.hits, self.last, self.born = 1, t, (t if born is None else born)
         self.need = self.birth_hits = 3          # hits before confirmed (cmd_track sets them at birth)
         self.last_sure = t                       # last detection both models agreed on (--sure-hold)
+        self.sure_hits = 1                       # agreed detections (--sure-hits)
         self.classes = {} if k == MOVER else {int(k): 1}
         self.conf = conf
         self.hist = [(t, xy[0], xy[1])]  # measurements, for the static test
@@ -616,7 +617,7 @@ class Track:
         innov = math.hypot(xy[0] - self.kf.x[0], xy[1] - self.kf.x[1])
         self.kf.update(xy, SIGMA_Z[gk])
         self.hits += 1; self.last = t; self.conf = 0.8 * self.conf + 0.2 * conf
-        if agreed: self.last_sure = t
+        if agreed: self.last_sure = t; self.sure_hits += 1
         if agreed and self.need > self.birth_hits: self.need = self.birth_hits  # both models now agree: a normal birth
         self.hist.append((t, xy[0], xy[1]))
         if a is None or not a.static_mode: return
@@ -707,9 +708,18 @@ def cmd_track(a):
     app_by = {}; mti_by = {}
     ov_path = os.path.join(a.dir, 'overlay-mask.png')
     ov = cv2.imread(ov_path, cv2.IMREAD_GRAYSCALE) > 0 if os.path.exists(ov_path) and a.overlay else None
-    ov_dropped = 0
+    ov_dropped = 0; size_dropped = 0
+
+    def long_side_m(r):
+        """Longer side of a box on the ground, metres, at its centre row."""
+        n = int(r[0]); (u1, v1), (u2, v2), (u3, v3), (u4, v4) = warp(homs[n], [(r[1], r[2]), (r[3], r[2]), (r[1], r[4]), (r[3], r[4])])
+        gsd = g.gsd((v1 + v4) / 2)
+        return max(math.hypot(u2 - u1, v2 - v1), math.hypot(u3 - u1, v3 - v1)) * gsd if math.isfinite(gsd) else 0.0
+
     for r in app_rows:
         if int(r[0]) not in homs or r[5] < a.low: continue
+        if a.max_vehicle_m > 0 and int(r[6]) in VEHICLES and long_side_m(r) > a.max_vehicle_m: size_dropped += 1; continue  # a gabled garage roof as a 20 m truck
+        if a.max_person_m > 0 and int(r[6]) == 0 and long_side_m(r) > a.max_person_m: size_dropped += 1; continue
         if ov is not None:
             x1, y1, x2, y2 = (int(round(v)) for v in r[1:5])
             box = ov[max(0, y1):max(0, y2) + 1, max(0, x1):max(0, x2) + 1]
@@ -801,14 +811,18 @@ def cmd_track(a):
                 if a.birth_agreed and not agreed and not a.solo_hits: continue
                 tr = Track(next_id, d['xy'], d['cls'], d['conf'], t, born=d.get('t0')); tr.add_size(d['size'], d['cls'])
                 tr.birth_hits = a.birth_hits; tr.need = a.birth_hits if agreed or not a.birth_agreed else max(a.birth_hits, a.solo_hits)
+                if not agreed: tr.sure_hits = 0
                 if d.get('hits0'): tr.hits = max(tr.hits, min(3, d['hits0']))  # a persistent motion tracklet
                 d['tid'] = next_id; tracks.append(tr); alltracks[next_id] = tr; next_id += 1
             # Tentative tracks that missed die at once; confirmed ones coast up to `coast` s, then wait
             # `reacquire` s in the lost pool.
             keep = []
             for tr in tracks:
-                if (t - tr.last) <= (coast_of(tr) if tr.hits >= tr.need else 0.0): keep.append(tr)
-                elif tr.hits >= tr.need and a.reacquire > 0: tr.lost_at = t; lost.append(tr)
+                # With --sure-hits the hits that confirm a track are the agreed ones (a tentative track still
+                # dies on its first miss): a roof object both models call a car on one frame does not qualify.
+                ok = tr.hits >= tr.need and (not a.sure_hits or tr.sure_hits >= a.sure_hits)
+                if (t - tr.last) <= (coast_of(tr) if ok else 0.0): keep.append(tr)
+                elif ok and a.reacquire > 0: tr.lost_at = t; lost.append(tr)
             tracks = keep
             lost = [tr for tr in lost if t - tr.lost_at <= (a.long_reacquire if established(tr) else a.reacquire)]
             # Companions: a motion-only track that keeps a constant offset from a confirmed track and is
@@ -820,7 +834,7 @@ def cmd_track(a):
             # boxes. While a mover has been near a larger partner too briefly for the lockstep test it is
             # held back (pending), and a found companion stays one for `companion_hold` s, so a shadow
             # does not reach the link before or between the windows that recognise it.
-            conf_tr = [tr for tr in tracks if tr.hits >= tr.need]
+            conf_tr = [tr for tr in tracks if tr.hits >= tr.need and (not a.sure_hits or tr.sure_hits >= a.sure_hits)]
             for tr in conf_tr:
                 if tr.classes or a.companion_dist <= 0: tr.companion = False; continue
                 ts = tr.size()
@@ -861,7 +875,7 @@ def cmd_track(a):
                 if tr.parallax: tr.companion = True
         for tr in tracks:
             # Reported once confirmed (3 hits) and `min_age` s old: short spurious tracks never reach the link.
-            if tr.hits < tr.need or t - tr.last > coast_of(tr) or t - tr.born < a.min_age or tr.companion: continue
+            if tr.hits < tr.need or (a.sure_hits and tr.sure_hits < a.sure_hits) or t - tr.last > coast_of(tr) or t - tr.born < a.min_age or tr.companion: continue
             # With --sure-hold a track that only one model has seen for that long is held, not reported:
             # a roof vent the aerial model keeps calling a car at 0.5 while the COCO model never does.
             if a.sure_hold > 0 and t - tr.last_sure > max(a.sure_hold, coast_of(tr)): continue
@@ -908,8 +922,8 @@ def cmd_track(a):
         'walker_median_speed_mps': float(np.median(walkers)) if walkers else None, 'walkers': len(walkers),
         'moving_vehicle_median_speed_mps': float(np.median(movers)) if movers else None, 'moving_vehicles': len(movers),
         'mover_median_speed_mps': float(np.median(mover_cls)) if mover_cls else None,
-        'mti': mti_counts, 'overlay_dropped_appearance': ov_dropped, 'reacquired': reacquired,
-        'tracker': {k: getattr(a, k) for k in ('coast', 'reacquire', 'min_age', 'static_mode', 'gate_growth', 'gate_person', 'gate_vehicle', 'high', 'low', 'companion_dist', 'companion_size', 'companion_hold', 'companion_pending', 'parallax_k', 'parallax_cos', 'parallax_vcam', 'long_reacquire', 'established', 'stop_gate', 'static_coast', 'riders', 'birth_agreed', 'solo_hits', 'birth_hits', 'sure_hold')},
+        'mti': mti_counts, 'overlay_dropped_appearance': ov_dropped, 'size_dropped_appearance': size_dropped, 'reacquired': reacquired,
+        'tracker': {k: getattr(a, k) for k in ('coast', 'reacquire', 'min_age', 'static_mode', 'gate_growth', 'gate_person', 'gate_vehicle', 'high', 'low', 'companion_dist', 'companion_size', 'companion_hold', 'companion_pending', 'parallax_k', 'parallax_cos', 'parallax_vcam', 'long_reacquire', 'established', 'stop_gate', 'static_coast', 'riders', 'birth_agreed', 'solo_hits', 'birth_hits', 'sure_hold', 'max_vehicle_m', 'max_person_m', 'sure_hits')},
         'extent_m': [float(np.ptp(arr[:, 3])), float(np.ptp(arr[:, 5]))] if len(arr) else [0, 0],
         'duration_s': (f1 - f0 + 1) / fps, 'rows': len(arr),
         # Where the drone was in the log's frame (its nadir is the ground model's origin): TRACKS_CAMERA for the sim.
@@ -981,6 +995,9 @@ def main():
     t.add_argument('--birth-agreed', action='store_true', help='a track is born only from a box flagged agreed (consensus.py --keep); any box continues it')
     t.add_argument('--solo-hits', type=int, default=0, help='with --birth-agreed: a box one model alone saw starts a track that needs this many hits in a row (0: never)')
     t.add_argument('--birth-hits', type=int, default=3, help='detections in a row before a track is confirmed')
+    t.add_argument('--max-vehicle-m', type=float, default=0.0, help='m; a vehicle box longer than this on the ground is dropped (0: off)')
+    t.add_argument('--max-person-m', type=float, default=0.0, help='m; a person box longer than this on the ground is dropped (0: off)')
+    t.add_argument('--sure-hits', type=int, default=0, help='agreed detections before a track is confirmed (0: any --birth-hits detections)')
     t.add_argument('--sure-hold', type=float, default=0.0, help='s without an agreed box after which a track is tracked but not reported (0: off)')
     t.add_argument('--legacy-tracker', action='store_true', help='the original tracker: coast 1 s, fixed gates, no re-acquisition, no min age, no static mode')
     t.add_argument('--fuse-gate-person', type=float, default=1.5); t.add_argument('--fuse-gate-vehicle', type=float, default=4.0)
