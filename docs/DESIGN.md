@@ -74,6 +74,17 @@ Node and the browser, plain C ABI later for a flight controller). Detector and t
 platform code (CoreML on the phone, ONNX Runtime on a companion computer, the Python pipeline on
 footage).
 
+### 3.0 Precision before anything is sent
+
+A false object costs the same bytes as a real one and more trust. The edge therefore runs two
+independently trained detectors and tracks only what both put a box on (IoU >= 0.3, any class), or
+what one of them scores very high (>= 0.7); a track is born at 0.5 confidence, continued at 0.3,
+and reported only after 2 s. On the MEVA 1080p clip this removed every roof vent and roof segment
+the single VisDrone model had tracked as persons, cars and trucks (none scored above 0.52) and kept
+every parked car, the museum tank and the pedestrians (`tools/sidebyside/README.md`,
+`tools/footage/consensus.py`). Two nano models cost less than one medium model on a companion
+computer and fail independently. Motion-only detection (MTI) is not used for reported contacts.
+
 ### 3.1 Geolocation and the honest error radius
 
 Bottom-centre of the box (feet, tyres) -> ray in the camera frame via intrinsics -> rotate by the

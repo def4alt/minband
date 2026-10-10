@@ -1,5 +1,7 @@
 # Real drone footage
 
+`consensus.py`: keep only the detections two detectors agree on (precision for the side-by-side page; `tools/sidebyside/README.md`).
+
 MinBand on footage from a real drone instead of the phone: detect and track the objects the way a
 drone edge would, then feed the tracks to the same WASM edge, eval and live server as a phone log.
 

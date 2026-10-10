@@ -336,9 +336,14 @@ def line_fit(ys, inv_t):
 def fit_ground(dets, homs, f, cx, cy, a):
     """Pitch and height, and how they were obtained. See the module doc."""
     tries = [('people', {0}, 0.35, a.person_width, 20), ('vehicles', VEHICLES, 0.35, a.vehicle_width, 10)]
+    # The method with the most boxes fits (people first on a tie): a handful of person boxes must not
+    # outvote a thousand vehicles (a consensus-filtered run keeps few pedestrians).
+    samples = []
     for method, classes, cmin, obj_w, nmin in tries:
         ys, inv_t = width_samples(dets, homs, f, cy, classes, cmin, obj_w)
-        if len(ys) < nmin: continue
+        if len(ys) >= nmin: samples.append((len(ys), method, ys, inv_t, obj_w))
+    samples.sort(key=lambda x: -x[0])
+    for _, method, ys, inv_t, obj_w in samples:
         pitch, h = line_fit(ys, inv_t)
         fixed = False
         if not (math.radians(10) <= pitch <= math.radians(90)) or np.ptp(ys) < 0.05:

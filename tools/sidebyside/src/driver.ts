@@ -25,10 +25,12 @@ const { WasmEdge, WasmReceiver, describe_frame } = core;
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../../..');
 const PORT = Number(process.env.PORT || 8090);
-const RUN_DIR = process.env.RUN_DIR || path.join(repo, 'runs/footage/meva-2018-03-13.16-00-14-bf');
-const VIDEO = process.env.VIDEO || path.join(repo, 'runs/sidebyside/meva-720p.mp4');
+// Default clip: the MEVA 1080p pass at 24-28 m (cars ~190 px) with the two-detector consensus tracks
+// (tools/footage/consensus.py); RUN_DIR/VIDEO switch to any other run.
+const RUN_DIR = process.env.RUN_DIR || path.join(repo, 'runs/footage/meva-uav-0307-1720/cons2');
+const VIDEO = process.env.VIDEO || path.join(repo, 'runs/sidebyside/meva1080-720p.mp4');
 const WEB = path.join(here, '../web');
-const TICK_HZ = 120, STEP_S = 0.1, DURATION_S = 90.0;
+const TICK_HZ = 120, STEP_S = 0.1;
 const UDP_IP_OVERHEAD = 28;
 // Muscatatuck Urban Training Center, Indiana (the MEVA site).
 const ORIGIN_LAT = 39.0466, ORIGIN_LON = -85.5207;
@@ -48,6 +50,7 @@ for (const line of fs.readFileSync(path.join(RUN_DIR, 'tracks.csv'), 'utf8').spl
   arr.push(tr);
 }
 const ticks = [...byTick.keys()].sort((a, b) => a - b);
+const DURATION_S = Number(process.env.DURATION_S) || Math.ceil((ticks[ticks.length - 1] + 60) / TICK_HZ);
 console.log(`tracks: ${ticks.length} ticks, ${[...byTick.values()].reduce((s, v) => s + v.length, 0)} rows, ticks ${ticks[0]}..${ticks[ticks.length - 1]}`);
 function tracksAt(t: number): Track[] {
   const tick = Math.round(t * TICK_HZ);
@@ -196,7 +199,7 @@ class Replay {
     const timing = JSON.parse(this.edge.timing_json());
     const of = this.rx.of();
     return {
-      t: Math.round(t * 1000) / 1000, clipT: Math.round(t * 1000) / 1000, playing: this.playing, rate: this.rate,
+      t: Math.round(t * 1000) / 1000, clipT: Math.round(t * 1000) / 1000, playing: this.playing, rate: this.rate, duration: DURATION_S,
       edge: { tracks: edgeTracks, contacts: edgeContacts,
         ego: { e: CAM_E, n: CAM_N, altAgl: Math.round(CAM_ALT), heading: 0, speed: 0, nav: 'loiter', gnss: 'fix', link: up ? 'hears' : 'silent', battery: ego.battery, fpE: CAM_E, fpN: FP_N, fpRadius: FP_R, video: ego.video } },
       wire: { frames, budgetBps: P.budgetBps, profile: this.profile, up, bytesPerS: r1(bytesPerS), wireBytesPerS: r1(wirePerS), dropped: this.dropped, regime: timing.regime, f: timing.f,

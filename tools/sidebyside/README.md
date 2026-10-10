@@ -37,6 +37,34 @@ Visual check of the projection: `npm run check 2400 && tools/footage/.venv/bin/p
 scripts/draw-check.py` paints the tracks of that tick on the matching 720p frame ->
 `runs/sidebyside/check-overlay.jpg`.
 
+## Precision: the consensus tracks
+
+The default run is `runs/footage/meva-uav-0307-1720/cons2`: the MEVA 1080p pass at 24-28 m (a car
+is ~190 px long), tracked from the detections **two independently trained detectors agree on**
+(VisDrone `aerial-guardian` and COCO `yolo11n`, IoU >= 0.3, any class), or that the VisDrone model
+alone scores >= 0.7, with a 0.5 birth threshold and a 2 s minimum age. On this clip that removed
+every roof vent and roof segment the single detector tracked as "person", "car" or "truck" (none
+of those scored above 0.52) and kept the parked cars, the museum tank and six real pedestrians:
+
+```
+cd tools/footage
+.venv/bin/python -I track.py detect clips/battlefield/meva-uav-0307-1720.mp4 --model models/yolo11n.onnx --tag coco --out ../../runs/footage/meva-uav-0307-1720
+.venv/bin/python -I consensus.py ../../runs/footage/meva-uav-0307-1720 --a det --b coco --out cons2 --iou 0.3 --solo 0.7 --b-conf 0.15
+.venv/bin/python -I track.py track ../../runs/footage/meva-uav-0307-1720 --sources cons2 --high 0.5 --low 0.3 --min-age 2.0 --out ../../runs/footage/meva-uav-0307-1720/cons2
+cp ../../runs/footage/meva-uav-0307-1720/detect.json ../../runs/footage/meva-uav-0307-1720/cons2/
+ffmpeg -i clips/battlefield/meva-uav-0307-1720.mp4 -vf scale=1280:-2 -c:v libx264 -preset veryfast -crf 21 -an -movflags +faststart ../../runs/sidebyside/meva1080-720p.mp4
+```
+
+| run | tracks | < 3 s | median track | entities/frame | false objects in the audit frames |
+|---|---:|---:|---:|---:|---|
+| frozen pipeline (det + MTI) | 77 | 17 | 8.2 s | 22.6 | roof vents as persons, roof segments as trucks, roof objects as cars |
+| det only, 0.5/0.3, 2 s | 46 | 7 | 11.0 s | 17.6 | fewer, still vents at 0.4-0.5 |
+| consensus `cons2` | 35 | 9 | 5.2 s | 10.7 | none seen (frames 150, 600, 900; `runs/sidebyside/audit/`) |
+
+The price is recall at the frame edge and on the tank when only one model sees it. The ground fit
+now picks the method with the most boxes (`track.py fit_ground`), because a consensus run keeps few
+pedestrians and 69 person boxes must not outvote 1276 vehicles.
+
 ## What is real and what is not
 
 Real: the clip, the detections and tracks (`tools/footage` on the same clip), the contact
@@ -45,8 +73,9 @@ schedule (`scheduler.rs`, `edge.rs`), the receiver's merge, dead reckoning, live
 events (`receiver.rs`), the digests and focus commands on the uplink. The link is shaped in the
 driver with the hackathon's profiles (rate as the edge's budget, one-way delay, random loss,
 `contested` adds 1-5 s blackouts, `jam` cuts both ways). Not real: the drone's own telemetry (the
-clip ships none): camera height and pitch are the tracker's fit on this footage, the position is
-the camera nadir, heading north, loiter, GNSS fix, battery draining, origin lat/lon = Muscatatuck.
+clip ships none): camera height and pitch are the tracker's fit on this footage (28 m, 72 deg on the
+1080p clip), the position is the camera nadir, heading north, loiter, GNSS fix, battery draining,
+origin lat/lon = Muscatatuck.
 
 ## Layout
 

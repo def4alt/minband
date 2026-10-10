@@ -33,6 +33,7 @@ function onMessage(m) {
   if (state.msg && m.t < state.prevT - 0.5) resetLogs();
   state.prevT = m.t;
   state.msg = m;
+  if (m.duration && Number($('seek').max) !== m.duration) $('seek').max = m.duration;
   // play/pause + rate: from the (optional) top-level fields, else inferred from t
   state.inferT.push(m.t); if (state.inferT.length > 4) state.inferT.shift();
   const inferred = state.inferT.length >= 3 ? state.inferT[state.inferT.length - 1] > state.inferT[0] : true;
