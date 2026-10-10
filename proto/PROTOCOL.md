@@ -145,7 +145,8 @@ label groups honestly ("grouped at 30 m") and shows the commander why the pictur
 ```
 u32  tick           the video frame's tick (not the frame header's)
 i32  x, y, z        cm, east / north / up from the session origin (camera centre)
-i16  yaw, pitch, roll   cdeg ; yaw = true bearing of the optical axis, pitch negative looking
+i16  yaw, pitch, roll   cdeg, each in -180..180 (a bearing of 350 deg is sent as -10) ;
+                    yaw = true bearing of the optical axis, pitch negative looking
                     down (-90 = nadir), roll about the optical axis ; right-handed, applied
                     yaw -> pitch -> roll to a camera that starts looking north and level
 ```
@@ -189,7 +190,7 @@ u16  since          secs ; when the current motion state began
 u8   age            seconds since the last look at it, before the frame tick
 [u8  course, u8 speed]   flags.bit7 ; course over ground and speed of the centroid
 [u16 parent]             ext.bit0
-[i16 dz]                 ext.bit1
+[i16 dz]                 ext.bit1 ; set when the edge knows the height (a reconstruction's terrain, a rangefinder)
 [u8  az, u8 el]          ext.bit6 ; the observation ray from the camera at (tick - age) to the
                          contact's ground point, true bearing and depression. With the camera
                          position from `Pose`/`Ego` at that time a server can intersect this ray

@@ -28,6 +28,10 @@ pub struct Track {
     /// Normalised image box (centre u, v, width, height in 0..1), when the edge has a camera.
     #[serde(default)]
     pub bbox: Option<[f32; 4]>,
+    /// Height above the session origin (m), when the edge knows it: a 3D reconstruction placed the
+    /// object on its terrain, or a rangefinder measured it. None = on the flat ground at height 0.
+    #[serde(default)]
+    pub u: Option<f32>,
 }
 fn default_conf() -> u8 { 128 }
 
@@ -113,6 +117,8 @@ pub struct TrackState {
     pub conf: u8,
     pub ce: f32,
     pub bbox: Option<[f32; 4]>,
+    /// Height above the origin (m), when the tracker gave one (`Track::u`).
+    pub u: Option<f32>,
     pub first_seen: u32,
     pub last_seen: u32,
     pub looks: u32,
@@ -176,6 +182,8 @@ pub struct Contact {
     pub rev: u8,
     pub members: Vec<u32>,
     pub e: f32, pub n: f32,
+    /// Height above the origin (m): the members' mean when every member has one, else None.
+    pub u: Option<f32>,
     pub ve: f32, pub vn: f32,
     pub course: f32, pub speed: f32,
     pub radius: f32,
@@ -210,7 +218,7 @@ pub struct Contact {
 }
 impl Contact {
     fn new(id: u16, now: u32) -> Self {
-        Contact { id, rev: 0, members: Vec::new(), e: 0.0, n: 0.0, ve: 0.0, vn: 0.0, course: 0.0, speed: 0.0, radius: 0.0, ce: 0.0, mix: [0; 4], conf: 0,
+        Contact { id, rev: 0, members: Vec::new(), e: 0.0, n: 0.0, u: None, ve: 0.0, vn: 0.0, course: 0.0, speed: 0.0, radius: 0.0, ce: 0.0, mix: [0; 4], conf: 0,
             first_seen: now, since: now, last_seen: now, motion: MOTION_UNKNOWN, confirmed: false, lost: false, departed: false, departed_at: None,
             focused: false, split: false, pinned: false, out_of_view: false, parent: None, bbox: None, absorbed: false, sent: None, sent_pred: None, dirty: true, rev_tick: now }
     }
@@ -307,10 +315,10 @@ impl ContactManager {
         for t in tracks {
             let ce = t.ce.unwrap_or(self.cfg.default_ce);
             let st = self.tracks.entry(t.id).or_insert_with(|| TrackState {
-                id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce, bbox: t.bbox, first_seen: now, last_seen: now, looks: 0,
+                id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce, bbox: t.bbox, u: t.u, first_seen: now, last_seen: now, looks: 0,
                 motion: MOTION_UNKNOWN, since: now, above_since: None, below_since: None, calm_since: None, outside_since: None, lost: false, exited: false, contact: None,
             });
-            st.exited = false; st.class = t.class; st.e = t.e; st.n = t.n; st.ve = t.ve; st.vn = t.vn; st.conf = t.conf; st.ce = ce; st.bbox = t.bbox;
+            st.exited = false; st.class = t.class; st.e = t.e; st.n = t.n; st.ve = t.ve; st.vn = t.vn; st.conf = t.conf; st.ce = ce; st.bbox = t.bbox; st.u = t.u;
             st.looks += 1;
             if st.lost { st.lost = false; st.since = now; st.above_since = None; st.below_since = None; st.calm_since = None; }
             st.last_seen = now;
@@ -499,6 +507,7 @@ impl ContactManager {
             let k = members.len() as f32;
             c.e = members.iter().map(|t| t.e).sum::<f32>() / k;
             c.n = members.iter().map(|t| t.n).sum::<f32>() / k;
+            c.u = if members.iter().all(|t| t.u.is_some()) { Some(members.iter().map(|t| t.u.unwrap()).sum::<f32>() / k) } else { None };
             c.radius = members.iter().map(|t| ((t.e - c.e).powi(2) + (t.n - c.n).powi(2)).sqrt()).fold(0.0, f32::max);
             c.ce = members.iter().map(|t| t.ce).fold(0.0, f32::max);
             c.conf = (members.iter().map(|t| t.conf as u32).sum::<u32>() / members.len() as u32) as u8;
@@ -665,7 +674,7 @@ mod tests {
     use super::*;
     use crate::classes::{CAR, PERSON};
 
-    fn tr(id: u32, class: u8, e: f32, n: f32, ve: f32, vn: f32) -> Track { Track { id, class, e, n, ve, vn, conf: 200, ce: Some(5.0), bbox: None } }
+    fn tr(id: u32, class: u8, e: f32, n: f32, ve: f32, vn: f32) -> Track { Track { id, class, e, n, ve, vn, conf: 200, ce: Some(5.0), bbox: None, u: None } }
 
     fn run(cm: &mut ContactManager, scene: impl Fn(u32) -> Vec<Track>, from: u32, to: u32, step: u32) -> Vec<(u32, Vec<u16>)> {
         let mut out = Vec::new();
