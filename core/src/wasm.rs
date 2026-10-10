@@ -35,6 +35,10 @@ impl WasmEdge {
     pub fn pose(&mut self, tick: u32, e: f32, n: f32, up: f32, yaw: f32, pitch: f32, roll: f32) { self.inner.pose(tick, e, n, up, yaw, pitch, roll) }
     pub fn on_uplink(&mut self, bytes: &[u8], now: u32) -> Result<(), JsValue> { self.inner.on_uplink(bytes, now).map_err(js) }
     pub fn set_budget(&mut self, bps: u32) { self.inner.set_budget(bps) }
+    /// Paced mode (`paced: true` in the config): the radio drained `bytes` since the last call.
+    pub fn link_credit(&mut self, bytes: u32, now: u32) { self.inner.link_credit(bytes, now) }
+    /// Pins the detail level (the controller keeps measuring but no longer changes it).
+    pub fn set_level(&mut self, level: u8, now: u32) { self.inner.load.fixed = true; self.inner.set_level(level, now) }
     pub fn snapshot_json(&self, now: u32) -> String { serde_json::to_string(&self.inner.snapshot(now)).unwrap_or_default() }
     pub fn stats_json(&self) -> String { serde_json::to_string(&self.inner.stats).unwrap_or_default() }
     pub fn timing_json(&self) -> String { serde_json::to_string(self.inner.timing()).unwrap_or_default() }

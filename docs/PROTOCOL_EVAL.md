@@ -21,13 +21,15 @@ node tools/sidebyside/scripts/eval.mjs --clip busy --profile lora --focus auto -
 | flag | default | meaning |
 |---|---|---|
 | `--clip cons2\|busy\|all\|<dir>` | cons2 | `cons2` = `runs/footage/meva-uav-0307-1720/cons2` (35 tracks, 8-35 s, about 2 live contacts); `busy` = `runs/footage/meva-2018-03-13.16-00-14-bf` (206 tracks, 80 entities per frame, about 17 live contacts after grouping) |
-| `--profile a,b\|all` | lora | the driver's profiles: clean (unlimited), hf 9600, lora 2000 / 10 % / 0.3 s, telemetry 600 / 5 % / 0.05 s, contested (lora + 1-5 s bursts every 3-8 s), blackout |
+| `--profile a,b\|all` | lora | the driver's profiles: clean (unlimited), hf 9600, lora 2000 / 10 % / 0.3 s, telemetry 600 / 5 % / 0.05 s, contested (lora + 1-5 s bursts every 3-8 s), blackout, dynamic (11) |
 | `--blackout s:len[,s:len]` | none | scripted blackouts |
 | `--budget`, `--loss`, `--delay`, `--uplink-loss`, `--no-uplink` | profile | overrides |
 | `--duration` | clip end + 75 s | long enough for the 60 s depart timer and the tombstone ladder |
 | `--seed` | 1 | loss and nonce |
 | `--focus auto\|<id>` | off | runs the same replay twice, once with one contact focused (track mode, renewed every 5 s), and reports the delta |
 | `--dev-factor k` | 1 | experiment knob: the edge's position change threshold becomes `k x max(ce, 2 pos_res)` |
+| `--level n` | adaptive | pin the detail level (PROTOCOL.md 6.4); 1 = grouping and thresholds as before adaptation |
+| `--ladder '<json>'`, `--coarsen-s s` | built in, 2 | replace the detail ladder; the backlog that coarsens |
 | `--debug` | | per-state honesty breakdown, revision reasons, unmatched transitions |
 | `--json path` | | every number, plus a 1 Hz series of completeness |
 
@@ -49,6 +51,8 @@ receiver's snapshot at the same edge tick (dead-reckoned, with `ce_shown` and li
 | **k/n** | mean of `known / Ego.n_contacts` as the receiver would display it |
 | **bytes** | B/s emitted by the edge by record type (TLV included), frame headers, carrier overhead (28 B UDP/IP per frame); delivered B/s separately; uplink B/s |
 | **focus cost** | B/s with one focused contact minus without, and that contact's own comp@rev, error and honesty |
+| **level, changes** | the edge's detail level over the replay (time mean, range), how many times it changed, and flaps (a change undone within 30 s) |
+| **trk shown, trk err** | every 0.5 s, for each footage track an edge contact holds: whether the receiver shows that contact, and the distance from the track to the receiver's centroid (median / p90). The cost of grouping, next to completeness |
 
 ## 3. Before and after
 
@@ -492,3 +496,153 @@ them reappeared inside the circle: reappearances there are mostly group centroid
 membership while lost, which the drift of a tracked contact does not cover. Too few samples to fit
 a separate lost-contact drift; the open item for a longer clip.
 
+## 11. Adaptive detail
+
+The edge picks its detail level (PROTOCOL.md 6.4) from the backlog it measures: tighter groups,
+smaller thresholds and every contact when the link keeps up; wider groups, bigger thresholds and
+only contacts seen for a while when it does not. Focused contacts are exempt.
+
+```
+node tools/sidebyside/scripts/eval.mjs --clip busy,best2 --profile hf,lora,telemetry,dynamic
+node tools/sidebyside/scripts/tune-detail.mjs --clips busy,best2 --profiles lora,telemetry --levels 0,1,2,3,4,auto [--seeds 3] [--coarsen-s 1] [--set 4.pos_floor_m=30]
+node tools/sidebyside/scripts/probe-revs.mjs --clip busy --profile hf --level 4
+```
+
+`tune-detail.mjs` runs each level pinned and the adaptive edge; `probe-revs.mjs` lists which
+contacts revise at a pinned level, and why. The `dynamic` profile steps the link through 9.6k,
+2k, 600, 2k and 9.6k bit/s over five equal parts of the replay. The edge is told 9600 and is
+never told otherwise: it runs paced, taking what the radio drained (`link_credit`) as its token
+bucket, as it would behind a modem's flow control.
+
+**Grouping alone does not buy much.** The handoff's first ladder changed only the link distances,
+the position factor and a report-age gate. Pinned on the busy lot at 2 kbit/s, level 4 (120 m
+groups) cut revisions only from 1132 to 939 and left the picture 35 % up to date, while the
+per-track error grew from 5.7 to 35 m. Two causes, from `probe-revs.mjs`:
+
+- a group's centroid jumps whenever a member joins or leaves, and a 120 m group gains and loses
+  members all the time (count changes and position revisions of the big groups);
+- moving singles stay singles at any distance (cars driving through the lot do not share a course),
+  and each revises every 2-3 s on the 30° course, 25 % speed and `ce`-sized position bands.
+
+So each coarse level is also a spatial resolution: a position floor of a third of its link
+distance (10, 20, 40 m), at least a share of the group's own radius, a count tolerance (10 %, 20 %,
+34 %), and course and speed bands scaled by `dev_factor`. With that, level 4 on the same link
+makes 315 revisions and is 82 % up to date. The declared `ce` of a coarse contact is at least its
+threshold, so the receiver's circle starts where the edge's tolerance does: honesty at levels 3-4
+went from 66-86 % (thresholds raised, `ce` not) to 94-100 %.
+
+The tuning below was done before the calibrated circle of section 10 landed (the edge revising
+against the receiver's exact prediction, never for position once lost); the adaptive and
+acceptance tables further down are measured after it, on the merged code.
+
+**Pinned levels** (seed 1, before section 10; `trk err` = footage track to the receiver's centroid):
+
+| clip | link | level | up to date | known | k/n | honest | trk err med / p90 | revisions | contacts |
+|---|---|---|---|---|---|---|---|---|---|
+| busy | 2 kbit/s | 0 | 33.1 % | 75.0 % | 91.5 % | 92.6 % | 3.0 / 9.3 m | 1113 | 20.7 |
+| busy | 2 kbit/s | 1 | 30.3 % | 76.1 % | 89.7 % | 91.7 % | 5.7 / 16.0 m | 1132 | 15.5 |
+| busy | 2 kbit/s | 2 | 45.7 % | 81.7 % | 95.0 % | 98.0 % | 14.5 / 57.7 m | 886 | 7.3 |
+| busy | 2 kbit/s | 3 | 64.4 % | 82.8 % | 91.9 % | 99.8 % | 32.1 / 62.3 m | 515 | 4.9 |
+| busy | 2 kbit/s | 4 | 82.2 % | 92.8 % | 96.3 % | 100.0 % | 34.2 / 61.1 m | 315 | 3.7 |
+| busy | 600 bit/s | 1 | 7.5 % | 38.4 % | 63.3 % | 84.0 % | 7.8 / 19.5 m | 178 | 15.5 |
+| busy | 600 bit/s | 3 | 21.3 % | 49.0 % | 70.5 % | 98.1 % | 35.2 / 63.7 m | 164 | 4.9 |
+| busy | 600 bit/s | 4 | 46.3 % | 68.2 % | 83.6 % | 99.8 % | 35.8 / 62.5 m | 162 | 3.7 |
+| best2 | 2 kbit/s | 0 | 86.5 % | 96.3 % | 96.4 % | 99.8 % | 4.2 / 7.2 m | 179 | 1.4 |
+| best2 | 2 kbit/s | 1 | 85.9 % | 96.6 % | 96.9 % | 99.3 % | 4.7 / 8.2 m | 104 | 1.2 |
+| best2 | 2 kbit/s | 2 | 70.0 % | 77.1 % | 86.8 % | 99.5 % | 21.3 / 31.5 m | 43 | 0.7 |
+| best2 | 600 bit/s | 0 | 67.2 % | 86.2 % | 92.4 % | 99.8 % | 4.3 / 8.1 m | 109 | 1.4 |
+| best2 | 600 bit/s | 1 | 75.3 % | 92.4 % | 95.0 % | 98.0 % | 5.0 / 9.4 m | 96 | 1.2 |
+| best2 | 600 bit/s | 2 | 69.3 % | 77.9 % | 76.7 % | 95.2 % | 20.8 / 33.3 m | 59 | 0.7 |
+
+The cost is in the last columns: once the busy lot groups at 30 m and up, the receiver's centroid
+is 15-35 m from a typical object. Levels 3 and 4 cost about the same per track (the 60 m groups
+already span the lot), so between them level 4 is nearly free. On the quiet lot every coarse level
+is worse; level 0 helps on a fat link and hurts on a thin one, so the controller only refines to
+0 at 8 kbit/s and up. Level 0's factor is 0.75, not the 0.5 first proposed: at 0.5 the quiet lot
+on 9.6 kbit/s fell from 83.3 to 80.9 % up to date; at 0.75 it is 84.0 % with a better per-track
+error (4.0 / 7.3 m against 4.8 / 8.2 m at level 1).
+
+**The adaptive edge** (three loss seeds, with section 10; "today" is level 1 pinned):
+
+| clip | link | up to date: today / adaptive | k/n | trk err med / p90 | level (range) | changes |
+|---|---|---|---|---|---|---|
+| busy | 9.6 kbit/s | 70.3 / 70.1 % | 98.7 / 98.7 % | 4.7 / 15.2 m | 0.5 (0-1) | 1 |
+| busy | 2 kbit/s | 46.1 / 63.7 % | 97.2 / 97.7 % | 22.2 / 56.9 m | 2.1 (1-2) | 2 |
+| busy | 600 bit/s | 7.2 / 46.7 % | 60.6 / 92.0 % | 32.1 / 65.6 m | 3.7 (1-4) | 3 |
+| busy | dynamic | 40.6 / 52.2 % | 97.8 / 96.6 % | 8.3 / 49.3 m | 2.6 (1-4) | 6 |
+| best2 | 9.6 kbit/s | 83.7 / 83.7 % | 96.6 / 97.0 % | 4.2 / 7.4 m | 0.2 (0-1) | 1 |
+| best2 | 2 kbit/s | 85.8 / 85.8 % | 96.2 / 96.2 % | 4.7 / 8.2 m | 1.0 | 0 |
+| best2 | 600 bit/s | 72.4 / 72.4 % | 95.8 / 95.8 % | 5.1 / 9.6 m | 1.0 | 0 |
+| best2 | dynamic | 88.0 / 88.5 % | 97.1 / 97.9 % | 4.0 / 7.3 m | 0.2 (0-1) | 1 |
+
+Honesty is 98-99 % in every cell. Section 10 already took a third off the busy lot's revisions,
+so at 2 kbit/s the controller now stops at level 2 (before it: level 3 and about 62 %), and the
+quiet lot at 600 bit/s no longer coarsens at all. On the dynamic profile (48 s per step) the busy
+lot goes to 2 at 42 s (it saturates even 9.6 kbit/s), to 3 and 4 within 25 s of the drop to 2k,
+holds 4 through 600 bit/s, and comes back down once the footage ends (95 s) and the scene empties:
+6 changes in 238 s, no flaps. Operator focus (`focus.mjs`, five seeds, against the numbers before
+both changes): "others up to date" around the walker goes from 26 to 59 % at 2 kbit/s and from 10
+to 49 % at 600 bit/s with nobody selected (24 -> 60 % and 6 -> 18 % with one object drilled to); the selected object keeps its update rate and median
+error everywhere, its p90 error rises in a few cells (the walker at 600 bit/s 0.9 -> 1.4 m, the
+moving car on the contested link 6.6 -> 8.5 m; in the whole-group flow at 600 bit/s 15.8 -> 24.3 m).
+
+Against the proposed acceptance:
+
+| proposal | result |
+|---|---|
+| busy, 2 kbit/s: up to date 26 % -> >= 70 %, k/n not below today | 63.7 % (today, with section 10: 46.1 %); k/n 97.7 % (97.2 %). Not met at the default `coarsen_s` 2 s; 1 s reached 71 % before section 10 |
+| busy, 600 bit/s: 10 % -> >= 60 % | 46.7 %. Not met: see below |
+| best2 on hf no worse in up to date or per-track error, level 0 or 1 | 83.7 % vs 83.7 %, 4.2 / 7.4 m vs 4.8 / 8.2 m, levels 0-1 |
+| dynamic: <= 6 changes a minute, no flapping | 1.5 a minute, no flap |
+| focus.mjs selected object does not regress; core tests pass | update rate and median error unchanged; small p90 rises in a few cells (above); 42 tests pass |
+
+**Why 600 bit/s stops near 45 %.** At level 4 the busy lot still needs about 2.6 revisions a
+second (431 in 165 s on an unconstrained link), mostly cars driving through and contacts going
+lost; 600 bit/s carries about 1.6 records a second, repeats and `Ego` included. A 40 m floor and
+three times the course band are already in; a 60 m floor with six times the bands bought four more
+points. The remaining lever is
+the 28 B of carrier overhead on every 75 B frame at that rate, not the ladder.
+
+**The threshold is a trade** (before section 10). `coarsen_s` 1 s reaches the 70 % on the busy lot at 2 kbit/s, but
+the quiet lot at 600 bit/s then coarsens on a few seconds of confirmations at the start and its
+per-track error goes from 5.0 / 9.4 m to 19.3 / 32.2 m (k/n 86 %). At 2 s it stays at 5.5 / 16.2 m.
+The default keeps the quiet picture precise; `EdgeConfig::coarsen_s` (`--coarsen-s`) moves it.
+
+**Choices made against the first proposal, from the data:**
+
+- The backlog counts ladder repeats as well as first copies (floor repeats, focused records and
+  merge tombstones excluded), as the handoff's "records that are due" says. First copies alone
+  said the busy lot at level 3 kept up (0.2-0.8 s) while its repeats starved under 10 % loss; at
+  `coarsen_s` 1 s the busy lot at 2 kbit/s was 61.8 % up to date with first copies only (seed 1)
+  and 71.2 % with repeats (three seeds).
+- Coarsening waits until the backlog stops draining: in the unit-test crowd (40 walkers, 600
+  bit/s) the queue the old level left after 2 -> 3 took longer than the hold to drain, and asked
+  for 3 -> 4.
+- Refining is predicted, not probed. Without the prediction the same crowd went 3 -> 2 -> 3 within
+  10 s: at level 3 the one big group hardly revised, so measured demand said anything fits. The
+  prediction counts the groups the finer level would make, the births they cost, and the demand
+  per contact last seen at that level; a refine undone within 30 s still doubles the wait.
+- Start at level 1 on thin links, not 2: the quiet lot at 600 bit/s is best at level 1 (75 %
+  against 69 % at 2), and the busy lot coarsens within 5 s anyway.
+- A split-focused group's members link only among themselves. Without that, at 30 m the selected
+  moving car was folded into a 41-member parked group and its child departed (as an individual
+  91 % -> 45 % of the time at 2 kbit/s; 93 % with the rule).
+
+Held-out footage, run once after tuning (FOOTAGE_FINDINGS.md split): convoy2 and amphib are quiet
+(one live contact) and the adaptive edge stays at level 1 with identical numbers on every link.
+The thermal road (dev, not used for tuning) at 600 bit/s: 9.9 -> 38.4 % up to date, k/n 65.6 ->
+87.8 %, per-track error 11.0 / 32.4 -> 13.0 / 43.1 m.
+
+Open:
+
+- **Merge tombstones lag.** They ride at the floor class so a coarsening does not ask for the
+  next; until one arrives the receiver holds the absorbed contact beside its new group, and the
+  page reads "10 of 7 known" for a while. The receiver could drop a contact whose centroid lies
+  inside a newer group from the same edge, or the group record could name what it absorbed.
+- **The group centre at levels 3-4** is a poor position (15-35 m from a typical member). The
+  receiver draws the radius; the CoT export should carry `max(ce, radius)` as its ce.
+- **Lost frames are invisible to the backlog.** With an uplink, digest delivery would be a second
+  signal; on simplex the blind spot stays. Without flow control (`paced` off) a link slower than
+  the budget looks like loss, not load, and the level does not move.
+- **Tuning:** the ladder was tuned on the busy lot and the quiet lot only; the held-out clips are
+  too quiet to exercise it.

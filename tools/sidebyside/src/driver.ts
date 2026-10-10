@@ -207,7 +207,7 @@ class Replay {
     const rxEgo = rawEgo ? {
       e: rawEgo.rec.dx, n: rawEgo.rec.dy, altAgl: rawEgo.rec.alt_agl, heading: Math.round(rawEgo.rec.heading * 360 / 256), speed: rawEgo.rec.speed / 4,
       nav: NAV[rawEgo.rec.nav & 7], gnss: GNSS[(rawEgo.rec.nav >> 3) & 3], link: LINK[(rawEgo.rec.nav >> 5) & 3], video: !!(rawEgo.rec.nav & 0x80), battery: rawEgo.rec.battery,
-      fpE: rawEgo.rec.fp_dx, fpN: rawEgo.rec.fp_dy, fpRadius: m8(rawEgo.rec.fp_radius), nContacts: rawEgo.rec.n_contacts, nMoving: rawEgo.rec.n_moving,
+      fpE: rawEgo.rec.fp_dx, fpN: rawEgo.rec.fp_dy, fpRadius: m8(rawEgo.rec.fp_radius), nContacts: rawEgo.rec.n_contacts, nMoving: rawEgo.rec.n_moving, groupM: m8(rawEgo.rec.group_m),
       ageS: r1((tick - rawEgo.tick) / TICK_HZ) } : null;
     const events = JSON.parse(this.rx.events_json()).map((e: any) => ({
       t: r1(e.tick / TICK_HZ), kind: e.kind, id: e.id, text: e.text + (Math.abs(e.heard - e.tick) > 2 * TICK_HZ ? ` (heard at ${r1(e.heard / TICK_HZ)} s)` : '') }));
@@ -220,7 +220,8 @@ class Replay {
       edge: { tracks: edgeTracks, contacts: edgeContacts,
         ego: { e: CAM_E, n: CAM_N, altAgl: Math.round(CAM_ALT), heading: 0, speed: 0, nav: 'loiter', gnss: 'fix', link: up ? 'hears' : 'silent', battery: ego.battery, fpE: CAM_E, fpN: FP_N, fpRadius: FP_R, video: ego.video } },
       wire: { frames, budgetBps: P.budgetBps, profile: this.profile, up, bytesPerS: r1(bytesPerS), wireBytesPerS: r1(wirePerS), dropped: this.dropped, regime: timing.regime, f: timing.f,
-        floorS: r1(timing.floor / TICK_HZ), stats: JSON.parse(this.edge.stats_json()) },
+        floorS: r1(timing.floor / TICK_HZ), stats: JSON.parse(this.edge.stats_json()),
+        detail: { level: es.detail.level, linkM: r1(es.detail.link_m), backlogS: r1(es.detail.load.smooth_s), changes: es.detail.load.changes } },
       rx: { contacts: rxContacts, ego: rxEgo, events, known: this.rx.known(), of: of < 0 ? null : of, bytesTotal: this.bytesTotal, unheard: this.rx.device_unheard(tick), stats: JSON.parse(this.rx.stats_json()) },
     };
   }

@@ -139,6 +139,15 @@ Single-linkage clustering on ground positions every tick:
 Under `Focus(split)` the edge also emits the members as child records (`ext.bit5`, `parent`),
 on their own ladders; without focus a 12-vehicle convoy is one 27-byte record.
 
+The distances and thresholds above are detail level 1 of five (`proto/PROTOCOL.md` §6.4). The edge
+picks the level from the backlog it measures, in seconds of link time, not from the budget it was
+told: on a busy scene and a thin link it groups at 30, 60 or 120 m, revises only past a floor of a
+third of that, tolerates small count changes, and holds back contacts seen for less than 3-10 s;
+on a fat, quiet link it groups at 8 m. Focused contacts are exempt. Grouping alone buys little:
+a big group's centre moves whenever a member joins or leaves, and moving singles never group, so
+each coarse level is a spatial resolution as much as a link distance (`docs/PROTOCOL_EVAL.md`
+§11).
+
 ### 3.4 Egomotion
 
 `Ego` carries own position, altitude, heading, speed, climb, nav mode, GNSS state, link state,

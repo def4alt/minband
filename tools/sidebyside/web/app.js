@@ -51,8 +51,10 @@ function onMessage(m) {
   updateControls(m);
   drawSpark();
   const w = m.wire || {}, r = m.rx || {};
-  readout.innerHTML = `budget <b>${w.budgetBps ?? '?'} bit/s</b> · <b>${(w.bytesPerS ?? 0).toFixed(1)} B/s</b> · <b>${r.known ?? 0}</b> of <b>${r.of ?? 0}</b> known · <b>${w.profile ?? '?'}</b>${w.up === false ? ' <span class="lost">LINK DOWN</span>' : ''} · ${r.bytesTotal ?? 0} B total · ${w.dropped ?? 0} dropped`;
-  hud.textContent = `t=${m.t.toFixed(1)} s · edge ${m.edge?.tracks?.length ?? 0} tracks / ${m.edge?.contacts?.length ?? 0} contacts · rx ${r.contacts?.length ?? 0} contacts${r.ego ? ` · ego age ${r.ego.ageS.toFixed(1)} s` : ' · no ego yet'}`;
+  const d = w.detail;
+  readout.innerHTML = `budget <b>${w.budgetBps ?? '?'} bit/s</b> · <b>${(w.bytesPerS ?? 0).toFixed(1)} B/s</b> · <b>${r.known ?? 0}</b> of <b>${r.of ?? 0}</b> known · <b>${w.profile ?? '?'}</b>${w.up === false ? ' <span class="lost">LINK DOWN</span>' : ''} · ${r.bytesTotal ?? 0} B total · ${w.dropped ?? 0} dropped`
+    + (d ? `<br>detail <b>L${d.level}</b> · groups at <b>${d.linkM} m</b> · backlog ${d.backlogS.toFixed(1)} s · ${d.changes} change${d.changes === 1 ? '' : 's'}` : '');
+  hud.textContent = `t=${m.t.toFixed(1)} s · edge ${m.edge?.tracks?.length ?? 0} tracks / ${m.edge?.contacts?.length ?? 0} contacts${d ? ` (L${d.level}, ${d.linkM} m)` : ''} · rx ${r.contacts?.length ?? 0} contacts${r.ego ? ` · ego age ${r.ego.ageS.toFixed(1)} s` : ' · no ego yet'}${r.ego?.groupM ? ` · grouped at ${r.ego.groupM} m` : ''}`;
 }
 
 function resetLogs() {
