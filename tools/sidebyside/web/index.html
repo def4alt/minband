@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MinBand side-by-side</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel2: #1c2230; --line: #2a3140; --fg: #d6dbe3; --dim: #8a93a3;
+    --accent: #58a6ff; --edge: #ffd166; --rx: #ff7eb6; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+    --dismount: #ffd60a; --vehicle: #4cc9f0; --armour: #ff4d4d; --other: #b0b8c4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #app { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100vh; gap: 6px; padding: 6px; }
+  #left { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  #videoWrap { position: relative; background: #000; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #video { max-width: 100%; max-height: 100%; width: 100%; height: auto; aspect-ratio: 16 / 9; display: block; }
+  #overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
+  #hud { position: absolute; left: 8px; top: 6px; background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 3px; color: var(--fg); font-size: 12px; pointer-events: none; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; color: var(--dim); }
+  .bar label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; user-select: none; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  #right { display: grid; grid-template-rows: minmax(0, 5fr) minmax(0, 3fr) minmax(0, 3fr); gap: 6px; min-height: 0; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; min-height: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  section > h2 { margin: 0; padding: 3px 8px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+  section > h2 label { font-weight: normal; text-transform: none; letter-spacing: 0; }
+  #topdown { flex: 1 1 auto; width: 100%; height: 100%; cursor: crosshair; display: block; }
+  #menu { position: absolute; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 4px; display: flex; gap: 4px; z-index: 5; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  #menu[hidden] { display: none; }
+  #menu span { color: var(--dim); padding: 2px 4px; }
+  button { background: var(--panel2); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 3px 9px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); color: #000; border-color: var(--accent); }
+  button.jam.on { background: var(--bad); border-color: var(--bad); }
+  .scroll { flex: 1 1 auto; overflow-y: auto; padding: 4px 8px; min-height: 0; }
+  #eventList div { white-space: pre-wrap; padding: 1px 0; border-bottom: 1px dotted #222a36; }
+  #eventList .t { color: var(--dim); }
+  #eventList .k { display: inline-block; min-width: 76px; }
+  .k-new { color: var(--accent); } .k-confirmed { color: var(--ok); } .k-moving { color: var(--warn); } .k-stopped { color: #e3b341; }
+  .k-static { color: var(--dim); } .k-grew { color: #7ee787; } .k-shrank { color: #ffa198; } .k-lost { color: var(--bad); }
+  .k-departed { color: #ff9f6b; } .k-split { color: #d2a8ff; } .k-merged { color: #d2a8ff; } .k-ego { color: #79c0ff; } .k-focus { color: var(--edge); }
+  #wireHead { display: flex; gap: 10px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  #spark { width: 180px; height: 34px; background: #0b0e13; border: 1px solid var(--line); border-radius: 3px; flex: 0 0 auto; }
+  #readout { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #readout b { color: var(--fg); font-weight: 600; }
+  #frameList details { border-bottom: 1px dotted #222a36; }
+  #frameList summary { cursor: pointer; padding: 1px 0; list-style: none; }
+  #frameList summary::before { content: '\25B8 '; color: var(--dim); }
+  #frameList details[open] summary::before { content: '\25BE '; }
+  #frameList pre { margin: 2px 0 4px 14px; color: var(--dim); white-space: pre-wrap; font-size: 11.5px; }
+  .lost { color: var(--bad); } .ok { color: var(--ok); }
+  #controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; }
+  #controls .grp { display: inline-flex; gap: 3px; align-items: center; }
+  #controls .grp > span { color: var(--dim); margin-right: 3px; }
+  #seek { flex: 1 1 200px; min-width: 120px; accent-color: var(--accent); }
+  #time { min-width: 110px; text-align: right; }
+  #conn { color: var(--bad); } #conn.ok { color: var(--ok); }
+  @media (max-width: 1000px) {
+    #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: auto; min-height: 100vh; }
+    #right { grid-template-rows: 320px 220px 220px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <div id="videoWrap">
+      <video id="video" src="/video.mp4" muted playsinline preload="auto"></video>
+      <canvas id="overlay"></canvas>
+      <div id="hud">connecting…</div>
+    </div>
+    <div class="bar">
+      <b style="color:var(--fg)">EDGE (truth)</b>
+      <label><input type="checkbox" id="showTracks" checked> tracks</label>
+      <label><input type="checkbox" id="showEdgeContacts" checked> contacts</label>
+      <label><input type="checkbox" id="showRxOnVideo"> <span style="color:var(--rx)">rx belief on video</span></label>
+      <span><i class="sw" style="background:var(--dismount)"></i> dismount</span>
+      <span><i class="sw" style="background:var(--vehicle)"></i> vehicle</span>
+      <span><i class="sw" style="background:var(--armour)"></i> armour</span>
+      <span><i class="sw" style="background:var(--other)"></i> other</span>
+    </div>
+    <details class="bar" id="legend"><summary style="cursor:pointer">legend: what the marks mean</summary>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:4px 0;color:var(--fg)">
+        <span>● dot</span><span>one detection's ground point on the video (bottom of its box: tyres, feet), coloured by class. Edge truth, never sent.</span>
+        <span>○ solid circle</span><span>a <b>contact</b>, the unit the edge sends: one object or a group; the circle is the group's extent, the label is id, count and class mix.</span>
+        <span>- - circle</span><span>an unconfirmed contact (fewer than 3 looks / 2 s): not sent yet.</span>
+        <span>→ line</span><span>the contact's velocity: course and speed as the edge measures it (map) or as last reported (receiver).</span>
+        <span><span style="color:var(--rx)">◌ magenta dashes</span></span><span>what the <b>receiver believes</b> from the wire, drawn back onto the video (toggle): position dead-reckoned from the last record.</span>
+        <span><span style="color:var(--rx)">⋯ dotted ring</span></span><span>the receiver's <b>error radius</b> (ce): the edge's declared uncertainty, growing with silence while the link is down.</span>
+        <span>grey / dashed</span><span>liveness: <b>unheard</b> = the link went quiet (edge may still see it), <b>lost</b> = the edge said it lost it, <b>departed</b> = tombstone.</span>
+        <span>▲ glyph, ring</span><span>the drone as last heard (heading) and its camera footprint on the ground (where it was looking).</span>
+      </div>
+    </details>
+  </div>
+  <div id="right">
+    <section id="map">
+      <h2><span>RECEIVER · top-down (north up, 50 m grid)</span>
+        <label><input type="checkbox" id="showGhosts" checked> edge ghosts</label></h2>
+      <canvas id="topdown"></canvas>
+      <div id="menu" hidden><span id="menuId"></span>
+        <button data-mode="track">track</button><button data-mode="split">split</button>
+        <button data-mode="chip">chip</button><button data-mode="release">release</button></div>
+    </section>
+    <section id="events"><h2><span>EVENTS (derived at the receiver)</span><span id="eventCount"></span></h2>
+      <div class="scroll" id="eventList"></div></section>
+    <section id="wire"><h2><span>WIRE</span><span id="wireCount"></span></h2>
+      <div id="wireHead"><canvas id="spark" width="180" height="34"></canvas><div id="readout">—</div></div>
+      <div class="scroll" id="frameList"></div></section>
+  </div>
+  <div id="controls">
+    <button id="playBtn">▶ play</button>
+    <input type="range" id="seek" min="0" max="90" step="0.1" value="0">
+    <span id="time">t=0.0 s</span>
+    <span class="grp" id="rates"><span>rate</span><button data-rate="1" class="on">1×</button><button data-rate="2">2×</button><button data-rate="4">4×</button></span>
+    <span class="grp" id="profiles"><span>link</span>
+      <button data-profile="clean">clean</button><button data-profile="telemetry">telemetry</button><button data-profile="hf">hf</button>
+      <button data-profile="lora">lora</button><button data-profile="contested">contested</button>
+      <button class="jam" data-profile="blackout">jam</button></span>
+    <span id="conn">●</span>
+  </div>
+</div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
