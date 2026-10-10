@@ -23,8 +23,7 @@ with emulated impairment.
 
 ## Read first
 
-0. [docs/DESIGN_V2.md](docs/DESIGN_V2.md) and [proto/PROTOCOL_V2.md](proto/PROTOCOL_V2.md) - the 2026-10-10 pivot: contact reports over a trickle link; [docs/EDGE_HARDWARE.md](docs/EDGE_HARDWARE.md) - drone/phone sensor survey
-1. [docs/DESIGN.md](docs/DESIGN.md) - v1 architecture and the delta-sync protocol (fallback demo)
+1. [docs/DESIGN.md](docs/DESIGN.md) - contact reports over a trickle link, the 3D handoff, durability; [docs/EDGE_HARDWARE.md](docs/EDGE_HARDWARE.md) - drone/phone sensor survey
 2. [proto/PROTOCOL.md](proto/PROTOCOL.md) - wire format
 3. [docs/MILESTONES.md](docs/MILESTONES.md) - build order and ownership
 4. [docs/PRIOR_ART.md](docs/PRIOR_ART.md) - what exists and where this sits
