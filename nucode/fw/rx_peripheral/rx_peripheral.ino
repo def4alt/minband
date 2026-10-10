@@ -82,8 +82,22 @@ static void pumpUsbToBle() {
     size_t wrote = bleuart.write(buf + sent, want);
     if (wrote == 0) {
       if (millis() - stallStart > BLE_WRITE_STALL_TIMEOUT_MS) {
-        len = 0;
+        // Drop only up to the next SLIP frame boundary, not the whole
+        // buffer: dropping mid-frame bytes left an unsent tail that got
+        // spliced onto the next serial read, merging two frames into one
+        // corrupt byte stream downstream (seen as rising CRC errors on
+        // bridge.py at larger payload sizes). Resyncing on SLIP_END keeps
+        // the splice point clean so only the one frame is lost.
+        size_t i = sent;
+        while (i < len && buf[i] != SLIP_END) i++;
+        if (i < len) {
+          memmove(buf, buf + i, len - i);
+          len -= i;
+        } else {
+          len = 0;
+        }
         sent = 0;
+        stallStart = millis();
       }
       break; // BLE link busy; keep remainder, retry next loop
     }
