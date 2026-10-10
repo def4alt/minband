@@ -166,7 +166,7 @@ u8   flags          bits 0-1 motion: 0 unknown, 1 static, 2 moving, 3 stopped (w
                     bit7 has velocity (course, speed follow)
 u8   ext            bit0 has parent (u16) ; bit1 has altitude (i16, metres above origin) ;
                     bit2 thermal-only sighting ; bit3 motion-only (no appearance class) ;
-                    bit4 operator verified ; bit5 child record (individual within a group) ;
+                    bit4 out of view (with lost: it left the camera's view, see 5.3) ; bit5 child record (individual within a group) ;
                     bit6 has ray (az, el) ; bit7 has bbox (u, v, w, h)
 i16  dx, dy         pos, centroid of the contact's ground footprint
 u8   ce             m8, horizontal error radius of `pos` (1 sigma): geometry + own position error
@@ -308,7 +308,9 @@ moving (has velocity):  ce_shown = ce + speed x silence + class_max_speed x over
 static:                 ce_shown = ce + min(class_lo x silence, ce)
 stopped, unknown, or moving without a velocity:
                         ce_shown = ce + class_hi x silence + class_max_speed x overdue
-overdue = max(0, silence - T_ladder_last)
+overdue = max(0, silence - horizon)
+horizon = T_floor if this receiver acked this (id, rev) in a Digest, else T_ladder_last
+lost and out of view:   ce_shown = ce   (frozen: the circle of the last sighting)
 ```
 
 where `silence` is the time since the record's observation (`frame tick - age`), and `class_lo` /
@@ -321,6 +323,17 @@ at `class_lo` and stops at `2 x ce`. A stopped or not-yet-classified contact may
 since the last look: its circle grows at `class_hi` at once and at the cap once overdue. Measured on
 footage (`docs/PROTOCOL_EVAL.md`) this keeps >= 84 % of held contacts inside `ce_shown` on every
 profile, against 70 % with a flat static circle.
+
+Two cases stop the circle from growing for nothing:
+
+- **Acked records.** After an ack the edge repeats a record only at `T_floor`, so silence up to
+  the floor is expected, not overdue. Without this a stopped vehicle on a 9.6 kbit/s link grew to
+  185 m between floor repeats; with it, 10 m.
+- **Out of view.** The edge sets `ext.bit4` with `lost` when the object left the view: its last
+  image box touched the frame edge (within 2 %), or it was last seen after the camera stopped
+  delivering frames. The record then says where it was last seen, not where it is, so the receiver
+  freezes the circle at `ce`, shows liveness "out of view", and words the lost event "left the
+  view". Lost *in* view (missed or occluded mid-frame) keeps growing as above.
 
 ### 5.4 Liveness
 

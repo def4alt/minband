@@ -54,9 +54,12 @@ pub struct EgoInput {
     pub nav_mode: u8, pub gnss: u8, pub battery: u8, pub pos_ce: f32,
     pub fp_e: f32, pub fp_n: f32, pub fp_radius: f32,
     pub video: bool,
+    /// The camera is delivering frames. When it stops (gimbal away, feed lost, end of a replay)
+    /// what goes lost afterwards has left the view, it was not lost in it.
+    pub looking: bool,
 }
 impl Default for EgoInput {
-    fn default() -> Self { EgoInput { e: 0.0, n: 0.0, alt_agl: 0.0, heading_deg: 0.0, speed: 0.0, climb: 0.0, nav_mode: 2, gnss: 2, battery: 255, pos_ce: 3.0, fp_e: 0.0, fp_n: 0.0, fp_radius: 0.0, video: false } }
+    fn default() -> Self { EgoInput { e: 0.0, n: 0.0, alt_agl: 0.0, heading_deg: 0.0, speed: 0.0, climb: 0.0, nav_mode: 2, gnss: 2, battery: 255, pos_ce: 3.0, fp_e: 0.0, fp_n: 0.0, fp_radius: 0.0, video: false, looking: true } }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -180,6 +183,9 @@ impl Edge {
         let expired: Vec<u16> = self.focus.iter().filter(|(_, f)| now >= f.until).map(|(k, _)| *k).collect();
         for id in expired { self.focus.remove(&id); self.cm.set_focus(id, false, false); if let Some(e) = self.entries.get_mut(&id) { e.changed(now); } }
 
+        if self.cm.looking && !ego.looking { self.cm.blind_since = Some(now); }
+        if ego.looking { self.cm.blind_since = None; }
+        self.cm.looking = ego.looking;
         let changed = self.cm.update(&filled, now);
         // A focused revision goes out as soon as the focus share allows: at once on a fast link,
         // after `focus_share_gap` on a thin one. Under focus the change threshold is halved, and a
@@ -356,6 +362,7 @@ impl Edge {
         if has_vel { flags |= F_VELOCITY; }
         let mut ext = 0u8;
         if c.parent.is_some() { ext |= X_PARENT | X_CHILD; }
+        if c.out_of_view && c.lost && !c.departed { ext |= X_OUT_OF_VIEW; }
         let regime = self.timing.regime;
         let want_ray = !c.departed && matches!(regime, Regime::Video | Regime::Wide | Regime::Thin);
         let want_bbox = !c.departed && matches!(regime, Regime::Video | Regime::Wide) && c.bbox.is_some();

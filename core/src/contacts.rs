@@ -82,6 +82,8 @@ pub struct TrackState {
     calm_since: Option<u32>,
     outside_since: Option<u32>,
     pub lost: bool,
+    /// Lost with its last image box touching the frame edge: it left the view.
+    pub exited: bool,
     pub contact: Option<u16>,
 }
 impl TrackState {
@@ -152,6 +154,8 @@ pub struct Contact {
     /// A child focused on its own (the operator drilled into a split group and picked one member):
     /// it lives, at the focus rate, after its group is released, while its track lives.
     pub pinned: bool,
+    /// Lost and every member left the view (see `TrackState::exited`).
+    pub out_of_view: bool,
     pub parent: Option<u16>,
     pub bbox: Option<[f32; 4]>,
     pub sent: Option<Sent>,
@@ -163,7 +167,7 @@ impl Contact {
     fn new(id: u16, now: u32) -> Self {
         Contact { id, rev: 0, members: Vec::new(), e: 0.0, n: 0.0, ve: 0.0, vn: 0.0, course: 0.0, speed: 0.0, radius: 0.0, ce: 0.0, mix: [0; 4], conf: 0,
             first_seen: now, since: now, last_seen: now, motion: MOTION_UNKNOWN, confirmed: false, lost: false, departed: false, departed_at: None,
-            focused: false, split: false, pinned: false, parent: None, bbox: None, sent: None, dirty: true, rev_tick: now }
+            focused: false, split: false, pinned: false, out_of_view: false, parent: None, bbox: None, sent: None, dirty: true, rev_tick: now }
     }
     pub fn count(&self) -> u32 { self.mix.iter().map(|&m| m as u32).sum() }
     pub fn is_group(&self) -> bool { self.count() > 1 }
@@ -204,11 +208,14 @@ pub struct ContactManager {
     child_ids: BTreeMap<u32, u16>,
     pub stats: ContactStats,
     pos_res_m: f32,
+    /// Whether the camera delivers frames, and since when it has not (set by the edge).
+    pub looking: bool,
+    pub blind_since: Option<u32>,
 }
 
 impl ContactManager {
     pub fn new(cfg: ContactConfig, pos_res_m: f32) -> Self {
-        ContactManager { cfg, tracks: BTreeMap::new(), contacts: BTreeMap::new(), next_id: 1, child_ids: BTreeMap::new(), stats: ContactStats::default(), pos_res_m }
+        ContactManager { cfg, tracks: BTreeMap::new(), contacts: BTreeMap::new(), next_id: 1, child_ids: BTreeMap::new(), stats: ContactStats::default(), pos_res_m, looking: true, blind_since: None }
     }
 
     fn alloc_id(&mut self) -> u16 { let id = self.next_id; self.next_id = self.next_id.wrapping_add(1).max(1); id }
@@ -228,9 +235,9 @@ impl ContactManager {
             let ce = t.ce.unwrap_or(self.cfg.default_ce);
             let st = self.tracks.entry(t.id).or_insert_with(|| TrackState {
                 id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce, bbox: t.bbox, first_seen: now, last_seen: now, looks: 0,
-                motion: MOTION_UNKNOWN, since: now, above_since: None, below_since: None, calm_since: None, outside_since: None, lost: false, contact: None,
+                motion: MOTION_UNKNOWN, since: now, above_since: None, below_since: None, calm_since: None, outside_since: None, lost: false, exited: false, contact: None,
             });
-            st.class = t.class; st.e = t.e; st.n = t.n; st.ve = t.ve; st.vn = t.vn; st.conf = t.conf; st.ce = ce; st.bbox = t.bbox;
+            st.exited = false; st.class = t.class; st.e = t.e; st.n = t.n; st.ve = t.ve; st.vn = t.vn; st.conf = t.conf; st.ce = ce; st.bbox = t.bbox;
             st.looks += 1;
             if st.lost { st.lost = false; st.since = now; st.above_since = None; st.below_since = None; st.calm_since = None; }
             st.last_seen = now;
@@ -245,7 +252,10 @@ impl ContactManager {
         for (id, st) in self.tracks.iter_mut() {
             let silent = now.saturating_sub(st.last_seen);
             if silent >= cfg.t_depart { gone.push(*id); continue; }
-            if silent >= cfg.t_lost && !st.lost { st.lost = true; }
+            // Left the view: last seen at the frame edge, or last seen after the camera stopped
+            // looking (seen within T_lost of that moment, so not already lost in view).
+            let blind = self.blind_since.map_or(false, |b| st.last_seen + cfg.t_lost > b);
+            if silent >= cfg.t_lost && !st.lost { st.lost = true; st.exited = blind || st.bbox.map_or(false, at_frame_edge); }
         }
         for id in gone {
             if let Some(st) = self.tracks.remove(&id) {
@@ -403,6 +413,7 @@ impl ContactManager {
             c.last_seen = members.iter().map(|t| t.last_seen).max().unwrap();
             c.confirmed = members.iter().any(|t| t.confirmed(&cfg, now));
             c.lost = members.iter().all(|t| t.lost);
+            c.out_of_view = c.lost && members.iter().all(|t| t.exited);
             c.bbox = union_bbox(members.iter().filter_map(|t| t.bbox));
             let moving: Vec<&&TrackState> = members.iter().filter(|t| t.motion == MOTION_MOVING).collect();
             let stopped = members.iter().filter(|t| t.motion == MOTION_STOPPED).count();
@@ -487,6 +498,12 @@ impl ContactManager {
 
 impl Contact {
     fn bump(&mut self, now: u32) { self.rev = self.rev.wrapping_add(1); self.dirty = true; self.rev_tick = now; }
+}
+
+/// A normalised box (centre u, v, size w, h) within 2 % of the frame edge.
+pub fn at_frame_edge(b: [f32; 4]) -> bool {
+    const M: f32 = 0.02;
+    b[0] - b[2] / 2.0 <= M || b[0] + b[2] / 2.0 >= 1.0 - M || b[1] - b[3] / 2.0 <= M || b[1] + b[3] / 2.0 >= 1.0 - M
 }
 
 fn union_bbox(boxes: impl Iterator<Item = [f32; 4]>) -> Option<[f32; 4]> {
@@ -620,6 +637,27 @@ mod tests {
         cm.set_focus(c1, false, false);
         run(&mut cm, scene(true), 30 * TICK_HZ + 12, 40 * TICK_HZ, 12);
         assert_eq!(cm.tracks[&1].contact, cm.tracks[&2].contact, "they group once focus is released");
+    }
+
+    #[test]
+    fn a_car_that_drives_out_of_the_frame_is_out_of_view_not_just_lost() {
+        let mut cm = ContactManager::new(ContactConfig::default(), 1.0);
+        // Car 1 last seen with its box touching the right edge; car 2 lost mid-frame (occluded).
+        let edge_box = Some([0.98, 0.5, 0.05, 0.04]); let mid_box = Some([0.5, 0.5, 0.05, 0.04]);
+        let scene = |_t: u32| vec![Track { bbox: edge_box, ..tr(1, CAR, 0.0, 0.0, 0.0, 0.0) }, Track { bbox: mid_box, ..tr(2, CAR, 60.0, 0.0, 0.0, 0.0) }];
+        run(&mut cm, scene, 0, 10 * TICK_HZ, 12);
+        run(&mut cm, |_| vec![], 10 * TICK_HZ + 12, 20 * TICK_HZ, 12);
+        let (c1, c2) = (cm.tracks[&1].contact.unwrap(), cm.tracks[&2].contact.unwrap());
+        assert!(cm.contacts[&c1].lost && cm.contacts[&c1].out_of_view, "left the view");
+        assert!(cm.contacts[&c2].lost && !cm.contacts[&c2].out_of_view, "lost in view");
+
+        // The camera stops at 30 s with car 3 mid-frame: it left the view, it was not lost in it.
+        let mut cm = ContactManager::new(ContactConfig::default(), 1.0);
+        run(&mut cm, |_| vec![Track { bbox: mid_box, ..tr(3, CAR, 0.0, 0.0, 0.0, 0.0) }], 0, 30 * TICK_HZ, 12);
+        cm.looking = false; cm.blind_since = Some(30 * TICK_HZ + 12);
+        run(&mut cm, |_| vec![], 30 * TICK_HZ + 12, 40 * TICK_HZ, 12);
+        let c3 = cm.tracks[&3].contact.unwrap();
+        assert!(cm.contacts[&c3].lost && cm.contacts[&c3].out_of_view, "the view ended");
     }
 
     #[test]

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 // @ts-ignore plain ESM helper shared with the check scripts
 import { loadMeta } from '../scripts/meta.mjs';
+import { loadBoxes } from '../scripts/boxes.mjs';
 
 const require = createRequire(import.meta.url);
 const core = require('../../../core/pkg-node/minband_core.js');
@@ -51,6 +52,8 @@ for (const line of fs.readFileSync(path.join(RUN_DIR, 'tracks.csv'), 'utf8').spl
 }
 const ticks = [...byTick.keys()].sort((a, b) => a - b);
 const DURATION_S = Number(process.env.DURATION_S) || Math.ceil((ticks[ticks.length - 1] + 60) / TICK_HZ);
+const LAST_S = ticks[ticks.length - 1] / TICK_HZ; // the footage ends here: the camera stops looking
+const boxAt = loadBoxes(RUN_DIR) as (id: number, tick: number) => number[] | null;
 console.log(`tracks: ${ticks.length} ticks, ${[...byTick.values()].reduce((s, v) => s + v.length, 0)} rows, ticks ${ticks[0]}..${ticks[ticks.length - 1]}`);
 function tracksAt(t: number): Track[] {
   const tick = Math.round(t * TICK_HZ);
@@ -136,7 +139,7 @@ class Replay {
 
   ego(t: number, P: (typeof PROFILES)[Profile]) {
     return { e: CAM_E, n: CAM_N, alt_agl: CAM_ALT, heading_deg: 0, speed: 0, climb: 0, nav_mode: 2, gnss: 2, battery: Math.max(0, Math.round(83 - t / 30)),
-      pos_ce: 3.0, fp_e: CAM_E, fp_n: FP_N, fp_radius: FP_R, video: P.video && this.linkUp(t) };
+      pos_ce: 3.0, fp_e: CAM_E, fp_n: FP_N, fp_radius: FP_R, video: P.video && this.linkUp(t), looking: t <= LAST_S + 0.2 };
   }
 
   step(): any {
@@ -148,7 +151,7 @@ class Replay {
     const frames: WireFrame[] = [];
     if (this.playing) {
       this.edge.pose(tick, CAM_E, CAM_N, CAM_ALT, 0, CAM_PITCH, 0);
-      const tj = JSON.stringify(tracks.map((x) => ({ id: x.id, class: x.cls, e: x.e, n: x.n, ve: x.ve, vn: x.vn, conf: Math.max(0, Math.min(255, Math.round(x.conf))) })));
+      const tj = JSON.stringify(tracks.map((x) => ({ id: x.id, class: x.cls, e: x.e, n: x.n, ve: x.ve, vn: x.vn, conf: Math.max(0, Math.min(255, Math.round(x.conf))), bbox: boxAt(x.id, tick) ?? undefined })));
       const out: Uint8Array = this.edge.tick(tj, JSON.stringify(ego), tick);
       for (const b of unpack(out)) {
         const bytes = new Uint8Array(b);

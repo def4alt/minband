@@ -26,6 +26,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { loadMeta } from './meta.mjs';
+import { loadBoxes } from './boxes.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +39,7 @@ const ORIGIN_LAT = 39.0466, ORIGIN_LON = -85.5207;
 const CLIPS = {
   cons2: 'runs/footage/meva-uav-0307-1720/cons2',
   best2: 'runs/footage/meva-uav-0307-1720/best2',
+  thermal: 'runs/footage/hituav-60m-30_1',
   convoy1: 'runs/footage/dev-amad-test1/mil',
   convoy2: 'runs/footage/amad-test2/mil',
   amphib: 'runs/footage/mvt-test10/mil',
@@ -94,6 +96,7 @@ function rng(seed) {
 function loadClip(runDir) {
   const meta = loadMeta(runDir);
   const byTick = new Map();
+  const boxAt = loadBoxes(runDir);
   const spans = new Map();
   for (const line of fs.readFileSync(path.join(runDir, 'tracks.csv'), 'utf8').split('\n').slice(1)) {
     if (!line) continue;
@@ -109,7 +112,7 @@ function loadClip(runDir) {
     let lo = 0, hi = ticks.length - 1, best = -1;
     while (lo <= hi) { const m = (lo + hi) >> 1; if (ticks[m] <= tick) { best = m; lo = m + 1; } else hi = m - 1; }
     if (best < 0 || tick - ticks[best] > 60) return [];
-    return byTick.get(ticks[best]);
+    return byTick.get(ticks[best]).map((tr) => ({ ...tr, bbox: boxAt(tr.id, tick) ?? undefined }));
   };
   const pitch = (meta.ground.pitch_deg * Math.PI) / 180;
   const cam = { e: meta.camera_m[0], n: -meta.camera_m[2], alt: meta.ground.height_m, pitchDeg: -meta.ground.pitch_deg };
@@ -174,7 +177,7 @@ function replay(clip, P, opt) {
     const up = linkUp(t);
     const tracks = clip.tracksAt(t);
     const ego = { e: cam.e, n: cam.n, alt_agl: cam.alt, heading_deg: 0, speed: 0, climb: 0, nav_mode: 2, gnss: 2, battery: Math.max(0, Math.round(83 - t / 30)),
-      pos_ce: 3.0, fp_e: cam.e, fp_n: cam.fpN, fp_radius: cam.fpR, video: P.video && up };
+      pos_ce: 3.0, fp_e: cam.e, fp_n: cam.fpN, fp_radius: cam.fpR, video: P.video && up, looking: t <= clip.lastS + 0.2 };
     edge.pose(tick, cam.e, cam.n, cam.alt, 0, cam.pitchDeg, 0);
     const out = edge.tick(JSON.stringify(tracks), JSON.stringify(ego), tick);
     for (const b of unpack(out)) {
@@ -211,6 +214,7 @@ function replay(clip, P, opt) {
     const rxMap = new Map(rxAll.filter((c) => !c.departed && !c.child).map((c) => [c.id, c]));
     const edgeMap = new Map(edgeAll.map((c) => [c.id, c]));
     lastEdgeAll = edgeAll; lastRxAll = rxAll;
+    if (opt.rxSampler && step % 10 === 0) for (const c of rxAll) if (!c.departed && !c.child && c.liveness !== 'fresh') opt.rxSampler.push({ t, liveness: c.liveness, ce_shown: c.ce_shown });
     const excluded = new Set();
     if (W && t >= W.at) {
       const tr = W.until != null && t >= W.until ? null : tracks.find((x) => x.id === W.track);
@@ -284,6 +288,9 @@ function replay(clip, P, opt) {
       if (bo) { honest.allBlackout++; if (d <= r.ce_shown) honest.inBlackout++; }
       honest.ghostSum += r.ce_shown; honest.ghostN++;
       if (W && t >= W.at && !excluded.has(r.id)) { others.hn++; others.err += d; if (d <= r.ce_shown) others.hin++; }
+      // Per-object samples (scripts/collapse.mjs): error to the edge, the circle shown, the edge's
+      // own ce, how long the edge has held this revision, motion, group, and the scene load.
+      if (opt.samples) { const since = revTick.get(`${c.id}:${c.rev}`); opt.samples.push({ t, quiet: since == null ? 0 : t - since, d, ceShown: r.ce_shown, ce: c.ce, motion: c.motion, group: c.count > 1, live: live.length, stale: r.rev !== c.rev, up: !bo }); }
       if (focusTarget.id === r.id && focusTarget.steps) { focusTarget.n++; focusTarget.errSum += d; if (d <= r.ce_shown) focusTarget.in++; if (r.rev === c.rev) focusTarget.compRev++; }
     }
     for (const b of blackouts) {

@@ -37,7 +37,9 @@ pub const X_PARENT: u8 = 1 << 0;
 pub const X_ALT: u8 = 1 << 1;
 pub const X_THERMAL: u8 = 1 << 2;
 pub const X_MOTION_ONLY: u8 = 1 << 3;
-pub const X_VERIFIED: u8 = 1 << 4;
+/// Lost because it left the camera's view (its last image box touched the frame edge): the
+/// position is where it was last seen, not where it is.
+pub const X_OUT_OF_VIEW: u8 = 1 << 4;
 pub const X_CHILD: u8 = 1 << 5;
 pub const X_RAY: u8 = 1 << 6;
 pub const X_BBOX: u8 = 1 << 7;
@@ -427,9 +429,9 @@ pub fn describe_record(r: &Record) -> String {
             e.battery, m8_to_m(e.pos_ce), e.fp_dx, e.fp_dy, m8_to_m(e.fp_radius), e.n_contacts, e.n_moving, e.n_dismount, e.n_vehicle, e.n_armour, e.n_other),
         Record::Pose(p) => format!("Pose tick={} xyz=({:.2},{:.2},{:.2}) ypr=({:.2},{:.2},{:.2})", p.tick, p.x as f32 / 100.0, p.y as f32 / 100.0, p.z as f32 / 100.0, p.yaw as f32 / 100.0, p.pitch as f32 / 100.0, p.roll as f32 / 100.0),
         Record::Contact(c) => {
-            let mut s = format!("Contact id={} rev={} {}{}{}{}{}{} pos=({},{}) ce={:.2} r={:.2} mix={}/{}/{}/{} conf={} first={}s since={}s age={}s",
+            let mut s = format!("Contact id={} rev={} {}{}{}{}{}{}{} pos=({},{}) ce={:.2} r={:.2} mix={}/{}/{}/{} conf={} first={}s since={}s age={}s",
                 c.id, c.rev, motion_name(c.flags), if c.has(F_CONFIRMED) { " confirmed" } else { "" }, if c.has(F_LOST) { " lost" } else { "" },
-                if c.has(F_DEPARTED) { " departed" } else { "" }, if c.has(F_FOCUSED) { " focused" } else { "" }, if c.has(F_GROUP) { " group" } else { "" },
+                if c.has(F_DEPARTED) { " departed" } else { "" }, if c.has(F_FOCUSED) { " focused" } else { "" }, if c.has(F_GROUP) { " group" } else { "" }, if c.ext_has(X_OUT_OF_VIEW) { " out-of-view" } else { "" },
                 c.dx, c.dy, m8_to_m(c.ce), m8_to_m(c.radius), c.n_dismount, c.n_vehicle, c.n_armour, c.n_other, c.conf, c.first_seen, c.since, c.age);
             if c.has(F_VELOCITY) { s += &format!(" crs={:.0} spd={:.2}", u8_to_deg(c.course), u8_to_speed(c.speed)); }
             if c.ext_has(X_PARENT) { s += &format!(" parent={}", c.parent); }

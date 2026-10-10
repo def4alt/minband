@@ -19,6 +19,9 @@ pub struct Held {
     pub rev_heard: u32,
     pub first_heard: u32,
     pub copies: u32,
+    /// The revision this receiver last acknowledged in a Digest: the edge may then repeat it only
+    /// at `T_floor`, so silence up to the floor is not overdue.
+    pub acked_rev: Option<u8>,
 }
 impl Held {
     pub fn observed(&self) -> u32 { self.frame_tick.saturating_sub(self.rec.age as u32 * TICK_HZ) }
@@ -37,7 +40,7 @@ pub struct Event {
 #[derive(Clone, Debug, Serialize)]
 pub struct RxContact {
     pub id: u16, pub rev: u8, pub e: f32, pub n: f32, pub ce: f32, pub ce_shown: f32, pub radius: f32, pub count: u32, pub mix: [u8; 4],
-    pub motion: &'static str, pub confirmed: bool, pub lost: bool, pub departed: bool, pub focused: bool, pub group: bool,
+    pub motion: &'static str, pub confirmed: bool, pub lost: bool, pub out_of_view: bool, pub departed: bool, pub focused: bool, pub group: bool,
     pub course: f32, pub speed: f32, pub first_seen: f32, pub since: f32, pub age_s: f32, pub silence_s: f32, pub liveness: &'static str,
     pub parent: Option<u16>, pub child: bool, pub ray: Option<[f32; 2]>, pub bbox: Option<[f32; 4]>, pub copies: u32, pub conf: u8,
     pub lat: Option<f64>, pub lon: Option<f64>,
@@ -117,15 +120,15 @@ impl Receiver {
         match self.contacts.get_mut(&c.id) {
             None => {
                 if c.has(F_DEPARTED) {
-                    self.contacts.insert(c.id, Held { rec: c, frame_tick: tick, rev_heard: tick, first_heard: tick, copies: 1 });
+                    self.contacts.insert(c.id, Held { rec: c, frame_tick: tick, rev_heard: tick, first_heard: tick, copies: 1, acked_rev: None });
                     self.push("departed", c.id, observed, tick, format!("contact {} departed (never seen live here)", c.id));
                     return;
                 }
-                self.contacts.insert(c.id, Held { rec: c, frame_tick: tick, rev_heard: tick, first_heard: tick, copies: 1 });
+                self.contacts.insert(c.id, Held { rec: c, frame_tick: tick, rev_heard: tick, first_heard: tick, copies: 1, acked_rev: None });
                 let fs = c.first_seen as u32 * TICK_HZ;
                 self.push("new", c.id, fs, tick, format!("contact {}: {} first seen {}", c.id, text_of(&c), if c.ext_has(X_CHILD) { format!("(member of {})", c.parent) } else { String::new() }));
                 if c.has(F_CONFIRMED) && c.motion() == MOTION_MOVING { self.push("moving", c.id, c.since as u32 * TICK_HZ, tick, format!("contact {}: moving, course {:03.0} at {:.1} m/s", c.id, u8_to_deg(c.course), u8_to_speed(c.speed))); }
-                if c.has(F_LOST) { self.push("lost", c.id, observed, tick, format!("contact {}: lost by the edge", c.id)); }
+                if c.has(F_LOST) { self.push("lost", c.id, observed, tick, format!("contact {}: {}", c.id, if c.ext_has(X_OUT_OF_VIEW) { "left the view" } else { "lost by the edge" })); }
                 self.changed_order.insert(0, c.id);
             }
             Some(h) => {
@@ -155,7 +158,7 @@ impl Receiver {
                     let kind = if c.count() > old.count() { "grew" } else { "shrank" };
                     self.push(kind, id, observed, tick, format!("contact {}: now {} (was {})", id, text_of(&c), old.count()));
                 }
-                if !old.has(F_LOST) && c.has(F_LOST) { self.push("lost", id, observed, tick, format!("contact {}: lost by the edge", id)); }
+                if !old.has(F_LOST) && c.has(F_LOST) { self.push("lost", id, observed, tick, format!("contact {}: {}", id, if c.ext_has(X_OUT_OF_VIEW) { "left the view" } else { "lost by the edge" })); }
                 if old.has(F_LOST) && !c.has(F_LOST) { self.push("reacquired", id, observed, tick, format!("contact {}: seen again", id)); }
                 if c.ext_has(X_CHILD) && old.parent != c.parent { self.push("split", id, observed, tick, format!("contact {} is now a member of {}", id, c.parent)); }
                 if !old.has(F_FOCUSED) && c.has(F_FOCUSED) { self.push("focus", id, observed, tick, format!("contact {}: edge focused", id)); }
@@ -190,10 +193,14 @@ impl Receiver {
                 e += s * speed * silence; n += co * speed * silence;
             }
             let ce = m8_to_m(c.ce);
-            let overdue = (silence - ladder_last as f32 / TICK_HZ as f32).max(0.0);
+            let horizon = if h.acked_rev == Some(c.rev) { t.floor } else { ladder_last };
+            let overdue = (silence - horizon as f32 / TICK_HZ as f32).max(0.0);
+            let out_of_view = c.has(F_LOST) && c.ext_has(X_OUT_OF_VIEW);
             let (hi, lo) = motion_thresholds(coarse);
             let mut ce_shown = ce;
-            if !c.has(F_DEPARTED) {
+            // Out of view: the record says where it was last seen, not where it is, so the circle
+            // stays the one of that sighting instead of growing over the whole map.
+            if !c.has(F_DEPARTED) && !out_of_view {
                 match c.motion() {
                     // Moving: the ghost follows the course; the circle grows at the contact's own
                     // speed (covers a stop), at the class cap once overdue on the ladder.
@@ -210,13 +217,13 @@ impl Receiver {
             let since_rev = now.saturating_sub(h.rev_heard);
             let gap = if c.has(F_FOCUSED) { t.focus } else { expected_gap(since_rev, t) };
             let heard_ago = now.saturating_sub(h.frame_tick);
-            let liveness = if c.has(F_DEPARTED) { "departed" } else if c.has(F_LOST) { "lost" } else if heard_ago > 3 * gap { "unheard" } else { "fresh" };
+            let liveness = if c.has(F_DEPARTED) { "departed" } else if out_of_view { "out of view" } else if c.has(F_LOST) { "lost" } else if heard_ago > 3 * gap { "unheard" } else { "fresh" };
             let (lat, lon) = match self.session {
                 Some(s) => { let (la, lo) = crate::geo::enu_to_latlon(s.origin_lat as f64 * 1e-7, s.origin_lon as f64 * 1e-7, e as f64, n as f64); (Some(la), Some(lo)) }
                 None => (None, None),
             };
             RxContact { id: c.id, rev: c.rev, e, n, ce, ce_shown, radius: m8_to_m(c.radius), count: c.count(), mix: [c.n_dismount, c.n_vehicle, c.n_armour, c.n_other],
-                motion: motion_name(c.flags), confirmed: c.has(F_CONFIRMED), lost: c.has(F_LOST), departed: c.has(F_DEPARTED), focused: c.has(F_FOCUSED), group: c.has(F_GROUP),
+                motion: motion_name(c.flags), confirmed: c.has(F_CONFIRMED), lost: c.has(F_LOST), out_of_view, departed: c.has(F_DEPARTED), focused: c.has(F_FOCUSED), group: c.has(F_GROUP),
                 course, speed: u8_to_speed(c.speed), first_seen: c.first_seen as f32, since: c.since as f32, age_s: c.age as f32, silence_s: silence, liveness,
                 parent: if c.ext_has(X_PARENT) { Some(c.parent) } else { None }, child: c.ext_has(X_CHILD),
                 ray: if c.ext_has(X_RAY) { Some([u8_to_deg(c.az), u8_to_el(c.el)]) } else { None },
@@ -243,6 +250,7 @@ impl Receiver {
         self.set_budget(budget_bps);
         self.ack_pending = false;
         let acked: Vec<(u16, u8)> = self.changed_order.iter().filter_map(|id| self.contacts.get(id).map(|h| (*id, h.rec.rev))).take(32).collect();
+        for (id, rev) in &acked { if let Some(h) = self.contacts.get_mut(id) { h.acked_rev = Some(*rev); } }
         let f = Frame { session: self.session.map_or(0, |s| s.nonce as u16), seq, tick: now, uplink: true, cycle_end: false,
             records: vec![Record::Digest(DigestRec { last_seq: self.stats.last_seq, budget_10bps: (budget_bps / 10).min(65535) as u16, acked })] };
         f.encode(false)
@@ -293,6 +301,32 @@ mod tests {
         ContactRec { id, rev, flags, dx, dy, age, n_vehicle: 2, ce: m_to_m8(6.0), first_seen: 10, since: 12, course: deg_to_u8(90.0), speed: speed_to_u8(4.0), ..Default::default() }
     }
     fn frame(seq: u16, tick: u32, recs: Vec<Record>) -> Vec<u8> { Frame { session: 1, seq, tick, uplink: false, cycle_end: false, records: recs }.encode(false) }
+
+    /// A vehicle that drove out of the frame keeps the circle of its last sighting; one lost in
+    /// view still grows. And a record this receiver acked is not overdue before T_floor.
+    #[test]
+    fn out_of_view_does_not_inflate_and_acks_extend_the_horizon() {
+        let mut rx = Receiver::new(9600);
+        let gone = ContactRec { ext: X_OUT_OF_VIEW, ..contact(1, 2, MOTION_STOPPED | F_CONFIRMED | F_LOST, 0, 0, 5) };
+        let hidden = contact(2, 2, MOTION_STOPPED | F_CONFIRMED | F_LOST, 50, 0, 5);
+        rx.on_frame(&frame(1, 600, vec![Record::Contact(gone), Record::Contact(hidden)])).unwrap();
+        let s = rx.snapshot(60 * TICK_HZ);
+        let (a, b) = (s.iter().find(|c| c.id == 1).unwrap(), s.iter().find(|c| c.id == 2).unwrap());
+        assert_eq!(a.liveness, "out of view"); assert!(a.out_of_view);
+        assert!((a.ce_shown - 6.0).abs() < 0.01, "last sighting's circle: {}", a.ce_shown);
+        assert!(b.ce_shown > 50.0, "lost in view still grows: {}", b.ce_shown);
+        assert_eq!(rx.events.iter().filter(|e| e.kind == "lost").count(), 2);
+        assert!(rx.events.iter().any(|e| e.text.contains("left the view")));
+
+        // Stopped car, heard at 0 s; 9.6 kbit/s: ladder ends at 2.5 s, floor 10 s.
+        let mut rx = Receiver::new(9600);
+        rx.on_frame(&frame(1, 0, vec![Record::Contact(contact(3, 1, MOTION_STOPPED | F_CONFIRMED, 0, 0, 0))])).unwrap();
+        let before = rx.snapshot(8 * TICK_HZ)[0].ce_shown;
+        rx.make_digest(9600, 0, 1);
+        let after = rx.snapshot(8 * TICK_HZ)[0].ce_shown;
+        assert!(before > 100.0, "unacked, 5.5 s overdue at the vehicle cap: {before}");
+        assert!(after < 15.0, "acked: within the floor, only the stopped creep: {after}");
+    }
 
     #[test]
     fn merge_is_lww_and_order_free() {

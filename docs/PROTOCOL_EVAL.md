@@ -338,3 +338,76 @@ Caveat: the ground scale comes from box sizes (no camera metadata in these clips
 civilian vehicle sizes, so metres here are low by an unknown factor (heights fit at 9-20 m where
 the drone is clearly higher). Ratios between runs hold; absolute metres do not.
 
+## 9. Busy versus quiet
+
+`tools/sidebyside/scripts/collapse.mjs` replays three real runs at seven link rates (loss 5 %,
+delay 0.3 s, two seeds, measured while the footage runs): the busy 4K parking lot (206 tracks,
+about 80 objects per frame, 27 live contacts after grouping), a thermal road (91 tracks, 5 live
+contacts) and the quiet 1080p lot (24 tracks, mostly parked, 3 live contacts). Position is sent in
+1 m steps, so about half a metre is as exact as the receiver can get.
+
+```
+node tools/sidebyside/scripts/collapse.mjs [--clips busy,thermal,best2] [--budgets 600,...,64000] [--json out.json]
+```
+
+**Busy: where it breaks.** "Current" is the share of live contacts the receiver holds at the
+edge's latest revision, "known" the share it holds at all.
+
+| link | busy lot current / known | busy lot error med / p90 | new contact shown after | thermal current / known | quiet lot current / known |
+|---|---|---|---|---|---|
+| 600 bit/s | 7 % / 38 % | 2.3 / 9.6 m | 19.6 s | 8 % / 44 % | 64 % / 89 % |
+| 1.2 kbit/s | 18 % / 60 % | 1.8 / 9.7 m | 9.9 s | 29 % / 76 % | 80 % / 93 % |
+| 2 kbit/s | 30 % / 76 % | 1.1 / 7.4 m | 4.7 s | 49 % / 90 % | 86 % / 96 % |
+| 4.8 kbit/s | 54 % / 92 % | 0.7 / 4.7 m | 1.3 s | 70 % / 96 % | 87 % / 96 % |
+| 9.6 kbit/s | 68 % / 96 % | 0.6 / 3.5 m | 0.5 s | 77 % / 97 % | 88 % / 96 % |
+| 19.2 kbit/s | 79 % / 98 % | 0.5 / 2.7 m | 0.3 s | 77 % / 97 % | 86 % / 96 % |
+| 64 kbit/s | 81 % / 98 % | 0.5 / 2.6 m | 0.3 s | 76 % / 97 % | 88 % / 96 % |
+
+The quiet lot is saturated at 1.2-2 kbit/s; the busy lot needs about 5-10 kbit/s for the same
+picture, roughly in proportion to its live contacts (27 against 3). Below that the circle still
+holds the truth 86-92 % of the time and the k-of-n readout shows what is missing.
+
+**Quiet: how far it collapses.** Static and stopped objects, by how long the edge has held them
+unchanged (busy lot; the quiet lot is the same within a few points):
+
+| link | unchanged for | error med / p90 | within 1 m | circle / edge ce |
+|---|---|---|---|---|
+| 2 kbit/s | 0-1 s | 1.6 / 5.6 m | 37 % | 1.35 |
+| 2 kbit/s | 3-10 s | 0.6 / 5.0 m | 59 % | 1.36 |
+| 2 kbit/s | 10-30 s | 0.5 / 1.0 m | 90 % | 1.90 |
+| 9.6 kbit/s | 1-3 s | 0.4 / 1.3 m | 87 % | 1.12 |
+| 9.6 kbit/s | 10-30 s | 0.5 / 1.0 m | 90 % | 1.68 |
+| 9.6 kbit/s | 30+ s | 0.4 / 1.2 m | 79 % | 1.92 |
+
+The position collapses to the 1 m quantum: once an object has been quiet for 10 s, nine in ten
+are within a metre of the edge's estimate, at 2 kbit/s as at 9.6. The circle does not collapse:
+it creeps from the edge's `ce` towards `2 x ce` (5.3) between floor repeats. That is the static
+rule doing what it says (a missed revision could hide one more `ce` of drift), but on a link that
+keeps delivering frames a quiet object's circle could shrink back to `ce` instead; not changed.
+
+**Circles that inflated for nothing, fixed.**
+
+| receiver contacts not fresh (lora, through 60 s after the clip) | before | after |
+|---|---|---|
+| left the view, busy lot | lost, circle med 146 m, p90 1000 m | out of view, med 4 m, max 5 m |
+| left the view, thermal road | lost, med 159 m, p90 1000 m | out of view, med 19 m, max 28 m |
+| left the view, quiet lot | lost, med 58 m, p90 1000 m | out of view, med 5 m, max 6 m |
+| convoy (camera stopped at the end) | lost, med 738 m | out of view, med 9 m, max 14 m |
+| stopped vehicle, thermal, 9.6 kbit/s, quiet 10-30 s | 185 m | 10 m |
+
+- **Out of view** (PROTOCOL.md 3.4 ext bit4, 5.3): the edge marks a lost contact that left the
+  frame (last box within 2 % of the edge) or that it stopped seeing because the camera stopped.
+  The receiver freezes its circle at the last sighting. The harness and page feed the tracker's
+  image boxes to the edge (`scripts/boxes.mjs` reads `detlog.npy`); before, the edge had no boxes.
+- **Acked records** are not overdue before `T_floor`: the receiver had expected the ladder after
+  its own ack had moved the edge to the floor, and grew the circle at the class cap.
+- **On the video**, a ring was projected through the homography; for a point off the frame, near
+  the camera's horizon, a few metres became hundreds of pixels. The overlay now draws a contact
+  outside the frame as an arrow on the border and takes a ring's radius as the median of four
+  directions, capped at half the frame.
+
+Still growing: contacts lost *in* view (missed or occluded mid-frame; 87 of 206 tracks end that
+way in the busy lot), median 119 m, up to the 1000 m cap. Honest in that nothing bounds where an
+unseen object went, useless on a map. The page already hides lost circles; a cap at the camera
+footprint would be the protocol-side fix.
+
