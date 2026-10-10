@@ -72,6 +72,23 @@ try {
     await sleep(waitMs);
     await control('freeze=1'); // screenshots are slow under software GL: hold the state still for them
   };
+  /** The scene object main.ts exposes on the dev server. */
+  const SCENE = 'window.__minband.scene';
+  /** Click an entity (a click without drag pins its tag) and return the visible tag text. */
+  const pinTag = async (p: Page, gid: string) => {
+    const pos = await p.evaluate(`${SCENE}.screenOf(${JSON.stringify(gid)})`) as { x: number; y: number } | null;
+    const box = await p.locator('#scene').boundingBox();
+    if (!pos || !box) throw new Error(`entity ${gid} not on screen`);
+    await p.mouse.click(box.x + pos.x, box.y + pos.y);
+    await sleep(400);
+    const tag = await p.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('.tag3d')).filter(e => e.offsetParent && getComputedStyle(e).display !== 'none' && e.textContent).map(e => e.textContent).join(' | '));
+    console.log(`  tag: ${tag}`);
+    return tag;
+  };
+  const expectWide = async (p: Page, want: boolean) => {
+    const wide = await p.evaluate(`${SCENE}.wide`);
+    if (wide !== want) throw new Error(`scene ${wide ? 'wide' : 'room'}, expected ${want ? 'wide' : 'room'}`);
+  };
   const report = async (p: Page, name: string) => {
     const text = (id: string) => p.evaluate(i => document.getElementById(i)?.textContent?.replace(/\s+/g, ' ').trim() ?? '', id);
     console.log(`${name.padEnd(22)} edge: ${await text('cEdge')} | link: ${await text('cLink')} | twin: ${await text('cTwin')}`);
@@ -93,13 +110,7 @@ try {
     {
       name: 'geo-tag', run: async p => {
         await open(p, 'phase=lora&at=6&hold=1', 'stage=0&details=0', 2500);
-        const pos = await p.evaluate(() => (window as unknown as { __minband: { scene: { screenOf(g: string): { x: number; y: number } | null } } }).__minband.scene.screenOf('g1'));
-        const box = await p.locator('#scene').boundingBox();
-        if (!pos || !box) throw new Error('entity g1 not on screen');
-        await p.mouse.click(box.x + pos.x, box.y + pos.y); // a click without drag pins the tag
-        await sleep(400);
-        const tag = await p.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('.tag3d')).filter(e => e.offsetParent && getComputedStyle(e).display !== 'none' && e.textContent).map(e => e.textContent).join(' | '));
-        console.log(`  tag: ${tag}`);
+        const tag = await pinTag(p, 'g1');
         if (!/\d{2}[A-Z] [A-Z]{2} \d{5} \d{5}/.test(tag)) throw new Error(`no MGRS in the tag: ${tag}`);
       },
     },
@@ -116,6 +127,37 @@ try {
     { name: 'measured', run: async p => { await open(p, 'phase=hf&at=4&hold=1&measured=1', 'stage=0&details=1', 3000); } },
     { name: 'no-geo', run: async p => { await open(p, 'phase=clean&at=6&hold=1&geo=0', 'stage=0&details=0', 2000); } },
     { name: 'narrow', size: { width: 390, height: 844 }, run: async p => { await open(p, 'phase=blackout&at=3&hold=1', 'stage=0&details=0', 2500); } },
+    // Wide area (real-drone scale): grid, magnified glyphs, the drone's frustum and nadir, FRAME.
+    { name: 'wide', run: async p => { await open(p, 'phase=wide&at=6&hold=1', 'stage=0&details=0', 3000); await expectWide(p, true); } },
+    { name: 'wide-stage', run: async p => { await open(p, 'phase=wide&at=12&hold=1', 'stage=1&details=0', 3000); await expectWide(p, true); } },
+    {
+      // A parked car's tag names the class; F re-frames after an orbit.
+      name: 'wide-tag', run: async p => {
+        await open(p, 'phase=wide&at=6&hold=1', 'stage=0&details=0', 2000);
+        const box = await p.locator('#scene').boundingBox();
+        if (!box) throw new Error('no scene');
+        await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await p.mouse.down(); await p.mouse.move(box.x + box.width / 2 + 160, box.y + box.height / 2, { steps: 8 }); await p.mouse.up();
+        await sleep(300);
+        await p.keyboard.press('f');
+        await sleep(900);
+        const tag = await pinTag(p, 'g10');
+        if (!/^car · g10 · /.test(tag)) throw new Error(`the car's tag does not name it: ${tag}`);
+        if (!(await p.isVisible('#frame'))) throw new Error('FRAME control hidden in wide mode');
+      },
+    },
+    {
+      // Back to room scale when the entities gather again (hysteresis 2.5 s, then the glide).
+      name: 'wide-to-room', run: async p => {
+        await open(p, 'phase=wide&at=6&hold=1', 'stage=0&details=0', 1500);
+        await expectWide(p, true);
+        await control('phase=clean&at=6&hold=1&freeze=0');
+        await sleep(4500);
+        await control('freeze=1');
+        await expectWide(p, false);
+        if (await p.isVisible('#frame')) throw new Error('FRAME control still shown in room mode');
+      },
+    },
   ];
   for (const s of SHOTS) {
     if (ONLY && !ONLY.includes(s.name)) continue;
