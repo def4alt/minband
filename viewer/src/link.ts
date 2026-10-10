@@ -27,7 +27,8 @@ export interface H264 { id: string; label: string; bps: number; measured: boolea
 const CONFIGURED: Record<string, number> = { '360': 250_000, '480': 500_000, '720': 1_500_000, '1080': 3_000_000 };
 /** H.264 at a resolution: `snap.baselineA` (measured or configured), else the legacy `snap.baselines`, else the built-in table. */
 export function h264(snap: Snapshot | null, res: string): H264 {
-  const e = snap?.baselineA?.find(b => b.id === `${res}p` || b.id === res);
+  // The server's ids are tools/eval's (`h264_720p`); accept the bare forms too.
+  const e = snap?.baselineA?.find(b => b.id === `h264_${res}p` || b.id === `${res}p` || b.id === res);
   if (e) return e;
   const legacy = res === '720' ? snap?.baselines?.h264_720p_bps : res === '480' ? snap?.baselines?.h264_480p_bps : undefined;
   return { id: `${res}p`, label: `H.264 ${res}p`, bps: legacy ?? CONFIGURED[res] ?? CONFIGURED['720'], measured: false, source: 'configured' };
