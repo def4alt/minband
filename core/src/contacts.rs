@@ -149,6 +149,9 @@ pub struct Contact {
     pub departed_at: Option<u32>,
     pub focused: bool,
     pub split: bool,
+    /// A child focused on its own (the operator drilled into a split group and picked one member):
+    /// it lives, at the focus rate, after its group is released, while its track lives.
+    pub pinned: bool,
     pub parent: Option<u16>,
     pub bbox: Option<[f32; 4]>,
     pub sent: Option<Sent>,
@@ -160,11 +163,15 @@ impl Contact {
     fn new(id: u16, now: u32) -> Self {
         Contact { id, rev: 0, members: Vec::new(), e: 0.0, n: 0.0, ve: 0.0, vn: 0.0, course: 0.0, speed: 0.0, radius: 0.0, ce: 0.0, mix: [0; 4], conf: 0,
             first_seen: now, since: now, last_seen: now, motion: MOTION_UNKNOWN, confirmed: false, lost: false, departed: false, departed_at: None,
-            focused: false, split: false, parent: None, bbox: None, sent: None, dirty: true, rev_tick: now }
+            focused: false, split: false, pinned: false, parent: None, bbox: None, sent: None, dirty: true, rev_tick: now }
     }
     pub fn count(&self) -> u32 { self.mix.iter().map(|&m| m as u32).sum() }
     pub fn is_group(&self) -> bool { self.count() > 1 }
     pub fn is_child(&self) -> bool { self.parent.is_some() }
+    /// Sent on the focus schedule (T_focus, half the change threshold). A split-focused group hands
+    /// that rate to its children (one per member) and stays on its own ladder: the individuals are
+    /// what the operator asked for, and the group record would only repeat their centroid.
+    pub fn fast(&self) -> bool { self.focused && !(self.split && !self.is_child()) }
     pub fn moving(&self) -> bool { self.motion == MOTION_MOVING }
     /// The coarse class that dominates the mix (ties: the first in dismount, vehicle, armour, other).
     pub fn dominant_coarse(&self) -> u8 {
@@ -351,13 +358,21 @@ impl ContactManager {
             for m in members {
                 let cid = match self.child_ids.get(&m) { Some(&c) => c, None => { let c = self.alloc_id(); self.child_ids.insert(m, c); c } };
                 let c = self.contacts.entry(cid).or_insert_with(|| { let mut c = Contact::new(cid, now); c.first_seen = now; c });
-                c.parent = Some(pid); c.members = vec![m]; c.departed = false; c.departed_at = None;
+                c.parent = Some(pid); c.members = vec![m]; c.departed = false; c.departed_at = None; c.focused = true; c.split = false;
                 c.first_seen = self.tracks.get(&m).map_or(c.first_seen, |t| t.first_seen);
                 live_children.push(cid);
             }
         }
+        // Pinned children follow their track into whatever contact holds it now.
+        let pinned: Vec<(u16, u32)> = self.contacts.values().filter(|c| c.pinned && c.is_child() && !c.departed && !live_children.contains(&c.id))
+            .filter_map(|c| c.members.first().map(|&m| (c.id, m))).collect();
+        for (cid, m) in pinned {
+            let Some(holder) = self.tracks.get(&m).and_then(|t| t.contact) else { continue };
+            let c = self.contacts.get_mut(&cid).unwrap();
+            c.parent = Some(holder); c.focused = true; live_children.push(cid);
+        }
         for c in self.contacts.values_mut() {
-            if c.is_child() && !live_children.contains(&c.id) && !c.departed { c.departed = true; c.departed_at = Some(now); c.members.clear(); }
+            if c.is_child() && !live_children.contains(&c.id) && !c.departed { c.departed = true; c.departed_at = Some(now); c.members.clear(); c.pinned = false; c.focused = false; }
         }
     }
 
@@ -418,7 +433,7 @@ impl ContactManager {
             if why.is_none() {
                 let (ge, gn) = c.ghost(now).unwrap();
                 let dev = ((c.e - ge).powi(2) + (c.n - gn).powi(2)).sqrt();
-                let thr = c.ce.max(2.0 * pos_res) * self.cfg.dev_factor * if c.focused { 0.5 } else { 1.0 };
+                let thr = c.ce.max(2.0 * pos_res) * self.cfg.dev_factor * if c.fast() { 0.5 } else { 1.0 };
                 if dev > thr { why = Some(2); }
             }
             if why.is_none() && (c.ce > s.ce * 1.5 || c.ce < s.ce / 1.5) && (c.ce - s.ce).abs() > 2.0 * pos_res { why = Some(3); }
@@ -447,6 +462,7 @@ impl ContactManager {
 
     pub fn set_focus(&mut self, id: u16, track: bool, split: bool) -> bool {
         match self.contacts.get_mut(&id) {
+            Some(c) if !c.departed && c.is_child() => { c.pinned = track || split; if c.pinned { c.focused = true; } true }
             Some(c) if !c.departed => { c.focused = track || split; c.split = split; true }
             _ => false,
         }

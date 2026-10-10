@@ -67,6 +67,11 @@ impl WasmReceiver {
     pub fn needs_digest(&self) -> bool { self.inner.needs_digest() }
     pub fn make_digest(&mut self, budget_bps: u32, now: u32) -> Vec<u8> { let s = self.seq; self.seq = s.wrapping_add(1); self.inner.make_digest(budget_bps, s, now) }
     pub fn make_focus(&mut self, id: u16, mode: u8, ttl: u8, chip_px: u8, now: u32) -> Vec<u8> { let s = self.seq; self.seq = s.wrapping_add(1); self.inner.make_focus(id, mode, ttl, chip_px, s, now) }
+    /// Drill into a split group: focus `child` alone and release `group`, in one uplink frame.
+    pub fn make_drill(&mut self, child: u16, group: u16, ttl: u8, now: u32) -> Vec<u8> {
+        let s = self.seq; self.seq = s.wrapping_add(1);
+        self.inner.make_focus_many(&[(child, crate::wire::FOCUS_TRACK), (group, crate::wire::FOCUS_RELEASE)], ttl, s, now)
+    }
     pub fn gc(&mut self, now: u32) { self.inner.gc(now) }
     pub fn set_budget(&mut self, bps: u32) { self.inner.set_budget(bps) }
 }

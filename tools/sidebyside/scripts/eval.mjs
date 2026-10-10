@@ -31,12 +31,13 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../../..');
 const core = require(path.join(repo, 'core/pkg-node/minband_core.js'));
-const { WasmEdge, WasmReceiver, peek } = core;
+const { WasmEdge, WasmReceiver, peek, describe_frame } = core;
 
 const TICK_HZ = 120, STEP_S = 0.1, UDP_IP_OVERHEAD = 28;
 const ORIGIN_LAT = 39.0466, ORIGIN_LON = -85.5207;
 const CLIPS = {
   cons2: 'runs/footage/meva-uav-0307-1720/cons2',
+  best2: 'runs/footage/meva-uav-0307-1720/best2',
   busy: 'runs/footage/meva-2018-03-13.16-00-14-bf',
 };
 const PROFILES = {
@@ -114,7 +115,7 @@ function loadClip(runDir) {
   const lastTick = ticks[ticks.length - 1];
   // The longest-lived track, for `--focus auto`.
   let longest = null; for (const [id, s] of spans) if (!longest || s.last - s.first > longest.len) longest = { id, len: s.last - s.first, first: s.first };
-  return { meta, tracksAt, firstS: ticks[0] / TICK_HZ, lastS: lastTick / TICK_HZ, rows: [...byTick.values()].reduce((s, v) => s + v.length, 0), nTracks: spans.size, longest, cam };
+  return { meta, tracksAt, spans, firstS: ticks[0] / TICK_HZ, lastS: lastTick / TICK_HZ, rows: [...byTick.values()].reduce((s, v) => s + v.length, 0), nTracks: spans.size, longest, cam };
 }
 
 // ---- one replay ------------------------------------------------------------------------------------
@@ -157,6 +158,13 @@ function replay(clip, P, opt) {
   let lastDigest = -1e9, digestsSent = 0, focusSent = 0;
   const duration = opt.duration;
   const focusWanted = opt.focus;
+  // Operator scenario (scripts/focus.mjs): watch one footage track from `at`; with `select`, the
+  // operator clicks the contact holding it at `at`, the receiver sends Focus up the (lossy) uplink,
+  // every second until a Contact comes back flagged focused, then every 5 s (PROTOCOL.md 4.2). Measured the same way with and without the click.
+  const W = opt.watch ? { ...opt.watch, id: null, mode: 0, lastSend: -1e9, sends: 0, ackT: null, indivT: null, steps: 0, known: 0, indiv: 0, inside: 0,
+    errs: [], ages: [], spdErr: [], arrivals: 0, prev: new Map(), ids: new Set(), byId: new Map() } : null;
+  const others = { n: 0, compRev: 0, hn: 0, hin: 0, err: 0 };
+  let lastEdgeAll = [], lastRxAll = [];
 
   for (let step = 0; step * STEP_S < duration; step++) {
     const t = step * STEP_S, tick = Math.round(t * TICK_HZ);
@@ -172,6 +180,10 @@ function replay(clip, P, opt) {
       bytes.downFrames++; bytes.header += fb.length - pk.records.reduce((s, r) => s + r.len + 2, 0); bytes.carrier += UDP_IP_OVERHEAD;
       bytes.maxFrame = Math.max(bytes.maxFrame, fb.length);
       for (const r of pk.records) { const k = REC_NAMES[r.type] || `t${r.type}`; bytes.down[k] = (bytes.down[k] || 0) + r.len + 2; }
+      if (W) {
+        const lines = describe_frame(fb).split('\n').slice(1);
+        pk.records.forEach((r, i) => { const m = r.type === 4 && /^Contact id=(\d+)/.exec(lines[i] || ''); if (m) W.byId.set(+m[1], (W.byId.get(+m[1]) || 0) + r.len + 2); });
+      }
       const delivered = up && rand() >= P.loss;
       if (delivered) { bytes.downDelivered++; bytes.downDeliveredBytes += fb.length; pending.push({ at: t + P.delayS, bytes: fb, up: false }); }
     }
@@ -195,6 +207,47 @@ function replay(clip, P, opt) {
     const rxAll = JSON.parse(rx.snapshot_json(tick));
     const rxMap = new Map(rxAll.filter((c) => !c.departed && !c.child).map((c) => [c.id, c]));
     const edgeMap = new Map(edgeAll.map((c) => [c.id, c]));
+    lastEdgeAll = edgeAll; lastRxAll = rxAll;
+    const excluded = new Set();
+    if (W && t >= W.at) {
+      const tr = W.until != null && t >= W.until ? null : tracks.find((x) => x.id === W.track);
+      const holders = es.contacts.filter((c) => !c.departed && c.members.includes(W.track));
+      const child = holders.find((c) => c.parent != null), top = holders.find((c) => c.parent == null);
+      for (const c of holders) { excluded.add(c.id); W.ids.add(c.id); if (c.parent != null) excluded.add(c.parent); }
+      // The click: a lone contact is focused (track); a group is split so its members show up.
+      if (W.select && W.id == null && top) { W.id = top.id; W.mode = top.count > 1 ? 3 : 1; W.ids.add(top.id); W.stage = W.mode === 3 ? 'group' : 'one'; }
+      // Drill-down (flow 'drill'): once the individuals are on the receiver's map, the operator
+      // clicks the one they want; pick + release of the group go up in one frame, three times.
+      if (W.flow === 'drill' && W.stage === 'group' && child && rxAll.some((c) => c.id === child.id && !c.departed)) {
+        W.stage = 'drill'; W.group = W.id; W.id = child.id; W.mode = 1; W.drills = 0; W.lastSend = -1e9; W.ids.add(child.id); W.drillT = t - W.at;
+      }
+      if (W.id != null) {
+        excluded.add(W.id);
+        const ec = es.contacts.find((c) => c.id === W.id);
+        if (W.stage === 'drill' && t - W.lastSend >= 1) {
+          W.lastSend = t; W.sends++; sendUp(rx.make_drill(W.id, W.group, 60, tick), t, up);
+          if (++W.drills >= 3) W.stage = 'one';
+        } else if (W.stage !== 'drill' && ec && !ec.departed && t - W.lastSend >= (W.ackT == null ? (W.retry ?? 1) : 5)) { W.lastSend = t; W.sends++; sendUp(rx.make_focus(W.id, W.mode, 60, 1, tick), t, up); }
+      }
+      if (tr) {
+        W.steps++;
+        const rxFull = new Map(rxAll.filter((c) => !c.departed).map((c) => [c.id, c]));
+        const est = (child && rxFull.get(child.id)) || (top && rxFull.get(top.id)) || null;
+        if (W.id != null && W.ackT == null && rxAll.some((c) => c.focused && (c.id === W.id || c.parent === W.id))) W.ackT = t - W.at;
+        if (est) {
+          W.known++;
+          const d = Math.hypot(tr.e - est.e, tr.n - est.n);
+          W.errs.push(d); W.ages.push(est.silence_s);
+          if (d <= est.ce_shown + (est.count > 1 ? est.radius : 0)) W.inside++;
+          if (est.count === 1) { W.indiv++; if (W.indivT == null) W.indivT = t - W.at; }
+          W.spdErr.push(Math.abs(Math.hypot(tr.ve, tr.vn) - (est.motion === 'moving' ? est.speed : 0)));
+          const pv = W.prev.get(est.id);
+          if (pv != null && est.silence_s < pv - 0.05) W.arrivals++;
+          W.prev.set(est.id, est.silence_s);
+          if (W.log) W.log.push({ t: +t.toFixed(1), id: est.id, child: est.child, rev: est.rev, focused: est.focused, silence: +est.silence_s.toFixed(2), d: +d.toFixed(1), ce: +est.ce_shown.toFixed(1), edge: (child || top) && { id: (child || top).id, rev: (child || top).rev, step: (child || top).step, sends: (child || top).sends, lost: (child || top).lost } });
+        }
+      }
+    }
     // Focus target: the contact holding the longest track, from 2 s after it is born.
     if (focusWanted && focusTarget.id == null) {
       const want = focusWanted === 'auto' ? edgeAll.find((c) => !c.departed && c.members.includes(clip.longest.id)) : edgeMap.get(Number(focusWanted));
@@ -204,6 +257,7 @@ function replay(clip, P, opt) {
 
     let atRev = 0, any = 0;
     for (const c of live) { const r = rxMap.get(c.id); if (r) { any++; if (r.rev === c.rev) atRev++; } }
+    if (W && t >= W.at) { const ol = live.filter((c) => !excluded.has(c.id)); if (ol.length) { others.n++; others.compRev += ol.filter((c) => rxMap.get(c.id)?.rev === c.rev).length / ol.length; } }
     const compRev = live.length ? atRev / live.length : null, compAny = live.length ? any / live.length : null;
     steps.n++;
     if (compRev != null) { steps.withLive++; steps.compRev += compRev; steps.compAny += compAny; }
@@ -221,6 +275,7 @@ function replay(clip, P, opt) {
       { const key = `${r.motion}${r.rev === c.rev ? '' : '/stale'}${c.motion !== r.motion ? '->' + c.motion : ''}`; const h = honest.by[key] || (honest.by[key] = { n: 0, in: 0, err: 0, ce: 0 }); h.n++; h.err += d; h.ce += r.ce_shown; if (d <= r.ce_shown) h.in++; }
       if (bo) { honest.allBlackout++; if (d <= r.ce_shown) honest.inBlackout++; }
       honest.ghostSum += r.ce_shown; honest.ghostN++;
+      if (W && t >= W.at && !excluded.has(r.id)) { others.hn++; others.err += d; if (d <= r.ce_shown) others.hin++; }
       if (focusTarget.id === r.id && focusTarget.steps) { focusTarget.n++; focusTarget.errSum += d; if (d <= r.ce_shown) focusTarget.in++; if (r.rev === c.rev) focusTarget.compRev++; }
     }
     for (const b of blackouts) {
@@ -259,12 +314,12 @@ function replay(clip, P, opt) {
     if (step % 10 === 0) series.push({ t: +t.toFixed(1), live: live.length, rx: rxMap.size, compRev: compRev == null ? null : +compRev.toFixed(3), compAny: compAny == null ? null : +compAny.toFixed(3), up, known, of });
   }
 
-  function sendUp(b, tNow) {
+  function sendUp(b, tNow, linkUp = true) {
     bytes.upFrames++;
     const pk = JSON.parse(peek(b));
     for (const r of pk.records) { const k = REC_NAMES[r.type] || `t${r.type}`; bytes.up[k] = (bytes.up[k] || 0) + r.len + 2; }
     bytes.up.header = (bytes.up.header || 0) + b.length - pk.records.reduce((s, r) => s + r.len + 2, 0);
-    if (rand() >= opt.uplinkLoss) { bytes.upDelivered++; pending.push({ at: tNow + P.delayS, bytes: b, up: true }); }
+    if (linkUp && rand() >= opt.uplinkLoss) { bytes.upDelivered++; pending.push({ at: tNow + P.delayS, bytes: b, up: true }); }
     if (pk.records.some((r) => r.type === 0x81)) digestsSent++; else focusSent++;
   }
 
@@ -286,8 +341,11 @@ function replay(clip, P, opt) {
       deliveredPerS: bytes.downDeliveredBytes / duration, frames: bytes.downFrames, delivered: bytes.downDelivered, meanFrame: bytes.downFrames ? downApp / bytes.downFrames : 0, maxFrame: bytes.maxFrame,
       upPerS: Object.values(bytes.up).reduce((s, v) => s + v, 0) / duration, upFrames: bytes.upFrames, upDelivered: bytes.upDelivered, digests: digestsSent, focusCmds: focusSent },
     focus: focusTarget.id == null ? null : { id: focusTarget.id, since: focusTarget.since, steps: focusTarget.n, compRev: focusTarget.n ? focusTarget.compRev / focusTarget.n : null, meanErr: focusTarget.n ? focusTarget.errSum / focusTarget.n : null, honesty: focusTarget.n ? focusTarget.in / focusTarget.n : null },
+    watch: W ? { track: W.track, at: W.at, select: !!W.select, flow: W.flow, drillT: W.drillT ?? null, id: W.id, mode: W.mode, sends: W.sends, ackT: W.ackT, indivT: W.indivT, steps: W.steps, known: W.known, indiv: W.indiv, inside: W.inside,
+      log: W.log, errs: W.errs, ages: W.ages, spdErr: W.spdErr, arrivals: W.arrivals, bytes: [...W.ids].reduce((s, id) => s + (W.byId.get(id) || 0), 0), ids: [...W.ids], byId: Object.fromEntries(W.byId) } : null,
+    others: { compRev: others.n ? others.compRev / others.n : null, honesty: others.hn ? others.hin / others.hn : null, meanErr: others.hn ? others.err / others.hn : null },
     edgeStats, rxStats, cmStats, timing, series,
-    contacts: opt.tailContacts ? { edge: edgeAll, rx: rxAll } : undefined,
+    contacts: opt.tailContacts ? { edge: lastEdgeAll, rx: lastRxAll } : undefined,
   };
 }
 
@@ -321,7 +379,11 @@ function summaryRow(clipName, profName, P, r) {
   };
 }
 
+export { loadClip, replay, PROFILES, CLIPS, repo, TICK_HZ };
+
 // ---- main -------------------------------------------------------------------------------------------
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
 const args = parseArgs(process.argv.slice(2));
 const clipNames = args.clip === 'all' ? Object.keys(CLIPS) : args.clip.split(',');
 const profNames = args.profile === 'all' ? Object.keys(PROFILES) : args.profile.split(',');
@@ -368,3 +430,4 @@ for (const clipName of clipNames) {
 }
 console.log(table(rows));
 if (args.json) { fs.writeFileSync(args.json, JSON.stringify({ args, results }, null, 1)); if (!args.quiet) console.log(`wrote ${args.json}`); }
+}

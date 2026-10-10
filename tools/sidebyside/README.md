@@ -153,8 +153,12 @@ origin lat/lon = Muscatatuck.
 - Right top: top-down, north up, 50 m grid, drone glyph (heading) and footprint at the rx ego
   (edge ego faint until the receiver has heard one), rx contacts with ce rings, count, mix,
   motion, course arrow; liveness as opacity/dash (fresh, unheard, lost, departed). Edge
-  contacts/tracks as faint ghosts (toggle). Click a contact: `focus track` + a small menu for
-  split / chip / release.
+  contacts/tracks as faint ghosts (toggle). Click a contact to give it priority (`focus auto`):
+  a lone contact is tracked, a group is split into its individuals, and clicking one of those
+  individuals drills to it (that one stays focused, the group is released). Focus is retried
+  every second until the receiver hears it back. A small menu offers split / chip / release.
+  `scripts/focus.mjs` measures the same click offline (docs/PROTOCOL_EVAL.md section 7) and
+  `scripts/probe-focus.mjs` does it against the running page.
 - Right middle: events, newest at the bottom, `t=12.3 [kind] text`, coloured by kind, last 200.
 - Right bottom: the wire log, one row per frame (`seq 41 · 84 B · delivered · Ego, Contact ×3`,
   expandable to the lines), bytes/s sparkline over the last 60 s with the budget as a dashed
@@ -207,7 +211,7 @@ Page -> server commands:
 
 ```
 {"cmd":"link","profile":"clean|hf|lora|telemetry|contested|blackout"}
-{"cmd":"focus","id":3,"mode":"track|split|chip|release"}
+{"cmd":"focus","id":3,"mode":"auto|track|split|chip|release"}
 {"cmd":"pause"}  {"cmd":"play"}  {"cmd":"seek","t":30}  {"cmd":"rate","x":1}
 ```
 

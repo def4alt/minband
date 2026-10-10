@@ -133,14 +133,21 @@ impl Edge {
                     let t = self.timing;
                     for (id, rev) in d.acked {
                         let Some(c) = self.cm.contacts.get(&id) else { continue };
-                        if c.rev != rev || c.dirty { continue; }
+                        // A focused record keeps its T_focus cadence: the ack says the receiver has this
+                        // revision, but focus is about fresh observations of it, not about delivery.
+                        if c.rev != rev || c.dirty || c.fast() { continue; }
                         if c.departed { self.entries.remove(&id); self.cm.remove(id); continue; }
                         if let Some(e) = self.entries.get_mut(&id) { e.acked(&t); }
                     }
                 }
                 Record::Focus(fc) => {
                     self.stats.focus_cmds += 1;
-                    if fc.mode & FOCUS_RELEASE != 0 { self.focus.remove(&fc.id); self.cm.set_focus(fc.id, false, false); continue; }
+                    if fc.mode & FOCUS_RELEASE != 0 {
+                        // Re-send at once so the receiver drops the focused flag now, not at the floor.
+                        self.focus.remove(&fc.id); self.cm.set_focus(fc.id, false, false);
+                        if let Some(e) = self.entries.get_mut(&fc.id) { e.changed(now); }
+                        continue;
+                    }
                     let ttl = if fc.ttl == 0 { 60 } else { fc.ttl } as u32 * TICK_HZ;
                     let split = fc.mode & FOCUS_SPLIT != 0;
                     if self.cm.set_focus(fc.id, fc.mode & FOCUS_TRACK != 0 || split, split) {
@@ -171,10 +178,21 @@ impl Edge {
         }).collect();
         // Focus expiry.
         let expired: Vec<u16> = self.focus.iter().filter(|(_, f)| now >= f.until).map(|(k, _)| *k).collect();
-        for id in expired { self.focus.remove(&id); self.cm.set_focus(id, false, false); }
+        for id in expired { self.focus.remove(&id); self.cm.set_focus(id, false, false); if let Some(e) = self.entries.get_mut(&id) { e.changed(now); } }
 
         let changed = self.cm.update(&filled, now);
-        for id in changed { self.entries.entry(id).or_insert_with(Entry::default).changed(now); }
+        // A focused revision goes out as soon as the focus share allows: at once on a fast link,
+        // after `focus_share_gap` on a thin one. Under focus the change threshold is halved, and a
+        // split group of walking people would otherwise revise every step and starve the picture.
+        let gap = self.focus_share_gap();
+        for id in changed {
+            let fast = self.cm.contacts.get(&id).map_or(false, |c| c.fast() && !c.departed && !c.lost);
+            let e = self.entries.entry(id).or_insert_with(Entry::default);
+            match (fast, e.last_sent) {
+                (true, Some(last)) => { e.step = 0; e.due = e.due.min(now.max(last + gap)); }
+                _ => e.changed(now),
+            }
+        }
         for id in self.cm.contacts.keys() { self.entries.entry(*id).or_insert_with(|| { let mut e = Entry::default(); e.changed(now); e }); }
         // Tombstones past their life leave the rotation.
         let t = self.timing;
@@ -215,8 +233,26 @@ impl Edge {
     }
 
 
+    /// T_focus for this frame. Focused records take at most `FOCUS_SHARE` of the link: when more
+    /// are focused (a split group of four, say) the period stretches so the rest of the picture keeps
+    /// the other half. One focused contact never stretches it on the thin profiles (PROTOCOL.md 6.2).
+    fn focus_period(&self) -> u32 { self.timing.focus.max(self.focus_share_gap()) }
+
+    /// The shortest gap between two sends of one focused record that keeps all focused records
+    /// within `FOCUS_SHARE` of the link (0 on an unlimited link).
+    fn focus_share_gap(&self) -> u32 {
+        if self.cfg.budget_bps == 0 { return 0; }
+        let n = self.cm.contacts.values().filter(|c| c.fast() && !c.departed).count() as f32;
+        if n == 0.0 { return 0; }
+        let target = target_frame_bytes(self.cfg.budget_bps, self.cfg.max_frame) as f32;
+        let app_bytes_per_s = self.cfg.budget_bps as f32 / 8.0 * target / (target + self.cfg.carrier_overhead as f32);
+        let gap_s = n * FOCUS_RECORD_B / (FOCUS_SHARE * app_bytes_per_s);
+        (gap_s * TICK_HZ as f32).ceil() as u32
+    }
+
     fn build_frame(&mut self, ego: &EgoInput, nav: u8, now: u32, target: usize) -> Option<Frame> {
-        let t = self.timing;
+        let mut t = self.timing;
+        t.focus = self.focus_period();
         let header = HEADER_LEN + if self.cfg.crc { CRC_LEN } else { 0 };
         let room = target.max(header + 1).min(self.cfg.max_frame);
         // Candidates: (class rank, ladder step, -overdue, kind). Within the ladder class the step
@@ -228,7 +264,7 @@ impl Edge {
         for (id, e) in &self.entries {
             if e.due > now { continue; }
             let Some(c) = self.cm.contacts.get(id) else { continue };
-            let rank = if c.focused { 0 } else if e.step < LADDER_LEN { 2 } else if c.departed { 6 } else { 5 };
+            let rank = if c.fast() { 0 } else if e.step < LADDER_LEN { 2 } else if c.departed { 6 } else { 5 };
             cands.push((rank, e.step, -e.overdue(now), K::Contact(*id)));
         }
         if now >= self.ego_due { cands.push((1, 0, -(now as i64 - self.ego_due as i64), K::Ego)); }
@@ -275,8 +311,8 @@ impl Edge {
         }
         if records.is_empty() { return None; }
         for id in &sent_ids {
-            let focused = self.cm.contacts[id].focused;
-            self.entries.get_mut(id).unwrap().sent(now, &t, focused);
+            let fast = self.cm.contacts[id].fast();
+            self.entries.get_mut(id).unwrap().sent(now, &t, fast);
             self.cm.mark_sent(*id, now);
             self.stats.contacts_sent += 1;
         }
@@ -364,6 +400,11 @@ impl ContactView {
 #[derive(Clone, Debug, Serialize)]
 pub struct EdgeSnapshot { pub contacts: Vec<ContactView>, pub tracks: Vec<TrackView>, pub timing: Timing, pub tokens: f32, pub focus: Vec<u16>, pub stats: crate::contacts::ContactStats }
 
+/// Share of the link focused records may take, and the size assumed for one (a moving child with
+/// its ray, framing included).
+pub const FOCUS_SHARE: f32 = 0.5;
+pub const FOCUS_RECORD_B: f32 = 30.0;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,5 +431,77 @@ mod tests {
         let ids: Vec<u16> = frame.records.iter().filter_map(|r| match r { Record::Contact(c) => Some(c.id), _ => None }).collect();
         assert_eq!(ids.len(), 3, "100 B frames take three 25 B contacts: {ids:?}");
         assert_eq!(ids[0], seven, "the never-sent newborn goes first: {ids:?}");
+    }
+
+    /// The operator focuses a group of three with split: each member comes back as its own child
+    /// contact, every T_focus, while the group record falls back to its normal schedule.
+    #[test]
+    fn a_split_focus_sends_the_individuals_at_the_focus_rate() {
+        let cfg = EdgeConfig { budget_bps: 2000, carrier_overhead: 0, ..Default::default() };
+        let mut edge = Edge::new(cfg);
+        let ego = EgoInput::default();
+        let tracks: Vec<Track> = (1..=3).map(|i| Track { class: 0, ..track(i, i as f32 * 3.0) }).collect();
+        let mut now = 0;
+        while now <= 20 * TICK_HZ { edge.tick(&tracks, &ego, now); now += 12; }
+        let gid = edge.cm.tracks[&1].contact.unwrap();
+        assert_eq!(edge.cm.contacts[&gid].count(), 3);
+        let focus = Frame { session: 0, seq: 0, tick: now, uplink: true, cycle_end: false,
+            records: vec![Record::Focus(FocusRec { id: gid, mode: FOCUS_TRACK | FOCUS_SPLIT, ttl: 60, chip_px: 0 })] };
+        edge.on_uplink(&focus.encode(false), now).unwrap();
+        let mut sends: BTreeMap<u16, u32> = BTreeMap::new();
+        let from = now + 5 * TICK_HZ;
+        let mut rx = crate::receiver::Receiver::new(2000);
+        while now <= from + 20 * TICK_HZ {
+            // The receiver acks everything it holds every 5 s; focus must survive the acks.
+            if now % (5 * TICK_HZ) == 0 && rx.session.is_some() { edge.on_uplink(&rx.make_digest(2000, 0, now), now).unwrap(); }
+            for b in edge.tick(&tracks, &ego, now) {
+                rx.on_frame(&b).unwrap();
+                if now < from { continue; }
+                for r in Frame::decode(&b).unwrap().records { if let Record::Contact(c) = r { *sends.entry(c.id).or_default() += 1; } }
+            }
+            now += 12;
+        }
+        let children: Vec<u16> = edge.cm.contacts.values().filter(|c| c.parent == Some(gid) && !c.departed).map(|c| c.id).collect();
+        assert_eq!(children.len(), 3, "{:?}", edge.cm.contacts.values().map(|c| (c.id, c.parent, c.members.clone())).collect::<Vec<_>>());
+        for id in &children { assert!(sends.get(id).copied().unwrap_or(0) >= 18, "child {id} sent {:?} times in 20 s", sends.get(id)); }
+        assert!(sends.get(&gid).copied().unwrap_or(0) <= 4, "the group record is not repeated at 1 Hz: {sends:?}");
+
+        // Drill down: the operator picks one child and releases the group. That child stays at the
+        // focus rate; its siblings depart and fold back into the group.
+        let pick = children[1];
+        let up = |id: u16, mode: u8| Frame { session: 0, seq: 1, tick: now, uplink: true, cycle_end: false,
+            records: vec![Record::Focus(FocusRec { id, mode, ttl: 60, chip_px: 0 })] }.encode(false);
+        edge.on_uplink(&up(pick, FOCUS_TRACK), now).unwrap();
+        edge.on_uplink(&up(gid, FOCUS_RELEASE), now).unwrap();
+        let mut sends: BTreeMap<u16, u32> = BTreeMap::new();
+        let from = now + 5 * TICK_HZ;
+        while now <= from + 20 * TICK_HZ {
+            for b in edge.tick(&tracks, &ego, now) {
+                if now < from { continue; }
+                for r in Frame::decode(&b).unwrap().records { if let Record::Contact(c) = r { if !c.has(F_DEPARTED) { *sends.entry(c.id).or_default() += 1; } } }
+            }
+            now += 12;
+        }
+        let live: Vec<u16> = edge.cm.contacts.values().filter(|c| c.is_child() && !c.departed).map(|c| c.id).collect();
+        assert_eq!(live, vec![pick], "only the picked child is left");
+        assert!(sends.get(&pick).copied().unwrap_or(0) >= 18, "picked child at 1 Hz: {sends:?}");
+        assert!(!edge.cm.contacts[&gid].focused);
+    }
+
+    #[test]
+    fn focused_records_take_at_most_half_the_link() {
+        let mut edge = Edge::new(EdgeConfig { budget_bps: 600, ..Default::default() });
+        let tracks: Vec<Track> = (1..=4).map(|i| Track { class: 0, ..track(i, i as f32 * 3.0) }).collect();
+        let mut now = 0;
+        while now <= 10 * TICK_HZ { edge.tick(&tracks, &EgoInput::default(), now); now += 12; }
+        let base = edge.timing.focus;
+        assert_eq!(edge.focus_period(), base, "nothing focused");
+        let gid = edge.cm.tracks[&1].contact.unwrap();
+        edge.cm.set_focus(gid, true, false);
+        assert_eq!(edge.focus_period(), base, "one focused contact keeps T_focus at 600 bit/s");
+        edge.cm.set_focus(gid, true, true);
+        edge.tick(&tracks, &EgoInput::default(), now);
+        let p = edge.focus_period() as f32 / TICK_HZ as f32;
+        assert!(p > 3.0 && p < 5.0, "four children at 600 bit/s share half the link: {p} s");
     }
 }

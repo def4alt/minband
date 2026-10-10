@@ -1,7 +1,37 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "viewer", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "viewer", "run", "dev"], "port": 5173 },
-    { "name": "server", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "server", "run", "start"], "port": 8080 }
+    {
+      "name": "viewer",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "viewer",
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "server",
+        "run",
+        "start"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "sidebyside",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "tools/sidebyside",
+        "start"
+      ],
+      "port": 8090
+    }
   ]
 }

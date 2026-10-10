@@ -280,7 +280,7 @@ topdown.addEventListener('click', (ev) => {
     if (d <= Math.max(14, c.radius * view.ppm) && d < bd) { bd = d; best = c; }
   }
   if (!best) { menu.hidden = true; return; }
-  send({ cmd: 'focus', id: best.id, mode: 'track' });
+  send({ cmd: 'focus', id: best.id, mode: 'auto' }); // a group splits, an individual of a split group drills
   state.menuId = best.id; $('menuId').textContent = `#${best.id}`;
   menu.style.left = `${Math.min(x + 8, rect.width - 230)}px`; menu.style.top = `${Math.min(y + 8, rect.height - 34)}px`; menu.hidden = false;
 });

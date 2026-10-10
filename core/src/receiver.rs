@@ -254,6 +254,14 @@ impl Receiver {
         f.encode(false)
     }
 
+    /// Several focus commands in one uplink frame, applied in order. Drilling into a split group is
+    /// `[(child, track), (group, release)]`: one frame, so the pick and the release arrive together.
+    pub fn make_focus_many(&self, cmds: &[(u16, u8)], ttl: u8, seq: u16, now: u32) -> Vec<u8> {
+        let f = Frame { session: self.session.map_or(0, |s| s.nonce as u16), seq, tick: now, uplink: true, cycle_end: false,
+            records: cmds.iter().map(|&(id, mode)| Record::Focus(FocusRec { id, mode, ttl, chip_px: 0 })).collect() };
+        f.encode(false)
+    }
+
     /// Forget tombstones older than 2 x floor (they did their job).
     pub fn gc(&mut self, now: u32) {
         let life = 2 * self.timing.floor;

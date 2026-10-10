@@ -99,7 +99,10 @@ class Replay {
   delivered: { t: number; bytes: number; wire: number }[] = [];
   dropped = 0; bytesTotal = 0;
   lastDigest = -1e9;
-  focus = new Map<number, { mode: string; since: number }>();
+  // Operator focus, as scripts/focus.mjs simulates it: re-sent every second until a Contact comes
+  // back flagged focused, then with every digest; a drill (pick one child, release its group) goes
+  // up as one frame, three times.
+  focus = new Map<number, { mode: string; since: number; acked: boolean; lastSend: number; drill?: { group: number; tries: number } }>();
   burstUntil = -1; nextBurst = -1;
   log: string[] = [];
 
@@ -159,7 +162,14 @@ class Replay {
       if (up && t - this.lastDigest >= 5 && this.rx.needs_digest()) {
         this.lastDigest = t;
         this.sendUp(this.rx.make_digest(P.budgetBps, tick), t, P, frames);
-        for (const [id, f] of this.focus) this.sendUp(this.rx.make_focus(id, FOCUS_BITS[f.mode] ?? 1, 60, 1, tick), t, P, frames);
+        for (const [id, f] of this.focus) if (f.acked && !f.drill) { f.lastSend = t; this.sendUp(this.rx.make_focus(id, FOCUS_BITS[f.mode] ?? 1, 60, 1, tick), t, P, frames); }
+      }
+      for (const [id, f] of this.focus) {
+        if (t - f.lastSend < 1) continue;
+        if (f.drill) {
+          f.lastSend = t; this.sendUp(this.rx.make_drill(id, f.drill.group, 60, tick), t, P, frames);
+          if (++f.drill.tries >= 3) f.drill = undefined;
+        } else if (!f.acked) { f.lastSend = t; this.sendUp(this.rx.make_focus(id, FOCUS_BITS[f.mode] ?? 1, 60, 1, tick), t, P, frames); }
       }
     }
     // Deliver.
@@ -186,6 +196,7 @@ class Replay {
       confirmed: c.confirmed, lost: c.lost, departed: c.departed, focused: c.focused, group: c.group, course: Math.round(c.course), speed: r1(c.speed), members: [],
       firstSeen: c.first_seen, since: c.since, ageS: r1(c.silence_s), liveness: c.liveness, parent: c.parent, child: c.child, ray: c.ray, copies: c.copies,
       lat: c.lat, lon: c.lon }));
+    for (const [id, f] of this.focus) if (!f.acked && rxContacts.some((c: any) => c.focused && !c.departed && (c.id === id || c.parent === id))) f.acked = true;
     const rawEgo = JSON.parse(this.rx.ego_json());
     const rxEgo = rawEgo ? {
       e: rawEgo.rec.dx, n: rawEgo.rec.dy, altAgl: rawEgo.rec.alt_agl, heading: Math.round(rawEgo.rec.heading * 360 / 256), speed: rawEgo.rec.speed / 4,
@@ -209,7 +220,7 @@ class Replay {
   }
 
   sendUp(bytes: Uint8Array, t: number, P: (typeof PROFILES)[Profile], frames: WireFrame[]) {
-    const delivered = Math.random() >= P.loss;
+    const delivered = this.linkUp(t) && Math.random() >= P.loss;
     const lines = String(describe_frame(bytes)).split('\n');
     frames.push({ seq: Number(/seq=(\d+)/.exec(lines[0])?.[1] ?? -1), bytes: bytes.length, delivered, lines, up: true });
     if (delivered) this.pending.push({ at: t + P.delayS, bytes, up: true });
@@ -230,9 +241,21 @@ class Replay {
         break;
       }
       case 'focus': {
-        const id = Number(m.id), mode = String(m.mode || 'track');
+        const id = Number(m.id);
+        let mode = String(m.mode || 'track');
         const tick = Math.round(this.t * TICK_HZ), P = PROFILES[this.profile];
-        if (mode === 'release') this.focus.delete(id); else this.focus.set(id, { mode: mode === 'split' ? 'split' : mode, since: this.t });
+        const held = (JSON.parse(this.rx.snapshot_json(tick)) as any[]).find((c) => c.id === id);
+        // A click ('auto'): one of a split group's individuals -> drill to it; a group -> split it
+        // so its members come back as individuals; anything else -> track.
+        if (mode === 'auto') {
+          if (held?.child && held.parent != null && this.focus.has(held.parent)) {
+            this.focus.delete(held.parent);
+            this.focus.set(id, { mode: 'track', since: this.t, acked: false, lastSend: -1e9, drill: { group: held.parent, tries: 0 } });
+            break; // sent by the next step
+          }
+          mode = held && held.count > 1 ? 'split' : 'track';
+        }
+        if (mode === 'release') this.focus.delete(id); else this.focus.set(id, { mode, since: this.t, acked: false, lastSend: this.t });
         const bits = mode === 'split' ? FOCUS_BITS.track | FOCUS_BITS.split : FOCUS_BITS[mode] ?? 1;
         const bytes = this.rx.make_focus(id, bits, 60, 1, tick);
         if (this.linkUp(this.t) && Math.random() >= P.loss) this.pending.push({ at: this.t + P.delayS, bytes, up: true });

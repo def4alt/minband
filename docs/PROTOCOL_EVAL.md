@@ -190,4 +190,100 @@ spec are untouched. The WASM package was rebuilt (`core/pkg-node`).
   shorter floor instead.
 - **Serial carriers** (0 B per frame): the one-second target frame is then only a loss-size
   question and smaller frames may win under 10 % loss; not measured.
-- Focus is measured for track mode only; split and chips are not exercised by the harness.
+- Chips are not exercised by the harness. Focus is, see section 7.
+
+## 7. Operator focus: one object selected
+
+`tools/sidebyside/scripts/focus.mjs` replays the operator's click. At a set time the operator
+clicks the contact holding one footage track. The receiver sends `Focus` up the same lossy
+uplink, the edge gives it priority, and the same object is measured with and without the click
+against its footage track (the truth). Five loss seeds per cell, measured from the click until
+the object leaves the footage.
+
+```
+node tools/sidebyside/scripts/focus.mjs                       # all targets, hf lora telemetry contested
+node tools/sidebyside/scripts/focus.mjs --target walker --profile lora --seeds 3
+node tools/sidebyside/scripts/probe-focus.mjs 21 lora          # the same click on the live page (:8090)
+```
+
+Targets: three on the 1080p consensus run (`best2`, 24 tracks, nothing really moves) and two
+real movers on the busy 4K parking lot (206 tracks, oversubscribed below 2 kbit/s). Every one of
+them sits in a group when clicked, so a click splits the group. *Whole group* stops there.
+*Drilled to one* then picks the one individual and releases the group (PROTOCOL.md 4.2).
+"Others up to date" is comp@rev over every other live contact. hf and contested are in the
+JSON output and follow the same pattern.
+
+| object | link | run | priority after | info age med / p90 | error med / p90 | others up to date | total |
+|---|---|---|---:|---:|---:|---:|---:|
+| standing person | lora 2k | not selected | - | 0.7 / 1.5 s | 6.6 / 9.0 m | 82 % | 121.6 B/s |
+| standing person | lora 2k | whole group | 1.1 s | 1.0 / 2.3 s | 0.7 / 3.1 m | 73 % | 157.5 B/s |
+| standing person | lora 2k | drilled to one | 1.1 s | 0.9 / 2.1 s | 0.6 / 3.1 m | 79 % | 141.0 B/s |
+| standing person | telemetry 0.6k | not selected | - | 0.8 / 2.0 s | 6.6 / 7.3 m | 61 % | 42.9 B/s |
+| standing person | telemetry 0.6k | whole group | 0.6 s | 1.7 / 3.5 s | 0.7 / 2.0 m | 16 % | 43.9 B/s |
+| standing person | telemetry 0.6k | drilled to one | 0.6 s | 0.7 / 1.9 s | 0.5 / 1.9 m | 26 % | 44.6 B/s |
+| person in group | lora 2k | not selected | - | 2.3 / 5.4 s | 6.1 / 6.1 m | 86 % | 111.5 B/s |
+| person in group | lora 2k | whole group | 1.3 s | 1.0 / 2.6 s | 0.5 / 4.6 m | 84 % | 160.8 B/s |
+| person in group | lora 2k | drilled to one | 1.3 s | 0.9 / 1.5 s | 0.5 / 4.0 m | 84 % | 133.6 B/s |
+| person in group | telemetry 0.6k | not selected | - | 3.7 / 6.6 s | 6.1 / 6.2 m | 71 % | 43.1 B/s |
+| person in group | telemetry 0.6k | whole group | 1.2 s | 2.1 / 4.6 s | 0.6 / 4.2 m | 30 % | 46.2 B/s |
+| person in group | telemetry 0.6k | drilled to one | 1.2 s | 1.0 / 2.4 s | 0.5 / 4.1 m | 48 % | 45.8 B/s |
+| parked car | lora 2k | not selected | - | 1.7 / 5.6 s | 3.4 / 5.5 m | 89 % | 111.5 B/s |
+| parked car | lora 2k | whole group | 1.5 s | 1.1 / 1.9 s | 0.4 / 0.7 m | 87 % | 161.1 B/s |
+| parked car | lora 2k | drilled to one | 1.5 s | 0.8 / 1.6 s | 0.4 / 0.6 m | 88 % | 134.2 B/s |
+| parked car | telemetry 0.6k | not selected | - | 3.2 / 7.9 s | 4.7 / 6.2 m | 76 % | 43.1 B/s |
+| parked car | telemetry 0.6k | whole group | 0.4 s | 2.9 / 6.3 s | 0.6 / 1.3 m | 55 % | 46.2 B/s |
+| parked car | telemetry 0.6k | drilled to one | 0.4 s | 1.2 / 2.4 s | 0.5 / 0.9 m | 52 % | 45.9 B/s |
+| walker (busy) | lora 2k | not selected | - | 4.1 / 11.2 s | 2.9 / 3.9 m | 26 % | 221.5 B/s |
+| walker (busy) | lora 2k | whole group | 2.6 s | 2.7 / 5.5 s | 0.6 / 2.1 m | 18 % | 222.4 B/s |
+| walker (busy) | lora 2k | drilled to one | 2.6 s | 0.9 / 1.6 s | 0.5 / 1.2 m | 24 % | 221.5 B/s |
+| walker (busy) | telemetry 0.6k | not selected | - | 16.9 / 30.3 s | 1.9 / 3.5 m | 10 % | 51.0 B/s |
+| walker (busy) | telemetry 0.6k | whole group | 0.5 s | 7.9 / 14.9 s | 2.8 / 8.8 m | 5 % | 52.4 B/s |
+| walker (busy) | telemetry 0.6k | drilled to one | 0.5 s | 0.9 / 2.1 s | 0.5 / 0.9 m | 6 % | 51.6 B/s |
+| moving car (busy) | lora 2k | not selected | - | 2.4 / 5.6 s | 6.7 / 19.6 m | 37 % | 213.3 B/s |
+| moving car (busy) | lora 2k | whole group | 1.3 s | 1.2 / 2.6 s | 0.6 / 10.1 m | 24 % | 215.0 B/s |
+| moving car (busy) | lora 2k | drilled to one | 1.3 s | 0.9 / 1.8 s | 0.5 / 8.1 m | 29 % | 214.4 B/s |
+| moving car (busy) | telemetry 0.6k | not selected | - | 4.7 / 11.5 s | 6.4 / 18.6 m | 11 % | 51.9 B/s |
+| moving car (busy) | telemetry 0.6k | whole group | 0.9 s | 3.3 / 7.0 s | 0.6 / 15.8 m | 4 % | 50.6 B/s |
+| moving car (busy) | telemetry 0.6k | drilled to one | 0.9 s | 0.9 / 2.1 s | 0.5 / 4.0 m | 5 % | 50.3 B/s |
+
+What selection buys, drilled to one: the error to the truth falls from the group centroid's 2 to
+7 m to about half a metre, and the information is about a second old at the median. That holds
+on every link, including the saturated busy scene at 600 bit/s, where the unselected walker's
+information is 17 s old at the median. Priority is felt within about a second of the click
+(0.4 to 2.8 s; 7 s once under jamming bursts, because the uplink is down too).
+
+What it costs: on hf and lora the rest of the picture loses 0 to 8 points. On 600 bit/s one
+focused record at `T_focus` = 1.33 s is half of the link, so the others drop from 61 to 76 % up
+to date to 26 to 52 % on the 1080p clip. Focusing a whole group of six at 600 bit/s is the
+worst case for the target and the others alike, so the page drills by default: click a group to
+split it, click the person.
+
+Fixed on the way (each one had made focus slower than no focus at all):
+
+- **Split children had no priority.** They rode the normal ladder while the group record took
+  the 1 Hz focus slot. Children now inherit focus and the group stays on its ladder.
+- **Digest acks cancelled focus.** An acked focused contact was moved to `T_floor`, so a parked
+  car under focus went silent after 5 s. Acks no longer demote focused records.
+- **Focused revisions jumped the queue.** With the halved threshold, a split group of walking
+  people revised every step at rank 0 and starved everything else at 600 bit/s (others 1 %
+  up to date). Focused records now share at most half the link: `T_focus` stretches with the
+  number focused, and a revision waits for the share gap (zero on a fast link).
+- **One member could not be focused alone.** A child died with its group's split. A child
+  focused on its own is now pinned and follows its track; the pick and the release travel in
+  one uplink frame.
+- **Lost Focus frames cost 5 s each.** The receiver now retries every second until it hears a
+  focused `Contact`.
+- **The released group kept showing focused** until its floor repeat. Release now re-sends it at
+  once.
+
+Still open:
+
+- **Focus follows a contact, not a person.** In the busy crowd the walker changes contacts
+  within half a second of a click at 10 s; the click lands on a group the walker has already
+  left. Once drilled, the pinned child follows the track. The click itself cannot.
+- **600 bit/s is a real trade.** Half the link for one object is the current share. A lower
+  share (a third, say) keeps more of the picture and makes the selected object about 2 s old
+  instead of 1. That is an operator-facing choice, not a protocol bug.
+- **The standing person's footage track becomes a coasting ghost after 28 s** (a straight line
+  at 6.6 m/s with no detections behind it). The measurement stops at 28 s; the tracker should
+  not emit coasted rows as observations.

@@ -228,7 +228,8 @@ n x (u16 id, u8 rev)   contacts the receiver holds at this revision (most recent
 ```
 
 Edge: a contact whose `(id, rev)` is in a digest is *acked*; its repeat interval jumps to
-`T_floor` (or it leaves the rotation if it is a tombstone). Digests go every 5 s while frames
+`T_floor` (or it leaves the rotation if it is a tombstone). A focused contact is never demoted by
+an ack: focus is about fresh observations, not delivery of one revision. Digests go every 5 s while frames
 arrive, at once when a contact changes revision.
 
 ### 4.2 `Focus` (type 0x82, body 5 B)
@@ -239,12 +240,28 @@ u8   mode           bit0 track (repeat every T_focus, halve the change threshold
                     bit1 split (send the group's children as Contact records with parent)
                     bit2 chip (send one ChipHead/ChipSym object for it, at chip_px)
                     bit3 release (clear focus)
-u8   ttl            seconds, default 60 ; the receiver re-sends Focus every 5 s while active
+u8   ttl            seconds, default 60
 u8   chip_px        0 = 32, 1 = 64, 2 = 96 pixels square ; bit7 colour
 ```
 
 At most 4 contacts focused at once; a fifth replaces the oldest. Focus expires at `ttl` without
 renewal, so a dead uplink cannot leave the edge stuck in a high-rate mode.
+
+The operator's click, end to end (simulated by `tools/sidebyside/scripts/focus.mjs`):
+
+- **Lone contact:** `track`. It goes out every `T_focus` and its change threshold halves.
+- **Group:** `track | split`. Each member comes back as a child `Contact` (with `parent`) on the
+  focus schedule; the group record itself stays on its ladder, since it would only repeat the
+  children's centroid.
+- **Drill to one member:** `Focus(child, track)` followed by `Focus(group, release)` in *one*
+  frame. A child focused on its own is *pinned*: it lives after the group's release, follows its
+  track into whatever contact holds it next, and its siblings depart. Sending the release alone
+  would drop the child too, hence one frame. The receiver sends the drill frame three times, 1 s
+  apart (it is idempotent).
+- **Retries:** the receiver re-sends `Focus` every 1 s until it hears a `Contact` flagged
+  focused (the id itself or a child of it), then every 5 s while the focus is wanted.
+- **Release or expiry:** the edge re-sends that contact at once, so the receiver drops the
+  focused flag without waiting for `T_floor`.
 
 ### 4.3 `Clock` (type 0x83, body 4 B)
 
@@ -342,7 +359,7 @@ budget it last advertised.
 |---|---|---|
 | `T_ladder` | 0, 2f, 6f, 14f, 30f s after a change, then `T_floor` | repeats of a changed record: 3 copies in 6f s survive 70 % random loss; the spread covers jamming bursts |
 | `T_floor` | 60f s (min 10 s) | repeat interval of an unchanged or acked record |
-| `T_focus` | max(1 s, 1f) | focused contacts, constant, no doubling |
+| `T_focus` | max(1 s, 1f), stretched so focused records take at most half the link | focused contacts, constant, no doubling; with n focused records the gap is at least n x 30 B / (0.5 x the link's application bytes per second), so one focus never stretches it at >= 600 bit/s and a split group of six does |
 | `T_ego` | max(1 s, 5f) | `Ego` |
 | `T_session` | max(5 s, 30f) | `Session` |
 | `T_lost` | 5 s | no look -> lost |
@@ -365,7 +382,8 @@ A contact's `rev` increments (and its ladder restarts) when any of these happens
 
 - motion state changes (static <-> moving <-> stopped), `lost`, `departed`, `confirmed`;
 - its centroid deviates from the receiver's dead reckoning of the last *sent* record by more than
-  `max(ce, 2 x pos_res)` (half that under focus);
+  `max(ce, 2 x pos_res)` (half that under focus; a focused revision goes out as soon as the
+  half-link share allows, at once on a fast link, never ahead of it on a thin one);
 - `count` changes, or the class mix changes;
 - `ce` changes by more than 50 % (GNSS lost or regained changes every contact's ce at once: the
   edge then spreads the revisions over one `T_ego` instead of bursting);
