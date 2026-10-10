@@ -171,3 +171,60 @@ Coded PHY same as 2M PHY, just slower. The throughput cost (roughly
 whatever range gain Coded PHY buys — no distance test was run this
 session (see Gotchas: no RSSI telemetry, no distance-test rig exists
 yet).
+
+## Field range-test rig (2026-10-10)
+
+Two-part rig for testing payload size/PHY without a PC tethered to TX:
+
+- **One-way** (`tx_rangetest.ino` self-generates frames on battery,
+  `rx_rangetest.ino` + `bridge.py` on the PC side): 1200 B payload,
+  Coded PHY, **0% loss at an estimated >10 m indoor distance**
+  (walked distance, not precisely measured).
+- **Round-trip echo** (`tx_echo.ino` on battery — generic echo, no
+  USB needed once connected — plus `rx_rangetest.ino` generating
+  frames and decoding the echo on the PC side): lets payload size/PHY
+  be varied by reflashing only the RX board, TX stays untouched.
+
+First version of the round-trip rig free-ran a new frame every
+`RANGETEST_SEND_INTERVAL_MS` (100 ms) regardless of whether the
+previous frame's echo had come back. On Coded PHY, a multi-fragment
+frame's round-trip can exceed 100 ms (one-way RTT for 1200 B measured
+500-800 ms above), so RX started frame N+1 while TX's echo of frame N
+was still mid-transit; `tx_echo.ino`'s echo loop has no frame-boundary
+awareness and spliced the two frames' bytes together, which
+`bridge.py`'s CRC check correctly rejected. Close-range sample with
+this bug present:
+
+| Payload | Result |
+|---|---|
+| 40 B | 0% CRC errors |
+| 200 B | ~8% CRC errors (19/250 bad, single close-range sample) |
+| 400 B | ~65% CRC errors (68/197 bad, single close-range sample) |
+| 1200 B | 100% CRC errors, zero valid frames |
+
+**Fix:** `rx_rangetest.ino` now stop-and-waits — it holds frame N+1
+until frame N's echo is fully back (both SLIP_END frame-boundary bytes
+observed on the USB serial stream) or a 2 s timeout elapses, instead
+of blasting on a fixed interval. `tx_echo.ino` is unchanged; the whole
+point of the echo architecture is that only RX needs reflashing
+between test configs.
+
+Close-range regression after the fix, Coded PHY, 15-35 s runs each:
+
+| Payload | CRC errors | seq_lost |
+|---|---|---|
+| 40 B | 0 | 0 |
+| 200 B | 0 | 0 |
+| 400 B | 0 | 0 |
+| 1200 B | 0 | 0 |
+
+Also confirmed `RANGETEST_PHY` actually takes effect, not just
+`RANGETEST_PAYLOAD_SIZE` — switching it to `BLE_GAP_PHY_2MBPS`
+produced a visibly different error profile (non-zero CRC errors on a
+1200 B/2M run) than the clean Coded PHY result above, so the define is
+wired into the connect path correctly. Firmware is left flashed at
+the known-good defaults (Coded PHY, 40 B).
+
+An actual field (outdoor distance) run with this round-trip rig has
+not been done yet — only the close-range regression above and the
+earlier one-way >10 m result.
