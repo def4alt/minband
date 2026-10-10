@@ -92,10 +92,25 @@ def main() -> int:
         for row in np.load(mti_path):
             blobs.setdefault(int(row[0]), []).append(row[1:5])
 
-    def motion_in(frame, x1, y1, x2, y2):
+    def implausible(k, row):
+        """Why a box is not exported: 'vehicle', 'person', or None to keep it."""
+        frame, x1, y1, x2, y2, conf, cls = row
+        if int(cls) not in keep: return 'skip'
+        if int(cls) in (2, 3, 5, 7) and (
+                (args.max_vehicle_width and (x2 - x1) / w > args.max_vehicle_width)
+                or (args.max_vehicle_height and (y2 - y1) / h > args.max_vehicle_height)
+                or conf < args.vehicle_min_conf
+                or (int(cls) == 5 and conf < args.bus_min_conf)
+                or k in drop_ids):
+            return 'vehicle'
+        if int(cls) == 0 and args.max_height and (y2 - y1) / h > args.max_height: return 'person'
+        if int(cls) == 0 and args.person_on_vehicle and inside_vehicle(int(frame), x1, y1, x2, y2): return 'person'
+        return None
+
+    def motion_in(k, x1, y1, x2, y2):
         if not blobs: return -1.0
         best = 0.0
-        for bx1, by1, bx2, by2 in blobs.get(frame, ()):
+        for bx1, by1, bx2, by2 in blobs.get(int(dets[k][0]), ()):
             ix = max(0.0, min(x2, bx2) - max(x1, bx1)); iy = max(0.0, min(y2, by2) - max(y1, by1))
             # Intersection over the smaller of the two: a moving car's blob is the union of its
             # positions 0.3 s apart (longer than the box), a walker's blob may be just the legs.
@@ -107,20 +122,10 @@ def main() -> int:
     out_rows = []
     for k, row in enumerate(dets):
         frame, x1, y1, x2, y2, conf, cls = row
-        if int(cls) not in keep:
-            continue
-        if int(cls) in (2, 3, 5, 7) and (
-                (args.max_vehicle_width and (x2 - x1) / w > args.max_vehicle_width)
-                or (args.max_vehicle_height and (y2 - y1) / h > args.max_vehicle_height)
-                or conf < args.vehicle_min_conf
-                or (int(cls) == 5 and conf < args.bus_min_conf)):
-            dropped_vehicles += 1; continue
-        if k in drop_ids:
-            dropped_vehicles += 1; continue
-        if int(cls) == 0 and args.max_height and (y2 - y1) / h > args.max_height:
-            dropped += 1; continue
-        if int(cls) == 0 and args.person_on_vehicle and inside_vehicle(int(frame), x1, y1, x2, y2):
-            dropped += 1; continue
+        why = implausible(k, row)
+        if why == 'skip': continue
+        if why == 'vehicle': dropped_vehicles += 1; continue
+        if why == 'person': dropped += 1; continue
         H = homs.get(int(frame))
         if H is None:
             continue
@@ -136,7 +141,7 @@ def main() -> int:
         if q[0].min() < -2 * w or q[0].max() > 3 * w or q[1].min() < -2 * h or q[1].max() > 3 * h:
             continue
         out_rows.append((int(frame) - f0, conf, int(cls), q[0].min(), q[1].min(), q[0].max(), q[1].max(),
-                         x1, y1, x2, y2, motion_in(int(frame), x1, y1, x2, y2)))
+                         x1, y1, x2, y2, motion_in(k, x1, y1, x2, y2)))
 
     # The replay's virtual image: the reference frame grown to hold every box, with the camera's
     # principal point moved to match (the JVM replay reads cam_cx / cam_cy).

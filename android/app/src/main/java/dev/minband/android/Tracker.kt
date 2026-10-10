@@ -159,6 +159,9 @@ class Tracker(val config: Config = Config()) {
         private var motionAt = 0
         fun pushMotion(v: Float) { if (v < 0f) return; motions[motionAt] = if (v >= 0.5f) 1f else 0f; motionAt = (motionAt + 1) % SIGMA_WINDOW; if (motionN < SIGMA_WINDOW) motionN++ }
         val motion: Float get() = if (motionN == 0) -1f else motions.copyOf(motionN).sum() / motionN
+        /** Whether the pixel-motion evidence (at least 3 hits that said) settles the track as moving or as still. */
+        val surelyMoving: Boolean get() = motionN >= 3 && motion >= 0.6f
+        val surelyStill: Boolean get() = motionN >= 3 && motion == 0f
         /** Box heights (px along gravity) of the last SIGMA_WINDOW hits that had one; the median gates the next hit's size. */
         private val heights = FloatArray(SIGMA_WINDOW)
         private var heightN = 0
@@ -217,6 +220,12 @@ class Tracker(val config: Config = Config()) {
             val range = if (eye != null) Vec2(pt.pos.x - eye.x, pt.pos.z - eye.z).length else 0f
             for ((t, e) in entries.withIndex()) {
                 if (!TrackedClass.sameKind(e.classId, pt.classId)) continue
+                // Pixel motion (drone footage) keeps a driving car's track off the parked car it
+                // passes and a parked car's track off the car driving past: a track whose recent
+                // hits all moved in the image takes no still box, one whose hits were all still
+                // takes no moving box. (A white car driving along a row of parked ones gave its
+                // track to a parked white car, and itself started over under a new id, untagged.)
+                if (pt.motion >= 0f && ((e.surelyMoving && pt.motion < 0.5f) || (e.surelyStill && pt.motion >= 0.5f))) continue
                 if (config.sizeRatio > 0f && pt.heightPx > 0f) {
                     val h = e.heightPx
                     if (h > 0f && absf(pt.heightPx - h) > config.sizeSlackPx && (pt.heightPx > config.sizeRatio * h || h > config.sizeRatio * pt.heightPx)) continue

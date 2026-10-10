@@ -115,7 +115,11 @@ class OverlayMotion {
             var s = states[t.id]
             if (s == null) {
                 s = State(t.classId)
-                if (inherits(t.pos, t.classId, nowS)) { s.moving = true; flips.add("id %d %s t=%.1f born within %.1f m of a lost mover -> MOVING".format(t.id, TrackedClass.name(t.classId), nowS, INHERIT_DIST)) }
+                // A vehicle whose own hits show no pixel motion is a parked car born beside the
+                // lost mover, not the mover under a new id (a parked white SUV inherited a passing
+                // white car's tag).
+                val stillInImage = TrackedClass.vehicle(t.classId) && t.motion == 0f
+                if (!stillInImage && inherits(t.pos, t.classId, nowS)) { s.moving = true; flips.add("id %d %s t=%.1f born within %.1f m of a lost mover -> MOVING".format(t.id, TrackedClass.name(t.classId), nowS, INHERIT_DIST)) }
                 s.lastHitAt = nowS; s.hits = t.hits
                 states[t.id] = s
             }
