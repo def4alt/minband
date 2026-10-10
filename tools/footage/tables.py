@@ -19,7 +19,8 @@ CLIPS = [  # (label, run dir, split)
     ('hituav-120m-30_3 (thermal)', 'hituav-120m-30_3', 'held-out'),
     ('hituav-70m-90_1 (thermal)', 'hituav-70m-90_1', 'held-out'),
 ]
-VARIANTS = [('old', 'old'), ('det-legacy', 'new detector, old tracker'), ('det-newtracker', 'new detector + tracker'), ('', 'improved (det + MTI)')]
+VARIANTS = [('old', 'old'), ('det-legacy', 'new detector, old tracker'), ('det-newtracker', 'new detector + round-2 tracker, no MTI'),
+            ('round1', 'round 1 (det + MTI)'), ('', 'round 2 (det + MTI)')]
 
 
 def mb(d):
@@ -50,7 +51,7 @@ def label_free():
             b15, b5 = r.get('theta0.15', {}), r.get('theta0.5', {})
             st = '-' if not s.get('static_tracks') else f"{s['static_tracks']}, {s['position_std_m_median']:.2f}, {s['kf_speed_mps_median']:.2f}"
             print(f"| {lab} | {split} | {name} | {t.get('count', 0)} | {f(t.get('births_per_min'), '%.0f')} | {f(t.get('length_s', {}).get('median'), '%.1f')} | "
-                  f"{f(t.get('mean_entities_per_frame'), '%.1f')} | {f(fu.get('in_confirmed_track_ge_1s'))} | {f(fu.get('motion_only_per_frame'), '%.1f') if sub == '' else '-'} | {st} | "
+                  f"{f(t.get('mean_entities_per_frame'), '%.1f')} | {f(fu.get('in_confirmed_track_ge_1s'))} | {f(fu.get('motion_only_per_frame'), '%.1f') if sub in ('', 'round1') else '-'} | {st} | "
                   f"{f(b15.get('bytesPerSec'), '%.0f')} / {f(b5.get('bytesPerSec'), '%.0f')} | {f(b15.get('errMean', 0) * 100 if b15 else None, '%.1f')} / {f(b5.get('errMean', 0) * 100 if b5 else None, '%.1f')} |")
 
 

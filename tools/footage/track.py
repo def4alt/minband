@@ -34,12 +34,17 @@ Stages:
   (dismounts, vehicles, movers); a mover track is promoted to a dismount or vehicle when an
   appearance detection associates with it, and a classified track can be kept alive by motion
   detections. Birth after 3 hits; coasting up to 2 s with a gate that grows with the time since the
-  last detection; a lost track can be re-acquired (same id) for 3 s instead of a new one being born;
-  a track is reported once it is 1 s old, so short spurious tracks never reach the link; a static
-  mode (measured motion over 3 s below what jitter explains) averages a parked object's position and
-  reports zero velocity, and leaves it on a large innovation; a motion-only track in lockstep with
-  another one a few metres away (the far end of a low-sun shadow) is tracked but not reported. KF
-  state reported at every video frame. --legacy-tracker restores the original tracker.
+  last detection; a lost track can be re-acquired (same id) for 3 s instead of a new one being born,
+  and one older than 5 s for 20 s where it was last seen, with a tight gate (it stopped: a walker who
+  waits, a car that parks); a track is reported once it is 1 s old, so short spurious tracks never
+  reach the link; a static mode (measured motion over 3 s below what jitter explains) averages a
+  parked object's position, reports zero velocity, coasts 4 s, and leaves it on a large innovation;
+  a dismount track and a two-wheeler detection associate (a rider is boxed either way). Motion-only
+  tracks that are not objects are tracked but not reported: one in lockstep with a confirmed track
+  at most half its size (the far end of a low-sun shadow, a fragment), and one that slides against
+  the camera's own motion at a fraction of its speed (parallax of a tree top or a roof edge; the
+  camera's motion comes from the plane-to-image homographies). KF state reported at every video
+  frame. --legacy-tracker restores the original tracker; round1.py runs the round-1 one (d59938b).
 - registration: ORB to the reference while it holds; otherwise an optical-flow chain from the
   previous frame (low-texture thermal, views that leave the reference), with hysteresis.
 """
@@ -54,6 +59,7 @@ TICK_HZ = 120
 MOVER = 100
 ARMOURED = 101
 VEHICLES = {1, 2, 3, 5, 7, ARMOURED}  # bicycle, car, motorcycle, bus, truck (COCO), armoured (MinBand)
+TWO_WHEELERS = {1, 3}                 # a rider on one is boxed as a person on some frames, a two-wheeler on others
 DISMOUNT_G, VEHICLE_G, MOVER_G = 0, 1, 2
 CLASS_NAME = {0: 'dismount', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck', MOVER: 'mover', ARMOURED: 'armoured'}
 
@@ -275,6 +281,28 @@ class Ground:
         t = self.range_t(v)
         xc, yc = (u - self.cx) / self.f, (v - self.cy) / self.f
         return t * xc, t * (math.cos(self.pitch) - yc * math.sin(self.pitch))
+
+
+def camera_centres(homs, g):
+    """Camera centre (X, Y, height) on the ground model at each registered frame: the plane-to-image
+    homography of frame n (the reference camera's, through the homography onto the reference) gives
+    the camera's pose by the standard planar decomposition K^-1 M = [r1 r2 t]."""
+    K = np.array([[g.f, 0, g.cx], [0, g.f, g.cy], [0, 0, 1.0]]); Ki = np.linalg.inv(K)
+    p = g.pitch
+    R0 = np.array([[1.0, 0, 0], [0, -math.sin(p), -math.cos(p)], [0, math.cos(p), -math.sin(p)]])  # right, down, optical
+    t0 = -R0 @ np.array([0, 0, g.h])
+    G = K @ np.column_stack([R0[:, 0], R0[:, 1], t0])  # ground (X, Y, 1) -> reference image
+    out = {}
+    for n, Hn in homs.items():
+        try: A = Ki @ np.linalg.inv(np.asarray(Hn, np.float64)) @ G
+        except np.linalg.LinAlgError: continue
+        A = A * 2 / (np.linalg.norm(A[:, 0]) + np.linalg.norm(A[:, 1]))
+        for sgn in (1, -1):
+            r1, r2, t = sgn * A[:, 0], sgn * A[:, 1], sgn * A[:, 2]
+            U, _, Vt = np.linalg.svd(np.column_stack([r1, r2, np.cross(r1, r2)]))
+            C = -(U @ Vt).T @ t
+            if C[2] > 0: out[n] = C; break
+    return out
 
 
 def warp(H, pts):
@@ -523,19 +551,39 @@ class Track:
         self.static = False; self.far = 0
         self.lost_at = None
         self.comp = {}; self.companion = False  # lockstep partners (offsets over time), see cmd_track
+        self.comp_seen = None                   # last time the lockstep test passed (companion hold)
+        self.plx = []; self.parallax = False    # parallax test samples (t, consistent), see cmd_track
+        self.sizes = {False: [], True: []}      # recent box sizes on the ground (m): motion blobs, appearance boxes
+
+    def add_size(self, s, k):
+        if s is not None and math.isfinite(s):
+            app = k != MOVER; self.sizes[app] = (self.sizes[app] + [s])[-15:]
+
+    def size(self):
+        """The object's size: its appearance boxes when it has them (a motion blob smears along the motion
+        and a classified track also takes motion blobs), else its motion blobs."""
+        v = self.sizes[True] or self.sizes[False]
+        return float(np.median(v)) if v else None
 
     def cls(self):
         return max(self.classes, key=self.classes.get) if self.classes else MOVER
 
-    def accepts(self, k):
-        """Same group; a mover track takes any class (promotion); a classified track takes movers."""
+    def rider(self, k):
+        """A dismount track and a two-wheeler detection, or the reverse: the same rider, labelled either way."""
         gk = group(k)
-        return gk == self.g or self.g == MOVER_G or gk == MOVER_G
+        return (self.g == DISMOUNT_G and int(k) in TWO_WHEELERS) or (self.g == VEHICLE_G and gk == DISMOUNT_G and self.cls() in TWO_WHEELERS)
+
+    def accepts(self, k, a=None):
+        """Same group; a mover track takes any class (promotion); a classified track takes movers; with
+        `riders`, a dismount and a two-wheeler take each other."""
+        gk = group(k)
+        return gk == self.g or self.g == MOVER_G or gk == MOVER_G or (a is not None and a.riders and self.rider(k))
 
     def gate(self, k, a, t=None, det_dt=0.0):
         """Vehicle gate if either side is a vehicle, person gate if either is a dismount, else (two movers)
         vehicle; grown for the time without a detection (coasting, re-acquisition), up to 3x."""
         gs = {self.g, group(k)}
+        if getattr(a, 'riders', False) and self.rider(k): gs = {DISMOUNT_G}
         base = a.gate_vehicle if VEHICLE_G in gs else (a.gate_person if DISMOUNT_G in gs else a.gate_vehicle)
         if t is None or not a.gate_growth: return base
         gap = max(0.0, t - self.last - det_dt)
@@ -611,6 +659,18 @@ def cmd_track(a):
     print(f'ground: f {f:.0f} px, pitch {math.degrees(pitch):.1f} deg, height {h:.1f} m ({fitinfo["method"]}, {fitinfo["boxes"]} boxes); '
           f'GSD at centre {g.gsd(Hh / 2) * 100:.1f} cm/px')
 
+    # The camera's own ground velocity (for the parallax test): its centre at each registered frame,
+    # differentiated by a straight-line fit over +-0.5 s.
+    cams = camera_centres(homs, g)
+    cam_n = np.array(sorted(cams)); cam_t = (cam_n - meta['start_frame']) / fps
+    cam_xy = np.array([cams[n][:2] for n in cam_n]).reshape(-1, 2)
+
+    def cam_velocity(t):
+        m = np.abs(cam_t - t) <= 0.5
+        if m.sum() < 3: return None
+        A = np.column_stack([cam_t[m] - t, np.ones(m.sum())])
+        return np.linalg.lstsq(A, cam_xy[m], rcond=None)[0][0]
+
     mti_counts = None
     mti_rows = np.zeros((0, 9))
     if 'mti' in caches:
@@ -621,6 +681,12 @@ def cmd_track(a):
         (uu, vv), = warp(homs[n], [(u, v)])
         X, Y = g.to_ground(uu, vv)
         return (X, Y) if math.isfinite(X) and math.isfinite(Y) else None
+
+    def size_of(box, n):
+        """Box diagonal on the ground (m) at its centre's range: rotation-invariant, for size ratios."""
+        (u1, v1), (u2, v2) = warp(homs[n], [(box[0], box[1]), (box[2], box[3])])
+        s = math.hypot(u2 - u1, v2 - v1) * g.gsd((v1 + v2) / 2)
+        return s if math.isfinite(s) and s > 0 else None
 
     # Detections per frame, fused.
     byframe, detlog = {}, []
@@ -643,12 +709,21 @@ def cmd_track(a):
                 't0': float(r[7]) - meta['start_frame'] / fps, 'hits0': int(r[8])} for r in mti_by.get(n, [])]
         for d in app: d['xy'] = ground_of((d['box'][0] + d['box'][2]) / 2, d['box'][3], n)  # feet / tyres
         for d in mti: d['xy'] = ground_of((d['box'][0] + d['box'][2]) / 2, (d['box'][1] + d['box'][3]) / 2, n)  # blob centre
+        for d in app + mti: d['size'] = size_of(d['box'], n)
         fused = fuse_frame(app, mti, lambda d: d['xy'], lambda d: d['xy'], a)
         for d in app + mti: d['tid'] = 0; detlog.append(d)
         byframe[n] = [d for d in fused if d['xy'] is not None]
     origin = np.median(np.array([d['xy'] for v in byframe.values() for d in v]), axis=0) if any(byframe.values()) else np.zeros(2)
 
     tracks, lost, out, next_id, alltracks = [], [], [], 1, {}
+
+    def established(tr):
+        """Old enough to be held for a long re-acquisition at the place it was last seen."""
+        return a.long_reacquire > 0 and (tr.lost_at if tr.lost_at is not None else tr.last) - tr.born >= a.established
+
+    def coast_of(tr):
+        """A parked object the detector misses for a few seconds is still there: it may coast longer."""
+        return max(a.coast, a.static_coast) if tr.static else a.coast
     f0, f1 = meta['start_frame'], meta['end_frame']
     dt = 1 / fps
     det_dt = meta['every'] / fps
@@ -666,7 +741,7 @@ def cmd_track(a):
                 for i, ti in enumerate(unmatched):
                     tr = tracks[ti]; px, py = tr.kf.x[:2]
                     for j, d in enumerate(grp):
-                        if not tr.accepts(d['cls']): continue
+                        if not tr.accepts(d['cls'], a): continue
                         dd = math.hypot(d['xy'][0] - px, d['xy'][1] - py)
                         if dd <= tr.gate(d['cls'], a, t, det_dt): C[i, j] = dd
                 ri, ci = linear_sum_assignment(C)
@@ -674,7 +749,7 @@ def cmd_track(a):
                 for i, j in zip(ri, ci):
                     if C[i, j] >= 1e6: continue
                     tr = tracks[unmatched[i]]; d = grp[j]
-                    tr.update(d['xy'], d['cls'], d['conf'], t, a); d['tid'] = tr.id
+                    tr.update(d['xy'], d['cls'], d['conf'], t, a); tr.add_size(d['size'], d['cls']); d['tid'] = tr.id
                     used.add(i); grp[j] = None
                 unmatched = [ti for i, ti in enumerate(unmatched) if i not in used]
             rest = [d for d in hi if d is not None]
@@ -685,51 +760,87 @@ def cmd_track(a):
                 for i, tr in enumerate(lost):
                     px, py = tr.kf.x[:2]
                     for j, d in enumerate(rest):
-                        if not tr.accepts(d['cls']): continue
+                        if not tr.accepts(d['cls'], a): continue
                         dd = math.hypot(d['xy'][0] - px, d['xy'][1] - py)
-                        if dd <= tr.gate(d['cls'], a, t, det_dt): C[i, j] = dd
+                        if (not established(tr) or t - tr.lost_at <= a.reacquire) and dd <= tr.gate(d['cls'], a, t, det_dt): C[i, j] = dd
+                        # An established object may also have stopped where it was last seen (a walker who
+                        # waits, a car that parks) and be missed for a while: a fixed, tight gate there.
+                        if established(tr):
+                            sx, sy = (tr.kf.x[0], tr.kf.x[1]) if tr.static else tr.hist[-1][1:3]
+                            ds = math.hypot(d['xy'][0] - sx, d['xy'][1] - sy)
+                            if ds <= a.stop_gate * tr.gate(d['cls'], a): C[i, j] = min(C[i, j], ds)
                 back = set()
                 for i, j in zip(*linear_sum_assignment(C)):
                     if C[i, j] >= 1e6: continue
                     tr = lost[i]; d = rest[j]
                     tr.kf.x[:2] = d['xy']; tr.kf.P[:2, :2] = np.eye(2) * SIGMA_Z[tr.g] ** 2
-                    tr.update(d['xy'], d['cls'], d['conf'], t, a); d['tid'] = tr.id; tr.lost_at = None
+                    tr.update(d['xy'], d['cls'], d['conf'], t, a); tr.add_size(d['size'], d['cls']); d['tid'] = tr.id; tr.lost_at = None
                     tracks.append(tr); back.add(i); rest[j] = None; reacquired += 1
                 lost = [tr for i, tr in enumerate(lost) if i not in back]
             for d in rest:  # births from unmatched high-confidence detections
                 if d is None: continue
-                tr = Track(next_id, d['xy'], d['cls'], d['conf'], t, born=d.get('t0'))
+                tr = Track(next_id, d['xy'], d['cls'], d['conf'], t, born=d.get('t0')); tr.add_size(d['size'], d['cls'])
                 if d.get('hits0'): tr.hits = max(tr.hits, min(3, d['hits0']))  # a persistent motion tracklet
                 d['tid'] = next_id; tracks.append(tr); alltracks[next_id] = tr; next_id += 1
             # Tentative tracks that missed die at once; confirmed ones coast up to `coast` s, then wait
             # `reacquire` s in the lost pool.
             keep = []
             for tr in tracks:
-                if (t - tr.last) <= (a.coast if tr.hits >= 3 else 0.0): keep.append(tr)
+                if (t - tr.last) <= (coast_of(tr) if tr.hits >= 3 else 0.0): keep.append(tr)
                 elif tr.hits >= 3 and a.reacquire > 0: tr.lost_at = t; lost.append(tr)
             tracks = keep
-            lost = [tr for tr in lost if t - tr.lost_at <= a.reacquire]
-            # Companions: a motion-only track that keeps a constant offset from another confirmed track
-            # within a few metres is the same object's other part: the far end of a long low-sun shadow,
-            # or a body the threshold split. Still tracked (so it does not respawn), not reported.
+            lost = [tr for tr in lost if t - tr.lost_at <= (a.long_reacquire if established(tr) else a.reacquire)]
+            # Companions: a motion-only track that keeps a constant offset from a confirmed track and is
+            # much smaller than it is that object's other part: the far end of a long low-sun shadow (a
+            # low sun throws a vehicle's shadow tip 10-15 m), or a fragment. Still tracked (so it does
+            # not respawn), not reported. Size, not distance, separates it from the next vehicle of a
+            # convoy or the next walker of a group, which keep the same lockstep but are about as large.
+            # Sizes are box diagonals on the ground; a classified partner's come from its appearance
+            # boxes. While a mover has been near a larger partner too briefly for the lockstep test it is
+            # held back (pending), and a found companion stays one for `companion_hold` s, so a shadow
+            # does not reach the link before or between the windows that recognise it.
             conf_tr = [tr for tr in tracks if tr.hits >= 3]
             for tr in conf_tr:
                 if tr.classes or a.companion_dist <= 0: tr.companion = False; continue
+                ts = tr.size()
                 for o in conf_tr:
                     if o is tr or (not o.classes and o.id > tr.id): continue
+                    os_ = o.size()
+                    if ts is None or os_ is None or ts > a.companion_size * os_: continue
                     dx, dy = tr.kf.x[0] - o.kf.x[0], tr.kf.x[1] - o.kf.x[1]
                     if math.hypot(dx, dy) <= a.companion_dist: tr.comp.setdefault(o.id, []).append((t, dx, dy))
-                tr.companion = False
+                pending = False
                 for pid in list(tr.comp):
                     hq = [q for q in tr.comp[pid] if t - q[0] <= a.companion_window]
                     tr.comp[pid] = hq
                     if not hq: del tr.comp[pid]; continue
-                    if len(hq) >= 4 and hq[-1][0] - hq[0][0] >= 0.6 * a.companion_window and hq[-1][0] == t:
+                    if hq[-1][0] != t: continue
+                    if len(hq) >= 4 and hq[-1][0] - hq[0][0] >= 0.6 * a.companion_window:
                         sd = math.hypot(np.std([q[1] for q in hq]), np.std([q[2] for q in hq]))
-                        if sd <= a.companion_std: tr.companion = True
+                        if sd <= a.companion_std: tr.comp_seen = t
+                    elif a.companion_pending:
+                        pending = True
+                tr.companion = pending or (tr.comp_seen is not None and t - tr.comp_seen <= a.companion_hold)
+            # Parallax: under a moving camera, the top of a tall static object (tree, roof edge, mast)
+            # slides over the ground plane against the camera's motion, at h / (H - h) of its speed, and
+            # the motion detector sees it move. A motion-only track whose velocity stays within
+            # `parallax_cos` of anti-parallel to the camera's and below `parallax_k` of its speed, over a
+            # window, is tracked but not reported; only while the camera moves faster than
+            # `parallax_vcam`. Something driving against the camera's direction that slowly is
+            # suppressed too; the appearance detector still reports it if it sees it.
+            vc = cam_velocity(t) if a.parallax_k > 0 else None
+            for tr in conf_tr:
+                if tr.classes or vc is None: tr.parallax = False; continue
+                sc = math.hypot(*vc); v = tr.kf.x[2:]; sv = math.hypot(*v)
+                if sc >= a.parallax_vcam and sv >= 0.1 * sc:  # a (nearly) still track says nothing about direction
+                    ok = sv <= a.parallax_k * sc and -(v @ vc) / (sv * sc) >= a.parallax_cos
+                    tr.plx = [q for q in tr.plx if t - q[0] <= a.companion_window] + [(t, ok)]
+                hq = [q for q in tr.plx if t - q[0] <= a.companion_window]
+                tr.parallax = len(hq) >= 4 and hq[-1][0] - hq[0][0] >= 0.6 * a.companion_window and np.mean([q[1] for q in hq]) >= 0.75
+                if tr.parallax: tr.companion = True
         for tr in tracks:
             # Reported once confirmed (3 hits) and `min_age` s old: short spurious tracks never reach the link.
-            if tr.hits < 3 or t - tr.last > a.coast or t - tr.born < a.min_age or tr.companion: continue
+            if tr.hits < 3 or t - tr.last > coast_of(tr) or t - tr.born < a.min_age or tr.companion: continue
             x, y, vx, vy = tr.state()
             # MinBand frame: x right, y up, z toward the camera; forward on the ground is -z.
             out.append((round(t * TICK_HZ), tr.id, tr.cls(), x - origin[0], 0.0, -(y - origin[1]), vx, 0.0, -vy, int(min(255, tr.conf * 255))))
@@ -774,7 +885,7 @@ def cmd_track(a):
         'moving_vehicle_median_speed_mps': float(np.median(movers)) if movers else None, 'moving_vehicles': len(movers),
         'mover_median_speed_mps': float(np.median(mover_cls)) if mover_cls else None,
         'mti': mti_counts, 'overlay_dropped_appearance': ov_dropped, 'reacquired': reacquired,
-        'tracker': {k: getattr(a, k) for k in ('coast', 'reacquire', 'min_age', 'static_mode', 'gate_growth', 'gate_person', 'gate_vehicle', 'high', 'low', 'companion_dist')},
+        'tracker': {k: getattr(a, k) for k in ('coast', 'reacquire', 'min_age', 'static_mode', 'gate_growth', 'gate_person', 'gate_vehicle', 'high', 'low', 'companion_dist', 'companion_size', 'companion_hold', 'companion_pending', 'parallax_k', 'parallax_cos', 'parallax_vcam', 'long_reacquire', 'established', 'stop_gate', 'static_coast', 'riders')},
         'extent_m': [float(np.ptp(arr[:, 3])), float(np.ptp(arr[:, 5]))] if len(arr) else [0, 0],
         'duration_s': (f1 - f0 + 1) / fps, 'rows': len(arr),
         # Where the drone was in the log's frame (its nadir is the ground model's origin): TRACKS_CAMERA for the sim.
@@ -837,13 +948,25 @@ def main():
     t.add_argument('--no-static-mode', dest='static_mode', action='store_false', help='no static/moving mode switch')
     t.add_argument('--static-window', type=float, default=3.0); t.add_argument('--static-v-person', type=float, default=0.3)
     t.add_argument('--static-v-vehicle', type=float, default=0.5)
+    t.add_argument('--long-reacquire', type=float, default=20.0, help='s an established lost track can be re-acquired where it was last seen (0: off)')
+    t.add_argument('--established', type=float, default=5.0, help='s of age before a track is held for --long-reacquire')
+    t.add_argument('--stop-gate', type=float, default=0.5, help='fraction of the base gate for re-acquisition where a track was last seen')
+    t.add_argument('--static-coast', type=float, default=4.0, help='s a static track coasts (reported) without a detection (at least --coast)')
+    t.add_argument('--no-riders', dest='riders', action='store_false', help='a dismount track and a two-wheeler detection never associate')
     t.add_argument('--no-overlay', dest='overlay', action='store_false', help='ignore overlay-mask.png for appearance boxes')
     t.add_argument('--legacy-tracker', action='store_true', help='the original tracker: coast 1 s, fixed gates, no re-acquisition, no min age, no static mode')
     t.add_argument('--fuse-gate-person', type=float, default=1.5); t.add_argument('--fuse-gate-vehicle', type=float, default=4.0)
     t.add_argument('--confirm-sources', default='mil', help='sources that only label: their boxes need motion or another model to be tracked')
     t.add_argument('--label-conf', type=float, default=0.5, help="a confirm-source's class replaces the group's at this confidence or above")
-    t.add_argument('--companion-dist', type=float, default=8.0, help='m; a motion-only track in lockstep this close to another is not reported (0: off)')
+    t.add_argument('--companion-dist', type=float, default=20.0, help='m; a lockstep motion-only track this close to a much larger one is not reported (0: off)')
+    t.add_argument('--companion-size', type=float, default=0.5, help='"much smaller": size ratio (box diagonals on the ground) at or below this')
     t.add_argument('--companion-std', type=float, default=0.6); t.add_argument('--companion-window', type=float, default=1.5)
+    t.add_argument('--companion-hold', type=float, default=1.5, help='s the companion flag holds after the last lockstep window')
+    t.add_argument('--no-companion-pending', dest='companion_pending', action='store_false',
+                   help='report a motion-only track near a larger partner before the lockstep test can decide')
+    t.add_argument('--parallax-k', type=float, default=0.6, help='parallax test: track speed below this fraction of the camera speed (0: off)')
+    t.add_argument('--parallax-cos', type=float, default=0.5, help='parallax test: cosine to the anti-camera direction at or above this')
+    t.add_argument('--parallax-vcam', type=float, default=1.0, help='m/s; the parallax test runs only while the camera moves faster')
     t.add_argument('--mti-merge', type=float, default=0.25, help='merge MTI blobs whose boxes, grown by this fraction of the larger, touch')
     t.add_argument('--fuse-expand', type=float, default=0.5, help='appearance box grown by this fraction of its size when absorbing MTI blobs')
     t.add_argument('--mti-min-m', type=float, default=0.3); t.add_argument('--mti-max-m', type=float, default=25.0)
@@ -855,7 +978,8 @@ def main():
     v = s.add_parser('preview'); v.add_argument('dir'); v.add_argument('video')
     a = p.parse_args()
     if getattr(a, 'legacy_tracker', False):
-        a.coast, a.gate_growth, a.reacquire, a.min_age, a.static_mode, a.companion_dist = 1.0, 0.0, 0.0, 0.0, False, 0.0
+        a.coast, a.gate_growth, a.reacquire, a.min_age, a.static_mode, a.companion_dist, a.parallax_k = 1.0, 0.0, 0.0, 0.0, False, 0.0, 0.0
+        a.long_reacquire, a.static_coast, a.riders = 0.0, 0.0, False
     {'detect': cmd_detect, 'mti': cmd_mti, 'track': cmd_track, 'preview': cmd_preview}[a.cmd](a)
 
 

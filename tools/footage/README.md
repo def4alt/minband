@@ -65,7 +65,7 @@ clips it was never tuned on. Results, per clip and before/after: `docs/FOOTAGE_F
 .venv/bin/python audit.py metrics DIR DIR/det-legacy                               # label-free metrics: audit-metrics.json
 .venv/bin/python audit.py sample  DIR clip.mp4 --old DIR/old --out DIR/audit       # 12 fixed-seed frames, raw + annotated
 .venv/bin/python audit.py score   DIR/audit                                        # P / R with Wilson intervals from DIR/audit/labels.json
-./run_clip.sh clip.mp4 DIR          # all of the above for one clip, plus the old pipeline (olddet.py), x264, tools/eval, replays (minband.sh)
+./run_clip.sh clip.mp4 DIR          # all of the above for one clip, plus round 1 (round1.py), the old pipeline (olddet.py), x264, tools/eval, replays (minband.sh)
 .venv/bin/python tables.py label_free; .venv/bin/python pooled.py              # the tables of docs/FOOTAGE_FINDINGS.md
 ```
 
@@ -121,6 +121,26 @@ track (same id) for 3 s instead of a new birth; tracks reported from 1 s of age,
 tracks never reach the link; a static mode (measured motion over 3 s below 0.3 m/s for a dismount,
 0.5 m/s for a vehicle) that averages a parked object's position and reports zero velocity until a
 large innovation; motion-only companions not reported.
+
+Round 2 (tuned on MEVA 4K and the dev clips only, then frozen; round1.py reruns round 1 from git):
+- **Companions by size, not distance.** A motion-only track in lockstep (offset std <= 0.6 m over
+  1.5 s) with a confirmed track at most half its size (box diagonals on the ground; a classified
+  partner's from its appearance boxes) within 20 m is that object's other part: the tip of a low-sun
+  shadow 10-15 m behind a vehicle. The next vehicle of a convoy or the next walker of a group keeps
+  the same lockstep but is about as large, so it stays (round 1 hid any lockstep track within 8 m,
+  which hid walkers in groups and missed the long shadows). A mover near a larger partner is held
+  back until the test can decide (~1 s), and a found companion stays hidden 1.5 s.
+- **Parallax.** The camera's centre at every frame comes from the plane-to-image homography
+  (`camera_centres`). Under a moving camera the top of a tall static object slides over the ground
+  plane against the camera's motion at h / (H - h) of its speed; a motion-only track whose velocity
+  stays within cos 0.5 of that direction and below 0.6 of the camera's speed (objects up to about
+  3/8 of the camera's height), over 1.5 s, is not reported. Only while the camera moves > 1 m/s.
+- **Re-acquisition where an object stopped.** A track older than 5 s that is lost stays re-acquirable
+  for 20 s at the place it was last seen, with half the base gate (the 3 s re-acquisition at the
+  predicted position with the growing gate is unchanged): walkers who stop and wait, cars that park.
+- **Static coasting 4 s** (reported) for parked objects the detector misses for a few seconds.
+- **Riders.** A dismount track and a bicycle or motorcycle detection associate (VisDrone boxes a rider
+  either way), with the person gate.
 
 A specialist appearance model (e.g. a military one, `detect --tag mil`) can be fused with
 `--sources det,mil,mti`: its boxes are only tracked where motion or another model corroborates them,
