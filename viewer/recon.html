@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#070809" />
+  <title>MinBand recon</title>
+  <style>
+    /* Same palette as index.html (docs/STYLE.md); kept local since this page is deliberately small. */
+    :root { --bg: #070809; --ink: #e9ecef; --ink-2: #9aa3ad; --ink-3: #4a525b;
+      --sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 300 12px/1.45 var(--sans); }
+    #app { display: grid; grid-template-rows: 1fr auto; height: 100%; }
+    #split { display: flex; min-height: 0; }
+    #scene { flex: 1 1 0; position: relative; min-width: 0; }
+    #scene canvas { display: block; }
+    #edge { flex: 0 0 320px; display: flex; flex-direction: column; border-left: 1px solid var(--ink-3); min-width: 0; }
+    #edgeTitle { padding: 10px 16px; font: 400 10px/1.2 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid var(--ink-3); }
+    #edgeView { position: relative; flex: 1 1 0; background: #000; }
+    #edgeView video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #edgePlaceholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-3); text-align: center; padding: 0 16px; }
+    #bar { display: flex; flex-wrap: wrap; gap: 6px 28px; padding: 10px 16px; border-top: 1px solid var(--ink-3); font-family: var(--mono); }
+    #bar .stat { display: flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+    #bar .lbl { color: var(--ink-2); font: 400 9.5px/1.2 var(--sans); letter-spacing: .14em; text-transform: uppercase; }
+    #bar .val { color: var(--ink); font-variant-numeric: tabular-nums; }
+    #bar .val.stale { color: var(--ink-3); }
+    #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; color: var(--ink-2); letter-spacing: .3em; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="split">
+      <div id="scene"><div id="status">connecting</div></div>
+      <section id="edge" aria-label="edge view">
+        <div id="edgeTitle">Edge view (not transmitted)</div>
+        <div id="edgeView">
+          <video id="cam" autoplay muted playsinline></video>
+          <div id="edgePlaceholder" hidden>camera unavailable</div>
+        </div>
+      </section>
+    </div>
+    <div id="bar">
+      <div class="stat"><span class="lbl">Total</span><span class="val" id="statTotal">–</span></div>
+      <div class="stat"><span class="lbl">Cap</span><span class="val" id="statCap">–</span></div>
+      <div class="stat"><span class="lbl">MinBand</span><span class="val" id="statA">–</span></div>
+      <div class="stat"><span class="lbl">Telemetry</span><span class="val" id="statB">–</span></div>
+      <div class="stat"><span class="lbl">Depth</span><span class="val" id="statC">–</span></div>
+      <div class="stat"><span class="lbl">vs H.264</span><span class="val" id="statH264">–</span></div>
+      <div class="stat"><span class="lbl">Keyframe age</span><span class="val" id="statKfAge">–</span></div>
+      <div class="stat"><span class="lbl">Voxels</span><span class="val" id="statVoxels">0</span></div>
+      <div class="stat"><span class="lbl">Link</span><span class="val" id="statLink">connecting</span></div>
+    </div>
+  </div>
+  <script type="module" src="/src/recon.ts"></script>
+</body>
+</html>

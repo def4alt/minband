@@ -657,6 +657,13 @@ export class TwinScene {
     if (text !== e.labelText) { e.labelText = text; e.label.element.textContent = text; }
   }
 
+  /** Host an extra object (e.g. a voxel InstancedMesh) in the twin's own scene graph, so a page
+   * like recon.ts can layer reconstruction output under the same entities/rings/frustum without
+   * forking TwinScene. `this.scene` is private, so this is the one sanctioned way in. */
+  addLayer(obj: THREE.Object3D): void {
+    this.scene.add(obj);
+  }
+
   update(snap: Snapshot) {
     const now = performance.now();
     const keyOfId = new Map<number, string>();
