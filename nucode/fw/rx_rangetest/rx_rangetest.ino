@@ -14,7 +14,7 @@ BLEUart bleuart;
 static uint16_t connHandle = BLE_CONN_HANDLE_INVALID;
 static uint16_t seq = 0;
 
-#define RANGETEST_PAYLOAD_SIZE 40
+#define RANGETEST_PAYLOAD_SIZE 40 // only size confirmed clean round-trip so far, see handoff plan
 #define RANGETEST_SEND_INTERVAL_MS 100
 #define RANGETEST_PHY BLE_GAP_PHY_CODED // BLE_GAP_PHY_1MBPS / _2MBPS / _CODED
 
