@@ -24,6 +24,7 @@ __pycache__/
 tools/footage/clips/
 tools/footage/models/
 *.onnx
+*.tflite
 *.pt
 docs/presentation/showcase/build/
 # android (tools/build-android.sh outputs, Gradle state, IDE)

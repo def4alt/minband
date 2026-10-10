@@ -51,6 +51,15 @@ export interface GlobalEntity {
   coasting: boolean;
   /** WGS84 + MGRS of `pos` when a geodetic anchor is configured (S3), else null. */
   geo: GeoPoint | null;
+  // Added for the movers feed (src/movers.ts, /api/movers):
+  /** The entity is in motion: its median position moved >= moveDist(class) (more far from the
+   *  device) within MOVE_WINDOW_MS with some speed behind it; back to false after STILL_MS within
+   *  STILL_DIST (hysteresis, see movers.ts). */
+  moving: boolean;
+  /** Direction of travel in the marker frame, degrees in [0, 360): 0 along -Z (forward), 90 along
+   *  +X (right), i.e. clockwise seen from above. Held from the last time the speed was >= HEADING_SPEED;
+   *  null until then. */
+  headingDeg: number | null;
 }
 /** Airtime model of the link, for time-on-air (S2). */
 export type AirtimeModel =

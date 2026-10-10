@@ -29,6 +29,17 @@ class Lift3DTest {
         assertEquals(1f, d.x, 1e-5f); assertEquals(0f, d.y, 1e-5f)
     }
 
+    @Test fun boxHeightAndWidthFollowGravity() {
+        // Portrait phone: gravity is +x in the landscape sensor image, so a standing person's
+        // height is the box's x extent and their width its y extent.
+        val box = RectF(0.1f, 0.1f, 0.4f, 0.2f)
+        assertEquals(0.4f * 640, Lift3D.boxHeightPx(box, Vec2(1f, 0f), k), 1e-3f)
+        assertEquals(0.2f * 480, Lift3D.boxWidthPx(box, Vec2(1f, 0f), k), 1e-3f)
+        // Landscape phone: the other way round.
+        assertEquals(0.2f * 480, Lift3D.boxHeightPx(box, Vec2(0f, 1f), k), 1e-3f)
+        assertEquals(0.4f * 640, Lift3D.boxWidthPx(box, Vec2(0f, 1f), k), 1e-3f)
+    }
+
     @Test fun bottomPointFollowsDown() {
         val box = RectF(0.4f, 0.4f, 0.2f, 0.2f)
         val p = Lift3D.bottomPoint(box, Vec2(1f, 0f))

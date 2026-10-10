@@ -1,6 +1,7 @@
 package dev.minband.android
 
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * 3D nearest-neighbour association + constant-velocity Kalman per track. Birth after 3 hits,
@@ -25,10 +26,62 @@ class Tracker(val config: Config = Config()) {
         val deathAfter: Double = 1.0,
         /** Tentative tracks die faster so clutter does not accumulate (s). */
         val tentativeDeathAfter: Double = 0.35,
-        /** Measurement noise (depth ~0.1 m). */
+        /** Measurement noise (m) for a point that reports none (`WorldPoint.sigma` 0); depth ~0.1 m. */
         val measurementSigma: Float = 0.1f,
-        /** Initial velocity std for a new track. */
-        val initialVelocitySigma: Float = 1.5f,
+        /**
+         * Gating along the ray (range) and, for a hit without a ray, in every direction: the
+         * per-class gate widened to this many standard deviations of the predicted position
+         * plus the hit's own noise when that is larger. A track just born or long unseen does
+         * not yet know its velocity, so its prediction can be off by far more than the 0.7 m a
+         * settled track is allowed; a fixed gate then rejects its own next hit and a second id
+         * is born beside it (the phone's slow detector did this to every walker).
+         */
+        val gateSigmas: Float = 3f,
+        /**
+         * Along the ray a hit may also differ from the prediction by this fraction of its range:
+         * the ray-to-floor lift of a person whose legs are hidden (desk, chair) lands the feet
+         * well behind them (1.6x the range at knee height, 2.4x at a desk), and the width prior is
+         * +-30 %. Taking such a hit costs little (the robust update below barely moves a settled
+         * track) while rejecting it births a ghost behind the person; so the gate reaches 2.5x the
+         * range out and 0.4x in (the recovery when the feet come back into view). Across the ray
+         * (bearing) the lift is good, so there the gate stays the class gate plus
+         * `TrackedClass.walkSpeed` times the time since the last hit.
+         */
+        val alongFraction: Float = 1.5f,
+        /**
+         * Robust update: an innovation beyond this many standard deviations of what the filter
+         * expects is weighed as if its sigma were innovation/robustSigmas, so one bad range
+         * (occlusion, a merged box) nudges a settled track instead of yanking it and its velocity.
+         */
+        val robustSigmas: Float = 3f,
+        /**
+         * Two confirmed tracks of one class closer than this (on the ground) are one object seen
+         * twice (the detector put a second box on a walker's torso): the one with fewer hits goes.
+         * Without it the second box was born as a new id, took the walker's next hits, and the
+         * first id coasted to its death with the MOVING tag; the new id started over.
+         */
+        val mergeDist: Float = 0.5f,
+        /**
+         * Velocity std of a new track, per class (m/s). The second hit's innovation is split
+         * between position and velocity by this prior: at 1.5 m/s for everyone, a slow detector's
+         * 0.4 s gap plus a 1 m lift jump (a cup on a table, a person behind a desk) became a
+         * 2.5 m/s velocity and a two-second ghost flight. People start at a slow walk and learn
+         * their speed over the next hits; carried objects are mostly set down; placed objects stay.
+         */
+        val initialVelocitySigma: (Int) -> Float = { cls ->
+            when (cls) {
+                TrackedClass.PERSON -> 0.7f
+                TrackedClass.CHAIR, TrackedClass.LAPTOP, TrackedClass.TV -> 0.1f
+                else -> 0.3f
+            }
+        },
+        /**
+         * A track unseen for longer than this stops: its position holds where the last velocity
+         * carried it to and it reports zero velocity until the next hit (the covariance keeps
+         * growing, so the next hit is taken and the speed relearned). A detector gap is 0.4-0.8 s
+         * on the phone; a ghost that flew for the full 2 s death time at its birth velocity is not.
+         */
+        val coastS: Double = 1.0,
         /**
          * CWNA process noise per class (m^2/s^3). q = 0.1 gives ~0.1 m/s per-axis velocity noise at
          * 12 Hz and sigma 0.1 m (well under the core's 0.3 m/s theta_vel) and follows a 90 degree
@@ -44,7 +97,17 @@ class Tracker(val config: Config = Config()) {
         val confAlpha: Float = 0.2f,
         /** Change in 0..255 units below which the reported conf does not move (stops core conf-bucket flapping). */
         val confHysteresis: Int = 12,
-    )
+    ) {
+        companion object {
+            /**
+             * The phone's configuration. The defaults assume the 12 Hz detector of the design; the
+             * Android CPU detector delivers 1-4 Hz on the test phone, so a tentative track must
+             * outlive the gap to its second hit or nothing is ever born (measured: boxes lifted to
+             * 3D on every frame, zero tracks), and a confirmed track must survive a missed frame.
+             */
+            val SLOW_DETECTOR = Config(birthHits = 2, tentativeDeathAfter = 1.5, deathAfter = 2.0)
+        }
+    }
 
     private class State(var p: Vec3, var v: Vec3, var ppp: Float, var ppv: Float, var pvv: Float, var time: Double)
 
@@ -56,11 +119,31 @@ class Tracker(val config: Config = Config()) {
         val s: State,
         var confEMA: Float,
         var confOut: Int,
-    )
+        firstSigma: Float,
+    ) {
+        /**
+         * Sigmas of the last SIGMA_WINDOW hits; the track's sigma is their median, so one poor
+         * lift among good ones (a walker's box squat for a frame) does not change how its motion
+         * is judged, while a seated person, all poor lifts, keeps a large one.
+         */
+        private val sigmas = FloatArray(SIGMA_WINDOW)
+        private var sigmaN = 0
+        private var sigmaAt = 0
+        init { pushSigma(firstSigma) }
+        fun pushSigma(v: Float) { sigmas[sigmaAt] = v; sigmaAt = (sigmaAt + 1) % SIGMA_WINDOW; if (sigmaN < SIGMA_WINDOW) sigmaN++ }
+        val sigma: Float get() { val a = sigmas.copyOf(sigmaN); a.sort(); return a[sigmaN / 2] }
+    }
 
     private val entries = ArrayList<Entry>()
     private var nextId = 1
     private val lock = Any()
+
+    private companion object {
+        /** Weight of the along-ray distance in the association cost (bearing counts for four times as much). */
+        const val ALONG_COST = 0.25f
+        /** Hits whose sigmas make a track's sigma (their median). */
+        const val SIGMA_WINDOW = 5
+    }
 
     /** Number of confirmed tracks alive right now (any time). */
     val confirmedCount: Int get() = synchronized(lock) { entries.count { it.id != null } }
@@ -78,17 +161,39 @@ class Tracker(val config: Config = Config()) {
 
         // Predict every track to `time` (only forward; a late measurement is applied at the
         // track's own time).
-        for (e in entries) if (time > e.s.time) predict(e.s, time, config.processNoise(e.classId))
+        for (e in entries) if (time > e.s.time) predictCoasting(e, time)
 
-        // Greedy global nearest neighbour inside per-class gates.
+        // Greedy global nearest neighbour inside per-class gates. With the camera position known
+        // the gate is split into across the ray (bearing, tight) and along it (range, loose) and
+        // the cost favours bearing agreement; without it, one isotropic gate.
         class Pair3(val d: Float, val t: Int, val m: Int)
         val pairs = ArrayList<Pair3>()
         for ((m, pt) in points.withIndex()) {
-            val gate = TrackedClass.gate(pt.classId)
+            val base = TrackedClass.gate(pt.classId)
+            val r = noise(pt)
+            val eye = pt.eye
+            val u = rayDirection(pt)
+            val range = if (eye != null) Vec2(pt.pos.x - eye.x, pt.pos.z - eye.z).length else 0f
             for ((t, e) in entries.withIndex()) {
                 if (e.classId != pt.classId) continue
-                val d = e.s.p.distance(pt.pos)
-                if (d <= gate) pairs.add(Pair3(d, t, m))
+                val d = pt.pos - e.s.p
+                val sigma = sqrt(e.s.ppp + r)
+                if (u != null) {
+                    // Ground projection only: y is the lift's guess at height (a box centre
+                    // while the floor is unknown) and must not read as a bearing difference.
+                    val along = d.x * u.x + d.z * u.z
+                    val ax = d.x - u.x * along; val az = d.z - u.z * along
+                    val across = sqrt(ax * ax + az * az)
+                    val sinceHit = (time - e.lastHit).toFloat().coerceAtLeast(0f)
+                    val acrossGate = maxOf(base, TrackedClass.walkSpeed(pt.classId) * sinceHit)
+                    val alongGate = maxOf(config.gateSigmas * sigma, config.alongFraction * range)
+                    if (across > acrossGate || absf(along) > alongGate) continue
+                    pairs.add(Pair3(across + ALONG_COST * absf(along), t, m))
+                } else {
+                    val dist = d.length
+                    if (dist > maxOf(base, config.gateSigmas * sigma)) continue
+                    pairs.add(Pair3(dist, t, m))
+                }
             }
         }
         pairs.sortWith(compareBy<Pair3> { it.d }.thenBy { it.t }.thenBy { it.m })
@@ -103,17 +208,21 @@ class Tracker(val config: Config = Config()) {
             val t = pointTrack[m]
             if (t != null) {
                 val e = entries[t]
-                correct(e.s, pt.pos)
+                val r = noise(pt)
+                correct(e.s, pt.pos, r, noiseAcross(pt), rayDirection(pt))
+                val vmax = TrackedClass.maxSpeed(e.classId); val sp = e.s.v.length
+                if (sp > vmax) e.s.v = e.s.v * (vmax / sp)       // the state too, not only the report
                 e.hits += 1
+                e.pushSigma(sqrt(r))
                 e.lastHit = maxOf(e.lastHit, time)
                 updateConf(e, pt.conf)
                 if (e.id == null && e.hits >= config.birthHits) { e.id = nextId; nextId += 1 }
                 result[m] = e.id
             } else {
-                val r = config.measurementSigma * config.measurementSigma
-                val vs = config.initialVelocitySigma
+                val r = noise(pt)
+                val vs = config.initialVelocitySigma(pt.classId)
                 val c = clampf(pt.conf, 0f, 1f)
-                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt())
+                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt(), sqrt(r))
                 if (config.birthHits <= 1) { e.id = nextId; nextId += 1; result[m] = e.id }
                 entries.add(e)
             }
@@ -134,8 +243,10 @@ class Tracker(val config: Config = Config()) {
             var v = e.s.v
             val speed = v.length
             if (speed > vmax) v = v * (vmax / speed)
-            val dt = maxOf(0.0, time - e.s.time).toFloat()
-            out.add(Track(id, e.classId, e.s.p + v * dt, v, e.confOut))
+            // Extrapolate only up to the coasting horizon; past it the track stands still.
+            val horizon = e.lastHit + config.coastS
+            val dt = (minOf(time, horizon) - e.s.time).coerceAtLeast(0.0).toFloat()
+            out.add(Track(id, e.classId, e.s.p + v * dt, if (time > horizon) Vec3.ZERO else v, e.confOut, e.hits, e.sigma))
         }
         out.sortBy { it.id }
         out
@@ -148,6 +259,38 @@ class Tracker(val config: Config = Config()) {
             val silent = time - e.lastHit
             if (e.id == null) silent > config.tentativeDeathAfter else silent > config.deathAfter
         }
+        // Duplicates (see Config.mergeDist): keep the better-supported of two confirmed tracks
+        // of one class on the same spot.
+        if (config.mergeDist > 0f) {
+            var i = 0
+            while (i < entries.size) {
+                val a = entries[i]
+                if (a.id == null) { i++; continue }
+                var removedA = false
+                var j = i + 1
+                while (j < entries.size) {
+                    val b = entries[j]
+                    if (b.id != null && b.classId == a.classId && groundDistance(a.s.p, b.s.p) < config.mergeDist) {
+                        if (b.hits > a.hits) { entries.removeAt(i); removedA = true; break }
+                        entries.removeAt(j); continue
+                    }
+                    j++
+                }
+                if (!removedA) i++
+            }
+        }
+    }
+
+    private fun groundDistance(a: Vec3, b: Vec3): Float { val dx = a.x - b.x; val dz = a.z - b.z; return sqrt(dx * dx + dz * dz) }
+
+    /** Predict `e` to `time`; past `coastS` without a hit the position holds and the velocity is dropped, the covariance keeps growing. */
+    private fun predictCoasting(e: Entry, time: Double) {
+        val q = config.processNoise(e.classId)
+        val horizon = e.lastHit + config.coastS
+        if (time <= horizon) { predict(e.s, time, q); return }
+        if (e.s.time < horizon) predict(e.s, horizon, q)
+        e.s.v = Vec3.ZERO
+        predict(e.s, time, q)
     }
 
     private fun predict(s: State, time: Double, q: Float) {
@@ -162,16 +305,71 @@ class Tracker(val config: Config = Config()) {
         s.time = time
     }
 
-    private fun correct(s: State, z: Vec3) {
-        val r = config.measurementSigma * config.measurementSigma
-        val sInv = 1f / (s.ppp + r)
-        val kp = s.ppp * sInv; val kv = s.ppv * sInv
+    /** Measurement variance of a hit along the ray (and everywhere, without a ray): its own reported sigma, else the configured default. */
+    private fun noise(pt: WorldPoint): Float {
+        val s = if (pt.sigma > 0f) pt.sigma else config.measurementSigma
+        return s * s
+    }
+
+    /** Measurement variance across the ray; 0 when the hit does not say (then isotropic). */
+    private fun noiseAcross(pt: WorldPoint): Float = pt.sigmaAcross * pt.sigmaAcross
+
+    /**
+     * Unit direction of the ray from the camera to the hit, projected on the ground: lifted points
+     * sit on the floor, so a range error moves them along the ray's footprint, not along the 3D
+     * line of sight from a raised camera. Null without a camera position.
+     */
+    private fun rayDirection(pt: WorldPoint): Vec3? {
+        val eye = pt.eye ?: return null
+        val ray = Vec3(pt.pos.x - eye.x, 0f, pt.pos.z - eye.z)
+        val range = ray.length
+        return if (range > 1e-3f) ray * (1f / range) else null
+    }
+
+    /** Robust measurement variance: beyond robustSigmas of the expected innovation, inflated so the innovation sits exactly there (an outlier moves the state a little, not all the way; a fresh track with a large ppp still takes big innovations: it is learning). */
+    private fun robust(yy: Float, ppp: Float, r: Float): Float {
+        val k2 = config.robustSigmas * config.robustSigmas
+        return if (yy > k2 * (ppp + r)) maxOf(r, yy / k2 - ppp) else r
+    }
+
+    /**
+     * Kalman update with the hit. With a ray and a separate across-ray noise the innovation is
+     * split: across the ray (bearing, good) and along it (range, often poor) each get their own
+     * gain and robust weight, so a walker crossing the view moves the track even when their range
+     * is guesswork, and a range flip barely does. The shared covariance follows the across part,
+     * the better one; the along estimate is then held a little too confidently, which the process
+     * noise undoes within a few hits.
+     */
+    private fun correct(s: State, z: Vec3, r: Float, rAcross: Float, u: Vec3?) {
         val y = z - s.p
-        s.p = s.p + y * kp
-        s.v = s.v + y * kv
-        val ppp = (1f - kp) * s.ppp
-        val ppv = (1f - kp) * s.ppv
-        val pvv = s.pvv - kv * s.ppv
+        if (u == null || rAcross <= 0f || rAcross >= r) {
+            val yy = y.x * y.x + y.y * y.y + y.z * y.z
+            val rEff = robust(yy, s.ppp, r)
+            val sInv = 1f / (s.ppp + rEff)
+            val kp = s.ppp * sInv; val kv = s.ppv * sInv
+            s.p = s.p + y * kp
+            s.v = s.v + y * kv
+            val ppp = (1f - kp) * s.ppp
+            val ppv = (1f - kp) * s.ppv
+            val pvv = s.pvv - kv * s.ppv
+            s.ppp = ppp; s.ppv = ppv; s.pvv = maxOf(pvv, 1e-6f)
+            return
+        }
+        // Horizontal split; the height innovation goes with the range part (a guess too while
+        // the floor is unknown).
+        val along = y.x * u.x + y.z * u.z
+        val yAlong = Vec3(u.x * along, y.y, u.z * along)
+        val yAcross = Vec3(y.x - yAlong.x, 0f, y.z - yAlong.z)
+        val rA = robust(yAcross.x * yAcross.x + yAcross.y * yAcross.y + yAcross.z * yAcross.z, s.ppp, rAcross)
+        val rL = robust(along * along, s.ppp, r)
+        val sA = 1f / (s.ppp + rA); val sL = 1f / (s.ppp + rL)
+        val kpA = s.ppp * sA; val kvA = s.ppv * sA
+        val kpL = s.ppp * sL; val kvL = s.ppv * sL
+        s.p = s.p + yAcross * kpA + yAlong * kpL
+        s.v = s.v + yAcross * kvA + yAlong * kvL
+        val ppp = (1f - kpA) * s.ppp
+        val ppv = (1f - kpA) * s.ppv
+        val pvv = s.pvv - kvA * s.ppv
         s.ppp = ppp; s.ppv = ppv; s.pvv = maxOf(pvv, 1e-6f)
     }
 

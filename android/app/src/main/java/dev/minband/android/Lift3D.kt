@@ -36,55 +36,125 @@ object Lift3D {
     /** What one frame contributes: camera -> world, intrinsics, and the world floor height if known. */
     class FrameGeometry(val cameraToWorld: Mat4, val intrinsics: Intrinsics, val floorY: Float?)
 
-    fun lift(dets: List<Detection>, geo: FrameGeometry, depth: DepthSampler?, origin: Origin): List<WorldPoint> {
+    /** `maxRange`: farthest lift kept (m). The phone's 8 m; a drone replay passes its own. */
+    fun lift(dets: List<Detection>, geo: FrameGeometry, depth: DepthSampler?, origin: Origin, maxRange: Float = DEPTH_RANGE.endInclusive): List<WorldPoint> {
         if (dets.isEmpty()) return emptyList()
         val cam = geo.cameraToWorld
         val k = geo.intrinsics
         val down = downDirectionInImage(cam)
-        val floorInMarker = origin.floorHeightInMarker
+        // The marker lies on the floor and a manual origin is dropped onto it, so y = 0 is the
+        // floor until ARCore has a plane to say better; without this a person's y was their box
+        // centre's height, and two hits of one walker, standing and bending, were a metre apart.
+        val floorInMarker = origin.floorHeightInMarker ?: 0f
         val camPos = cam.origin
+        val eye = origin.toMarker(camPos)
 
         val out = ArrayList<WorldPoint>(dets.size)
         for ((i, d) in dets.withIndex()) {
             val isPerson = d.classId == TrackedClass.PERSON
             val centre = Vec2(d.bbox.midX, d.bbox.midY)
             var world: Vec3? = null
-            var fromDepth = false
+            var how = Lift.FLOOR
 
             val z = depth?.median(centre, PATCH_RADIUS, MIN_VALID_SAMPLES)
             if (z != null && z in DEPTH_RANGE) {
                 val pc = unproject(centre, z, k)
                 world = cam.transformPoint(pc)
-                fromDepth = true
-            } else if (isPerson) {
-                // Feet visible and a floor known: ray to the floor at the feet. Otherwise (a
-                // person close enough that the box is cut at the bottom, or no floor yet) the
-                // distance from the box width and a 0.55 m shoulder-width prior, along the ray
-                // through the box centre. +-30 % at 1-4 m, which beats dropping the person.
+                how = Lift.DEPTH
+            } else if (TrackedClass.onFloor(d.classId)) {
+                // Standing on the floor (a person, a chair): bottom of the box visible and a floor
+                // known, the ray to the floor there (the feet, the legs). Otherwise (close enough
+                // that the box is cut at the bottom, or no floor yet) the distance from the box
+                // width and the class's width prior (0.55 m shoulders), along the ray through the
+                // box centre. +-30 % at 1-4 m, which beats dropping the person.
+                // A person whose box is squat (under SQUAT_ASPECT widths tall: seated, or standing
+                // with the legs hidden behind a desk) has no feet at its bottom edge: the ray there
+                // lands 1.5-2.5x too far (steadily, which is fine for someone who is not moving),
+                // and the width prior swings as the box takes in arms or torso. Either lift is kept
+                // but with a large sigma, so the tracker barely moves a seated person and the
+                // MOVING rule asks metres of them; a walker briefly cut off is just slower to tag.
+                val squat = isPerson && boxHeightPx(d.bbox, down, k) < SQUAT_ASPECT * boxWidthPx(d.bbox, down, k)
                 val feet = bottomPoint(d.bbox, down, k.width.toFloat(), k.height.toFloat())
                 val feetVisible = feet.x >= BORDER_MARGIN && feet.y >= BORDER_MARGIN && feet.x <= 1f - BORDER_MARGIN && feet.y <= 1f - BORDER_MARGIN
-                if (feetVisible && geo.floorY != null) world = rayToFloor(feet, k, cam, geo.floorY)
-                if (world == null) {
-                    val widthPx = boxWidthPx(d.bbox, down, k)
-                    val dist = if (widthPx > 1f) k.fx * PERSON_WIDTH_M / widthPx else 0f
-                    if (dist in DEPTH_RANGE) world = cam.transformPoint(unproject(centre, dist, k))
-                }
-                if (world != null && world.distance(camPos) > DEPTH_RANGE.endInclusive) world = null
-            } else if (geo.floorY != null) {
-                world = rayToFloor(centre, k, cam, geo.floorY)
-                if (world != null && world.distance(camPos) > DEPTH_RANGE.endInclusive) world = null
+                if (feetVisible && geo.floorY != null) world = rayToFloor(feet, k, cam, geo.floorY)?.also { if (squat) how = Lift.SQUAT }
+                if (world == null) world = fromWidth(d, centre, down, k, cam, maxRange)?.also { how = if (squat) Lift.SQUAT else Lift.WIDTH }
+                if (world != null && world.distance(camPos) > maxRange) world = null
+            } else {
+                // Not on the floor (a cup, bottle or laptop on a table, a tv): the ray through the
+                // box to the floor would land far behind it (1.5-3x the range from a desk), and
+                // a flicker of the box then reads as metres of motion. The width prior instead;
+                // the point keeps the height the centre ray gives it.
+                world = fromWidth(d, centre, down, k, cam, maxRange)?.also { how = Lift.WIDTH }
+                if (world != null && world.distance(camPos) > maxRange) world = null
             }
             val w = world ?: continue
-            var m = origin.toMarker(w)
-            if (isPerson) {
-                // Depth hit the torso: drop to the floor. A floor intersection is already at the
-                // feet; snap it to the known floor height too so both paths agree.
-                if (floorInMarker != null) m = Vec3(m.x, floorInMarker, m.z) else if (fromDepth) m = Vec3(m.x, 0f, m.z)
+            val range = w.distance(camPos)
+            // A ray to the floor: a pixel of box-edge error moves the hit range^2 / (camera height
+            // x focal length) along the ray (the phone at 5 m and 1.3 m up with f 500 px: 0.04 m
+            // per pixel; a drone at 50 m and 30 m up with f 2100 px: 0.04 m too), and range / f
+            // across it.
+            val camH = maxOf(0.3f, camPos.y - (geo.floorY ?: (camPos.y - Origin.DEFAULT_CAMERA_HEIGHT)))
+            val sigma = when (how) {
+                Lift.DEPTH -> DEPTH_SIGMA
+                Lift.FLOOR -> maxOf(FLOOR_SIGMA_MIN, range * range / (camH * k.fx) * FEET_PX)
+                Lift.WIDTH -> maxOf(WIDTH_SIGMA_MIN, WIDTH_SIGMA_REL * range)
+                Lift.SQUAT -> maxOf(WIDTH_SIGMA_MIN, SQUAT_SIGMA_REL * range)
             }
-            out.add(WorldPoint(d.classId, m, d.conf, i))
+            val sigmaAcross = if (how == Lift.DEPTH) DEPTH_SIGMA else maxOf(ACROSS_SIGMA_MIN, range / k.fx * ACROSS_PX)
+            var m = origin.toMarker(w)
+            if (TrackedClass.onFloor(d.classId)) {
+                // Depth hit the torso, the width prior the box centre: drop to the floor. A floor
+                // intersection is already at the feet; snap it to the floor height too so all
+                // paths agree.
+                m = Vec3(m.x, floorInMarker, m.z)
+            }
+            out.add(WorldPoint(d.classId, m, d.conf, i, sigma, eye, sigmaAcross))
         }
         return out
     }
+
+    private enum class Lift { DEPTH, FLOOR, WIDTH, SQUAT }
+
+    /** Range from the box width and the class's width prior, along the ray through the box centre; null when the box is degenerate or the range implausible. */
+    private fun fromWidth(d: Detection, centre: Vec2, down: Vec2, k: Intrinsics, cam: Mat4, maxRange: Float): Vec3? {
+        val widthPx = boxWidthPx(d.bbox, down, k)
+        val dist = if (widthPx > 1f) k.fx * TrackedClass.widthPrior(d.classId) / widthPx else 0f
+        return if (dist >= DEPTH_RANGE.start && dist <= maxRange) cam.transformPoint(unproject(centre, dist, k)) else null
+    }
+
+    /**
+     * Position noise reported with each lift (m, per axis), so the tracker weighs a hit by how it
+     * was placed and gates by it. A depth sample ~0.1 m. A ray to the feet: a few pixels of box
+     * edge, which the camera geometry turns into range^2 / (height x focal) metres per pixel;
+     * measured on a standing person's hits at 5-6 m in a room session, 0.35 m along the ray. The
+     * width prior: +-30 % of the range at 1-4 m (people differ in width, the box in pose), so ~20 %.
+     * The phone, hot, detects at 2-3 Hz; with a fixed 0.1 m the filter trusted width-prior hits
+     * far too much, its velocity swung by jitter/dt, and the next detection fell outside the 0.7 m
+     * gate: a new id every ~2 s per person (112 ids in a 137 s room session) and never a MOVING tag.
+     */
+    const val DEPTH_SIGMA = 0.1f
+    const val FLOOR_SIGMA_MIN = 0.1f
+    /** Box-bottom (feet) error in pixels behind a floor ray's range sigma: 8 px of a 640 px image reproduces the 0.35 m measured on a standing person 5.5 m from the phone. */
+    const val FEET_PX = 8f
+    const val WIDTH_SIGMA_MIN = 0.25f
+    const val WIDTH_SIGMA_REL = 0.2f
+    /**
+     * A person box less than this many widths tall is seated or cut off (a standing adult is
+     * 3-4 widths tall, 2.5 seen from the side; seated 1.1-1.8, measured in a room session where
+     * the two seated people's boxes swung 0.9-7.7 m of width-prior range and were tagged MOVING).
+     */
+    const val SQUAT_ASPECT = 2.0f
+    /** Width-prior sigma of a squat person box, as a fraction of range: its width is arms or torso at random. */
+    const val SQUAT_SIGMA_REL = 0.35f
+    /**
+     * Noise across the ray (bearing), whatever the range cue: the box centre is good to a few
+     * pixels. Measured on the room sessions, 3-5 cm between a standing person's hits at 4-6 m.
+     * This is what makes a walker crossing the view visible when their range is not: the tracker
+     * weighs that direction by it, not by `sigma`.
+     */
+    const val ACROSS_SIGMA_MIN = 0.05f
+    /** Box-centre error in pixels behind the across-ray sigma (3-5 cm at 4-6 m on the phone). */
+    const val ACROSS_PX = 3f
 
     // Pure helpers (unit-tested).
 
@@ -100,7 +170,7 @@ object Lift3D {
         return Vec3(x, -y, -z)
     }
 
-    /** Shoulder-width prior for the no-floor distance estimate (tools/footage uses the same). */
+    /** Shoulder-width prior for the no-floor distance estimate (tools/footage uses the same); the other classes are in `TrackedClass.widthPrior`. */
     const val PERSON_WIDTH_M = 0.55f
 
     /** Box extent in pixels across gravity (a person's width, whichever way the sensor is turned). */
@@ -108,6 +178,12 @@ object Lift3D {
         val wPx = box.width * k.width; val hPx = box.height * k.height
         // `down` is a unit pixel direction; the across-gravity extent weights the two sides.
         return absf(down.y) * wPx + absf(down.x) * hPx
+    }
+
+    /** Box extent in pixels along gravity (a person's height, whichever way the sensor is turned). */
+    fun boxHeightPx(box: RectF, down: Vec2, k: Intrinsics): Float {
+        val wPx = box.width * k.width; val hPx = box.height * k.height
+        return absf(down.x) * wPx + absf(down.y) * hPx
     }
 
     /** Unit direction (in pixels: x right, y down) of world gravity in the captured image. */

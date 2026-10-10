@@ -114,12 +114,78 @@ class TrackerTest {
         assertEquals(2, tracks.size)
         val person = tracks.first { it.classId == TrackedClass.PERSON }
         val cup = tracks.first { it.classId == TrackedClass.CUP }
-        assertTrue("person associated and moved", person.pos.x > 0.2f)
+        // 0.6 m in 83 ms is 7 m/s: taken (inside the person gate), but as an outlier, so the
+        // track is nudged rather than moved (the robust update).
+        assertTrue("person associated and moved", person.pos.x > 0.05f)
         assertEquals("cup did not associate; a new tentative track was born", 3f, cup.pos.x, 0.05f)
         val other = Tracker()
         for (i in 0 until 3) other.update(listOf(point(v(0f, 0f, 0f), TrackedClass.CUP)), i * dt)
         other.update(listOf(point(v(0.01f, 0f, 0f), TrackedClass.BOTTLE)), 3 * dt)
         assertEquals(listOf(TrackedClass.CUP), other.tracks(3 * dt).map { it.classId })
+    }
+
+    // Hits that know the camera position (the phone's lifts): gating across / along the ray.
+
+    private val eye = Vec3(0f, 1.3f, 0f)
+    private fun hit(p: Vec3, cls: Int = TrackedClass.PERSON, sigma: Float = 0.1f) = WorldPoint(cls, p, 0.8f, 0, sigma, eye)
+
+    @Test fun sporadicRangeJumpKeepsTheIdAndTheSpeedLow() {
+        // A standing person 3 m out, hits at 2.5 Hz; every 4th hit lands 2 m farther along the ray
+        // (legs behind a desk: the ray to the box bottom meets the floor behind them). One id, the
+        // track stays near the person, and its speed never reaches the MOVING threshold.
+        val tr = Tracker(Tracker.Config.SLOW_DETECTOR)
+        val ids = HashSet<Int>()
+        var maxSpeed = 0f
+        var t = 0.0
+        for (k in 0 until 40) {
+            tr.update(listOf(hit(v(0f, 0f, if (k % 4 == 3) -5f else -3f))), t)
+            for (tk in tr.tracks(t)) { ids.add(tk.id); if (k >= 4) maxSpeed = maxOf(maxSpeed, tk.vel.length) }
+            t += 0.4
+        }
+        assertEquals("one id for the whole run", 1, ids.size)
+        val tk = tr.tracks(t).single()
+        assertTrue("stays near the person: ${tk.pos}", tk.pos.z in -3.7f..-2.8f)
+        assertTrue("speed after settling $maxSpeed", maxSpeed < 0.4f)
+    }
+
+    @Test fun aNeighbourOnAnotherBearingIsNotTakenForTheTrack() {
+        // Two chairs 1 m apart, 3 m out. After both are seen twice only the right one is detected:
+        // its hits must not be pulled onto the left chair's track (a wide isotropic gate did that,
+        // and the left chair then "flew" at its speed cap).
+        val tr = Tracker(Tracker.Config.SLOW_DETECTOR)
+        val left = v(-0.5f, 0f, -3f); val right = v(0.5f, 0f, -3f)
+        tr.update(listOf(hit(left, TrackedClass.CHAIR), hit(right, TrackedClass.CHAIR)), 0.0)
+        tr.update(listOf(hit(left, TrackedClass.CHAIR), hit(right, TrackedClass.CHAIR)), 0.4)
+        var t = 0.8
+        repeat(4) { tr.update(listOf(hit(right, TrackedClass.CHAIR)), t); t += 0.4 }
+        val tracks = tr.tracks(t - 0.4)
+        assertEquals(0.5f, tracks.first { it.pos.x > 0f }.pos.x, 0.1f)
+        assertTrue("left chair coasts in place, never dragged right: $tracks", tracks.none { it.pos.x > -0.4f && it.pos.x < 0.4f })
+        assertTrue("no track moves: $tracks", tracks.all { it.vel.length < 0.1f })
+    }
+
+    @Test fun aWalkerStillAssociatesAcrossTheRayAtTheSlowRate() {
+        // 1.3 m/s sideways at 2.5 Hz is 0.52 m across the ray per hit; the second hit (velocity
+        // unknown) must still be taken, and a few hits in the track follows at the right speed.
+        val tr = Tracker(Tracker.Config.SLOW_DETECTOR)
+        var t = 0.0
+        for (k in 0 until 10) { tr.update(listOf(hit(v(-2f + 1.3f * t.toFloat(), 0f, -4f))), t); t += 0.4 }
+        val tracks = tr.tracks(t - 0.4)
+        assertEquals(1, tracks.size)
+        assertEquals(1.3f, tracks.single().vel.length, 0.25f)
+    }
+
+    @Test fun twoConfirmedTracksOnOneSpotMergeIntoTheBetterSupported() {
+        // A walker tracked for a while, then the detector adds a second box on their torso for two
+        // frames: the duplicate is born and dies at once, the walker's id and hits survive.
+        val tr = Tracker(Tracker.Config.SLOW_DETECTOR)
+        var t = 0.0
+        repeat(5) { tr.update(listOf(hit(v(0f, 0f, -3f))), t); t += 0.4 }
+        repeat(2) { tr.update(listOf(hit(v(0f, 0f, -3f)), hit(v(0.2f, 0f, -3.1f))), t); t += 0.4 }
+        val tracks = tr.tracks(t)
+        assertEquals(1, tracks.size)
+        assertEquals(1, tracks.single().id)
+        assertTrue(tracks.single().hits >= 7)
     }
 
     @Test fun nearestNeighbourPrefersClosest() {

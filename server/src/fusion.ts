@@ -11,8 +11,8 @@ import type { DeviceView, EntityView, GlobalEntity } from './types.js';
 export const MERGE_DIST = 0.5, MERGE_VEL = 0.5, SPLIT_DIST = 1.0, MERGE_MS = 1000, SPLIT_MS = 1000;
 
 type Key = string; // `${deviceKey}#${id}`
-/** World.snapshot adds `geo` (geo.ts) after fusion. */
-export type FusedEntity = Omit<GlobalEntity, 'geo'>;
+/** World.snapshot adds `moving` / `headingDeg` (movers.ts) and `geo` (geo.ts) after fusion. */
+export type FusedEntity = Omit<GlobalEntity, 'geo' | 'moving' | 'headingDeg'>;
 const devKey = (d: DeviceView): string => d.key ?? `id:${d.deviceId}`;
 
 export class Fusion {

@@ -36,8 +36,9 @@ android {
         jniLibs { useLegacyPackaging = false }
     }
 
-    // The detector model (assets/*.onnx) is a plain file; never compress it so ORT can mmap it.
-    androidResources { noCompress += listOf("onnx") }
+    // The detector models (assets/*.onnx, *.tflite) are plain files; never compress them so ORT /
+    // TFLite can mmap them.
+    androidResources { noCompress += listOf("onnx", "tflite") }
 }
 
 kotlin {
@@ -49,6 +50,11 @@ dependencies {
     // uniffi Kotlin bindings (app/src/main/java/dev/minband/core, generated) need JNA.
     implementation("net.java.dev.jna:jna:5.15.0@aar")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    // TFLite + GPU delegate: the detector's fast path on phones whose GPU runs the graph (the
+    // MediaTek NNAPI driver cannot). TfliteDetector uses these; YoloOnnxDetector is the fallback.
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.16.1")
 
     testImplementation("junit:junit:4.13.2")
 }
