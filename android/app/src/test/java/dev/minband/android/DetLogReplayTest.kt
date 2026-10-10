@@ -37,6 +37,8 @@ class DetLogReplayTest {
 
         val tracker = Tracker(Tracker.Config.SLOW_DETECTOR)
         val motion = OverlayMotion()
+        // MINBAND_DET_DEBUG_ID=<replay id>: the classifier's judgement of that track, line by line.
+        System.getenv("MINBAND_DET_DEBUG_ID")?.toIntOrNull()?.let { motion.debugId = it }
         val trace = System.getenv("MINBAND_DET_TRACE")?.split(',')?.takeIf { it.size == 2 }?.let { it[0].toDouble() to it[1].toDouble() }
         val lives = LinkedHashMap<Int, Life>()
         val ticks = frames.keys.iterator()
@@ -80,6 +82,7 @@ class DetLogReplayTest {
         for ((id, l) in lives) {
             println("%3d %3d %6.1f %6.1f %7.1f %6.2f %9.2f  %s".format(id, l.cls, l.first - t0, l.last - t0, l.last - l.first, hypot((l.pos.x - l.start.x).toDouble(), (l.pos.z - l.start.z).toDouble()), l.maxSpeed, if (l.moving) "MOVING at %.1f".format(l.movingAt - t0) else ""))
         }
+        motion.debugLines.forEach { println("  trace $it") }
         val lifeList = lives.values.map { it.last - it.first }.sorted()
         println("replay: %d ids, median life %.1f s, %d ever MOVING".format(lives.size, if (lifeList.isEmpty()) 0.0 else lifeList[lifeList.size / 2], lives.values.count { it.moving }))
         val byClass = lives.values.groupBy { it.cls }.toSortedMap()

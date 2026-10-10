@@ -58,10 +58,12 @@ class DetectionLog(directory: File, name: String? = null) {
     }
 
     companion object {
-        const val HEADER = "tick,i,cls,conf,x,y,z,sigma,eyex,eyey,eyez,id,bx,by,bw,bh,hpx\n"
+        const val HEADER = "tick,i,cls,conf,x,y,z,sigma,eyex,eyey,eyez,id,bx,by,bw,bh,hpx,sacross\n"
         const val FLUSH_INTERVAL_MS = 1000L
         /** Logs from before the `hpx` column: the phone was portrait (gravity along the captured image's x) with a 640 x 480 CPU image. */
         const val LEGACY_IMAGE_WIDTH_PX = 640f
+        /** The test phone's CPU-image focal length (px, 640 x 480), for logs without `sacross`. */
+        const val LEGACY_FX = 490f
 
         fun row(tick: Long, p: WorldPoint, id: Int?, det: Detection?): String {
             fun f(v: Float) = String.format(Locale.US, "%.4f", v)
@@ -69,7 +71,7 @@ class DetectionLog(directory: File, name: String? = null) {
             val b = det?.bbox
             return "$tick,${p.detectionIndex},${p.classId},${f(p.conf)},${f(p.pos.x)},${f(p.pos.y)},${f(p.pos.z)},${f(p.sigma)}," +
                 "${e?.let { f(it.x) } ?: ""},${e?.let { f(it.y) } ?: ""},${e?.let { f(it.z) } ?: ""},${id ?: ""}," +
-                "${b?.let { f(it.x) } ?: ""},${b?.let { f(it.y) } ?: ""},${b?.let { f(it.width) } ?: ""},${b?.let { f(it.height) } ?: ""},${f(p.heightPx)}\n"
+                "${b?.let { f(it.x) } ?: ""},${b?.let { f(it.y) } ?: ""},${b?.let { f(it.width) } ?: ""},${b?.let { f(it.height) } ?: ""},${f(p.heightPx)},${f(p.sigmaAcross)}\n"
         }
 
         /** One row back into a lifted point (and the tick and id it carried); null for a malformed line. */
@@ -80,9 +82,17 @@ class DetectionLog(directory: File, name: String? = null) {
                 val eye = if (c[8].isNotEmpty()) Vec3(c[8].toFloat(), c[9].toFloat(), c[10].toFloat()) else null
                 val box = if (c.size >= 16 && c[12].isNotEmpty()) RectF(c[12].toFloat(), c[13].toFloat(), c[14].toFloat(), c[15].toFloat()) else null
                 val heightPx = if (c.size >= 17 && c[16].isNotEmpty()) c[16].toFloat() else (box?.width ?: 0f) * LEGACY_IMAGE_WIDTH_PX
+                // Older logs: a portrait phone, so across gravity is the captured image's y; a box at
+                // its border was cut at the side (Lift3D.sideCut), its bearing good to the class width.
+                // (A 640 x 480 image with fx ~ LEGACY_FX for the visible width, as Lift3D measures it.)
+                val sigmaAcross = if (c.size >= 18 && c[17].isNotEmpty()) c[17].toFloat()
+                    else if (box != null && eye != null && (box.y < Lift3D.BORDER_MARGIN || box.y + box.height > 1f - Lift3D.BORDER_MARGIN)) {
+                        val range = kotlin.math.hypot(c[4].toFloat() - eye.x, c[6].toFloat() - eye.z)
+                        Lift3D.SIDE_CUT_WIDTHS * maxOf(TrackedClass.widthPrior(c[2].toInt()), box.height * 480f * range / LEGACY_FX)
+                    } else 0f
                 Parsed(
                     c[0].toLong(),
-                    WorldPoint(c[2].toInt(), Vec3(c[4].toFloat(), c[5].toFloat(), c[6].toFloat()), c[3].toFloat(), c[1].toInt(), c[7].toFloat(), eye, heightPx = heightPx),
+                    WorldPoint(c[2].toInt(), Vec3(c[4].toFloat(), c[5].toFloat(), c[6].toFloat()), c[3].toFloat(), c[1].toInt(), c[7].toFloat(), eye, sigmaAcross = sigmaAcross, heightPx = heightPx),
                     c[11].toIntOrNull(), box,
                 )
             } catch (_: NumberFormatException) { null }

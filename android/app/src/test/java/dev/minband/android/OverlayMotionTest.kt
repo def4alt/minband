@@ -7,7 +7,9 @@ import org.junit.Test
 
 /** Mirrors server/test/movers.test.ts: the on-screen moving / static rule, in seconds. */
 class OverlayMotionTest {
-    private fun track(id: Int, pos: Vec3, vel: Vec3 = Vec3(0f, 0f, 0f), cls: Int = 0, hits: Int = 3, sigma: Float = 0.1f) =
+    /** Hits grow with every call unless a test fixes them: a track being observed, as the tracker reports one (a fixed count reads as a track the detector lost). */
+    private var hitCounter = 3
+    private fun track(id: Int, pos: Vec3, vel: Vec3 = Vec3(0f, 0f, 0f), cls: Int = 0, hits: Int = hitCounter++, sigma: Float = 0.1f) =
         Track(id, cls, pos, vel, 200, hits, sigma)
 
     /** Run every 1/30 s from `from` to `to` with a scene of time (s); return the last moving set. */
@@ -57,6 +59,14 @@ class OverlayMotionTest {
         assertTrue("the scene was dragged: ${m.lastDrift}", m.lastDrift.x > 0.4f)
         assertFalse("newborn 3 static: $out", 3 in out)
         assertFalse(1 in out); assertFalse(2 in out)
+    }
+
+    @Test fun aTrackTheDetectorLostIsNotTaggedOnItsCoasting() {
+        // Hits stop at 5 while the tracker's prediction carries the track on at 1 m/s: that is
+        // the filter's extrapolation, not motion anyone saw. Never MOVING.
+        val m = OverlayMotion()
+        val coasting = { t: Double -> listOf(track(1, Vec3(t.toFloat(), 0f, -3f), Vec3(1f, 0f, 0f), hits = 5)) }
+        assertFalse(1 in run(m, 0.0, 3.0, coasting, Vec3(0f, 1.3f, 0f)))
     }
 
     @Test fun nothingIsJudgedWhileThePoseIsNotTracking() {

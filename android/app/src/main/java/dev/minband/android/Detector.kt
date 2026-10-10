@@ -221,7 +221,7 @@ class YoloOnnxDetector(context: Context) : Detector {
                 val sc = rows[4 + c][j]
                 if (sc > bestScore) { bestScore = sc; best = c }
             }
-            if (best < 0 || best !in TrackedClass.all || bestScore < TrackedClass.confidence(best)) continue
+            if (best < 0 || best !in TrackedClass.phone || bestScore < TrackedClass.confidence(best)) continue
             // Input pixels -> normalized upright image, undoing the letterbox; clipped to the image.
             val x0 = clampf((rows[0][j] - rows[2][j] / 2f - letterDx) / letterW, 0f, 1f)
             val y0 = clampf((rows[1][j] - rows[3][j] / 2f - letterDy) / letterH, 0f, 1f)

@@ -29,6 +29,8 @@ AMBER = (0, 170, 255)      # BGR
 GREY = (190, 190, 190)
 FAINT = (110, 110, 110)
 INK = (20, 20, 20)
+NAMES = {0: "person", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+VEHICLES = {2, 3, 5, 7}
 
 
 def load_boxes(path):
@@ -61,6 +63,7 @@ def main() -> int:
     ap.add_argument("--out", required=True, help="output .mp4")
     ap.add_argument("--clips", default=os.path.join(os.path.dirname(__file__), "..", "footage", "clips"), help="where the clip lives")
     ap.add_argument("--width", type=int, default=1920, help="output width (the 4K clip is downscaled)")
+    ap.add_argument("--model-label", default="YOLO26s", help="detector name for the title bar")
     ap.add_argument("--max-seconds", type=float, default=0, help="stop after this many seconds (0 = the whole run)")
     args = ap.parse_args()
 
@@ -104,19 +107,22 @@ def main() -> int:
         if rf in boxes:
             last_det = rf
         img = cv2.resize(frame, (ow, oh), interpolation=cv2.INTER_AREA)
-        n_people = n_movers = 0
+        n_people = n_movers = n_veh = n_veh_mov = 0
         if last_det is not None and rf - last_det < hold:
             vs = verdicts.get(last_det, {})
             for i, (bx, by, bw, bh, cls) in enumerate(boxes[last_det]):
                 tid, moving = vs.get(i, (None, False))
                 x0, y0 = int(bx * ow), int(by * oh)
                 x1, y1 = int((bx + bw) * ow), int((by + bh) * oh)
-                n_people += 1
+                veh = cls in VEHICLES
+                if veh: n_veh += 1
+                else: n_people += 1
                 if moving:
-                    n_movers += 1
+                    if veh: n_veh_mov += 1
+                    else: n_movers += 1
                     movers_seen.add(tid)
                     cv2.rectangle(img, (x0 - 2, y0 - 2), (x1 + 2, y1 + 2), AMBER, 2)
-                    label = f"{tid if tid is not None else ''} MOVING".strip()
+                    label = f"{NAMES.get(cls, cls)} {tid if tid is not None else ''} MOVING"
                     (tw, th), _ = cv2.getTextSize(label, font, 0.5, 1)
                     cv2.rectangle(img, (x0 - 2, y0 - th - 10), (x0 + tw + 6, y0 - 2), AMBER, -1)
                     cv2.putText(img, label, (x0 + 2, y0 - 6), font, 0.5, INK, 1, cv2.LINE_AA)
@@ -128,8 +134,8 @@ def main() -> int:
                     cv2.rectangle(img, (x0, y0), (x1, y1), FAINT, 1)
         # HUD: what this is, the clock, the counts, the legend.
         cv2.rectangle(img, (0, 0), (ow, 46), (30, 30, 30), -1)
-        cv2.putText(img, "MinBand  |  phone tracking chain replayed on drone footage (MEVA UAV, 28 m up, 4K, detector 5 Hz)", (12, 20), font, 0.55, (235, 235, 235), 1, cv2.LINE_AA)
-        cv2.putText(img, f"t = {n / fps:5.1f} s    people in view {n_people:3d}    MOVING {n_movers:3d}", (12, 40), font, 0.55, (235, 235, 235), 1, cv2.LINE_AA)
+        cv2.putText(img, f"MinBand  |  phone tracking chain replayed on drone footage (MEVA UAV, 28 m up, 4K, {args.model_label}, 5 Hz)", (12, 20), font, 0.55, (235, 235, 235), 1, cv2.LINE_AA)
+        cv2.putText(img, f"t = {n / fps:5.1f} s    people {n_people:3d} (MOVING {n_movers:2d})    vehicles {n_veh:3d} (MOVING {n_veh_mov:2d})", (12, 40), font, 0.55, (235, 235, 235), 1, cv2.LINE_AA)
         cv2.rectangle(img, (ow - 330, 8), (ow - 310, 22), AMBER, -1)
         cv2.putText(img, "MOVING (chain's verdict)", (ow - 300, 20), font, 0.5, (235, 235, 235), 1, cv2.LINE_AA)
         cv2.rectangle(img, (ow - 330, 28), (ow - 310, 42), GREY, 1)

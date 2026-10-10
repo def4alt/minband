@@ -179,7 +179,7 @@ class TfliteDetector(context: Context) : Detector {
                 val sc = rows[4 + c][j]
                 if (sc > bestScore) { bestScore = sc; best = c }
             }
-            if (best < 0 || best !in TrackedClass.all || bestScore < TrackedClass.confidence(best)) continue
+            if (best < 0 || best !in TrackedClass.phone || bestScore < TrackedClass.confidence(best)) continue
             val cx = rows[0][j] * coordScale; val cy = rows[1][j] * coordScale
             val bw = rows[2][j] * coordScale; val bh = rows[3][j] * coordScale
             val x0 = clampf((cx - bw / 2f - letterDx) / letterW, 0f, 1f)

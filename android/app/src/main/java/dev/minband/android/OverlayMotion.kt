@@ -80,8 +80,8 @@ class OverlayMotion {
         // A live mover still getting hits is someone else standing beside the new track (the
         // seated neighbour the walker passes), so only a mover the detector has lost counts.
         // The last raw position, not the median: the median trails a walker by up to 1.5 s.
-        for (s in states.values) if (s.moving && s.cls == cls && nowS - s.lastHitAt > LOST_S && s.raw.isNotEmpty() && ground(s.raw.last().second, pos) <= INHERIT_DIST) return true
-        for (g in gone) if (g.cls == cls && nowS - g.t <= GHOST_S && ground(g.pos, pos) <= INHERIT_DIST) return true
+        for (s in states.values) if (s.moving && TrackedClass.sameKind(s.cls, cls) && nowS - s.lastHitAt > LOST_S && s.raw.isNotEmpty() && ground(s.raw.last().second, pos) <= INHERIT_DIST) return true
+        for (g in gone) if (TrackedClass.sameKind(g.cls, cls) && nowS - g.t <= GHOST_S && ground(g.pos, pos) <= INHERIT_DIST) return true
         return false
     }
 
@@ -157,7 +157,10 @@ class OverlayMotion {
                 // Not before MIN_HITS: a track born from two hits that never gets a third (a
                 // flicker) carries their finite-difference velocity for the tracker's coast time;
                 // it must never count, and a third hit comes 0.4 s after birth for a real walker.
-                if (t.hits >= MIN_HITS && poseOk) {
+                // And only while the track is being observed: a track the detector lost coasts on
+                // its last velocity, and that extrapolation is not motion anyone saw (a person at
+                // the side of the view, born from cut boxes, was tagged 2 s after their last hit).
+                if (t.hits >= MIN_HITS && poseOk && nowS - s.lastHitAt <= LOST_S) {
                     val base = moveDist(t.classId)
                     // The camera's displacement over this track's own window (a track just born
                     // has none): subtracting the first track's 3 s of drift from a newborn's zero
@@ -171,6 +174,9 @@ class OverlayMotion {
                     // hits and the first hit of a track is as likely off by that: a range change
                     // counts only past ALONG_RANGE of the range (2 m at 5 m) as well as 2.5 sigma.
                     val needAlong = maxOf(base, SIGMA_DIST * t.sigma, ALONG_RANGE * range)
+                    // Across the ray the bearing is trusted to its own sigma: a few centimetres for a
+                    // whole box, about the object's width for one cut by the frame's side.
+                    val needAcross = maxOf(base, SIGMA_DIST * t.sigmaAcross)
                     // Placed and carried objects are judged across the ray only: a chair's range
                     // steps when someone walks in front of it; a chair carried away crosses the view.
                     // So is anyone whose range is a guess (a width-prior or squat lift, sigma well
@@ -185,13 +191,13 @@ class OverlayMotion {
                         val ux = rx / range; val uz = rz / range
                         val along = d.x * ux + d.z * uz
                         val ax = d.x - ux * along; val az = d.z - uz * along
-                        kotlin.math.sqrt(ax * ax + az * az) >= base ||
+                        kotlin.math.sqrt(ax * ax + az * az) >= needAcross ||
                             (alongCounts && absf(along) >= needAlong && monotoneAlong(window, j.refPos, ux, uz))
                     } else d.length >= needAlong
                     if (moved && speed >= SPEED_FLOOR) s.moving = true
                     if (s.moving || t.id == debugId) {
-                        val line = "id %d %s t=%.1f d=(%.2f,%.2f) raw=(%.2f,%.2f) drift=(%.2f,%.2f) eyeDisp=%s observed=%d dragged=%s range=%.1f needAlong=%.2f sigma=%.2f hits=%d speed=%.2f -> %s".format(
-                            t.id, TrackedClass.name(t.classId), nowS, d.x, d.z, j.d.x, j.d.z, drift.x, drift.z, eyeDisp?.let { "(%.2f,%.2f)".format(it.x, it.z) } ?: "-", observed.size, dragged, range, needAlong, t.sigma, t.hits, speed, if (s.moving) "MOVING" else "static")
+                        val line = "id %d %s t=%.1f d=(%.2f,%.2f) raw=(%.2f,%.2f) drift=(%.2f,%.2f) eyeDisp=%s observed=%d dragged=%s range=%.1f needAlong=%.2f needAcross=%.2f sigma=%.2f hits=%d speed=%.2f -> %s".format(
+                            t.id, TrackedClass.name(t.classId), nowS, d.x, d.z, j.d.x, j.d.z, drift.x, drift.z, eyeDisp?.let { "(%.2f,%.2f)".format(it.x, it.z) } ?: "-", observed.size, dragged, range, needAlong, needAcross, t.sigma, t.hits, speed, if (s.moving) "MOVING" else "static")
                         if (s.moving) flips.add(line)
                         if (t.id == debugId) debugLines.add(line)
                     }
@@ -277,9 +283,13 @@ class OverlayMotion {
          */
         const val EYE_MAX_SPEED = 0.5f
 
-        /** Displacement that makes a track moving: placed objects need twice a person's (their lifts flip, they rarely move), carried objects in between. */
+        /**
+         * Displacement that makes a track moving: placed objects need twice a person's (their lifts
+         * flip, they rarely move), carried objects in between; a vehicle 1 m (its box centre
+         * wanders a few tens of centimetres over a parked car's length, a moving one covers metres).
+         */
         fun moveDist(cls: Int): Float = when {
-            TrackedClass.placed(cls) -> 1.0f
+            TrackedClass.placed(cls) || TrackedClass.vehicle(cls) -> 1.0f
             TrackedClass.carried(cls) -> 0.7f
             else -> MOVE_DIST
         }

@@ -72,6 +72,7 @@ class Tracker(val config: Config = Config()) {
             when (cls) {
                 TrackedClass.PERSON -> 0.7f
                 TrackedClass.CHAIR, TrackedClass.LAPTOP, TrackedClass.TV -> 0.1f
+                TrackedClass.CAR, TrackedClass.MOTORCYCLE, TrackedClass.BUS, TrackedClass.TRUCK -> 1f
                 else -> 0.3f
             }
         },
@@ -90,6 +91,7 @@ class Tracker(val config: Config = Config()) {
         val processNoise: (Int) -> Float = { cls ->
             when (cls) {
                 TrackedClass.CHAIR, TrackedClass.LAPTOP, TrackedClass.TV -> 0.02f
+                TrackedClass.CAR, TrackedClass.MOTORCYCLE, TrackedClass.BUS, TrackedClass.TRUCK -> 1f
                 else -> 0.1f
             }
         },
@@ -145,6 +147,12 @@ class Tracker(val config: Config = Config()) {
         private val sigmas = FloatArray(SIGMA_WINDOW)
         private var sigmaN = 0
         private var sigmaAt = 0
+        /** Across-ray sigmas of the last SIGMA_WINDOW hits (their median is the track's). */
+        private val acrossSigmas = FloatArray(SIGMA_WINDOW)
+        private var acrossN = 0
+        private var acrossAt = 0
+        fun pushSigmaAcross(v: Float) { acrossSigmas[acrossAt] = v; acrossAt = (acrossAt + 1) % SIGMA_WINDOW; if (acrossN < SIGMA_WINDOW) acrossN++ }
+        val sigmaAcross: Float get() { if (acrossN == 0) return 0f; val a = acrossSigmas.copyOf(acrossN); a.sort(); return a[acrossN / 2] }
         /** Box heights (px along gravity) of the last SIGMA_WINDOW hits that had one; the median gates the next hit's size. */
         private val heights = FloatArray(SIGMA_WINDOW)
         private var heightN = 0
@@ -164,6 +172,8 @@ class Tracker(val config: Config = Config()) {
     private companion object {
         /** Weight of the along-ray distance in the association cost (bearing counts for four times as much). */
         const val ALONG_COST = 0.25f
+        /** A vehicle's duplicate is farther from it than a person's: the detector's second box on a 4.5 m car sits on its other half. 1.5 m, under the 2.5 m between cars parked side by side. */
+        const val VEHICLE_MERGE_SCALE = 3f
         /** Hits whose sigmas make a track's sigma (their median). */
         const val SIGMA_WINDOW = 5
     }
@@ -198,7 +208,7 @@ class Tracker(val config: Config = Config()) {
             val u = rayDirection(pt)
             val range = if (eye != null) Vec2(pt.pos.x - eye.x, pt.pos.z - eye.z).length else 0f
             for ((t, e) in entries.withIndex()) {
-                if (e.classId != pt.classId) continue
+                if (!TrackedClass.sameKind(e.classId, pt.classId)) continue
                 if (config.sizeRatio > 0f && pt.heightPx > 0f) {
                     val h = e.heightPx
                     if (h > 0f && absf(pt.heightPx - h) > config.sizeSlackPx && (pt.heightPx > config.sizeRatio * h || h > config.sizeRatio * pt.heightPx)) continue
@@ -213,7 +223,12 @@ class Tracker(val config: Config = Config()) {
                     val across = sqrt(ax * ax + az * az)
                     val sinceHit = (time - e.lastHit).toFloat().coerceAtLeast(0f)
                     val acrossGate = maxOf(base, TrackedClass.walkSpeed(pt.classId) * sinceHit)
-                    val alongGate = maxOf(config.gateSigmas * sigma, config.alongFraction * range)
+                    // The range-wide along gate is for a person whose legs are hidden; a vehicle's
+                    // box bottom is its ground contact, and 1.5x its 50 m range from a drone let a
+                    // parked car's track hop to the next car along the ray whenever its own box
+                    // was missed for a frame.
+                    val alongGate = if (TrackedClass.vehicle(pt.classId)) maxOf(config.gateSigmas * sigma, acrossGate)
+                        else maxOf(config.gateSigmas * sigma, config.alongFraction * range)
                     if (across > acrossGate || absf(along) > alongGate) continue
                     pairs.add(Pair3(across + ALONG_COST * absf(along), t, m))
                 } else {
@@ -242,6 +257,7 @@ class Tracker(val config: Config = Config()) {
                 e.hits += 1
                 e.pushSigma(sqrt(r))
                 e.pushHeight(pt.heightPx)
+                e.pushSigmaAcross(pt.sigmaAcross)
                 e.lastHit = maxOf(e.lastHit, time)
                 updateConf(e, pt.conf)
                 if (e.id == null && e.hits >= config.birthHits) { e.id = nextId; nextId += 1 }
@@ -250,7 +266,7 @@ class Tracker(val config: Config = Config()) {
                 val r = noise(pt)
                 val vs = config.initialVelocitySigma(pt.classId)
                 val c = clampf(pt.conf, 0f, 1f)
-                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt(), sqrt(r), pt.heightPx)
+                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt(), sqrt(r), pt.heightPx).also { it.pushSigmaAcross(pt.sigmaAcross) }
                 if (config.birthHits <= 1) { e.id = nextId; nextId += 1; result[m] = e.id }
                 entries.add(e)
             }
@@ -274,7 +290,7 @@ class Tracker(val config: Config = Config()) {
             // Extrapolate only up to the coasting horizon; past it the track stands still.
             val horizon = e.lastHit + config.coastS
             val dt = (minOf(time, horizon) - e.s.time).coerceAtLeast(0.0).toFloat()
-            out.add(Track(id, e.classId, e.s.p + v * dt, if (time > horizon) Vec3.ZERO else v, e.confOut, e.hits, e.sigma))
+            out.add(Track(id, e.classId, e.s.p + v * dt, if (time > horizon) Vec3.ZERO else v, e.confOut, e.hits, e.sigma, e.sigmaAcross))
         }
         out.sortBy { it.id }
         out
@@ -298,7 +314,7 @@ class Tracker(val config: Config = Config()) {
                 var j = i + 1
                 while (j < entries.size) {
                     val b = entries[j]
-                    if (b.id != null && b.classId == a.classId && groundDistance(a.s.p, b.s.p) < config.mergeDist) {
+                    if (b.id != null && TrackedClass.sameKind(b.classId, a.classId) && groundDistance(a.s.p, b.s.p) < config.mergeDist * (if (TrackedClass.vehicle(a.classId)) VEHICLE_MERGE_SCALE else 1f)) {
                         if (b.hits > a.hits) { entries.removeAt(i); removedA = true; break }
                         entries.removeAt(j); continue
                     }

@@ -120,7 +120,16 @@ object Lift3D {
                 Lift.WIDTH -> maxOf(WIDTH_SIGMA_MIN, WIDTH_SIGMA_REL * range)
                 Lift.SQUAT -> maxOf(WIDTH_SIGMA_MIN, SQUAT_SIGMA_REL * range)
             }
-            val sigmaAcross = if (how == Lift.DEPTH) DEPTH_SIGMA else maxOf(ACROSS_SIGMA_MIN, range / k.fx * ACROSS_PX)
+            var sigmaAcross = if (how == Lift.DEPTH) DEPTH_SIGMA else maxOf(ACROSS_SIGMA_MIN, range / k.fx * ACROSS_PX)
+            // A box cut by the frame's side (across gravity) is centred on the visible part, not on
+            // the object: as more of it leaves the frame the centre, and the bearing, slide inward
+            // with the object standing still, and cut on one side then the other it swings by the
+            // box's whole width. Its bearing is good only to half of whichever is wider, the class
+            // or the visible box at this range (a squat box with arms out was 1.8 m at 7.5 m).
+            if (sideCut(d.bbox, down, k)) {
+                val visibleM = boxWidthPx(d.bbox, down, k) * range / k.fx
+                sigmaAcross = maxOf(sigmaAcross, SIDE_CUT_WIDTHS * maxOf(TrackedClass.widthPrior(d.classId), visibleM))
+            }
             var m = origin.toMarker(w)
             if (TrackedClass.onFloor(d.classId)) {
                 // Depth hit the torso, the width prior the box centre: drop to the floor. A floor
@@ -175,6 +184,8 @@ object Lift3D {
     const val ACROSS_SIGMA_MIN = 0.05f
     /** Box-centre error in pixels behind the across-ray sigma (3-5 cm at 4-6 m on the phone). */
     const val ACROSS_PX = 3f
+    /** Across-ray sigma of a box cut by the frame's side, in widths of its class (the centre is off by up to half). */
+    const val SIDE_CUT_WIDTHS = 0.5f
 
     // Pure helpers (unit-tested).
 
@@ -217,6 +228,21 @@ object Lift3D {
     fun boxHeightPx(box: RectF, down: Vec2, k: Intrinsics): Float {
         val wPx = box.width * k.width; val hPx = box.height * k.height
         return absf(down.x) * wPx + absf(down.y) * hPx
+    }
+
+    /**
+     * True when the box touches the image border across gravity (a person cut at the left or
+     * right of the view, whichever way the phone is held). Measured: a person 7.5 m out at the
+     * side of the view, the box cut to 0.38 then 0.28 of their width, read as 1.4 m of sideways
+     * motion in 4 s and was tagged MOVING while standing (jumping) in place.
+     */
+    fun sideCut(box: RectF, down: Vec2, k: Intrinsics): Boolean {
+        val w = k.width.toFloat(); val h = k.height.toFloat()
+        for (dir in arrayOf(Vec2(-down.y, down.x), Vec2(down.y, -down.x))) {
+            val e = bottomPoint(box, dir, w, h, inset = 1f)
+            if (e.x < BORDER_MARGIN || e.y < BORDER_MARGIN || e.x > 1f - BORDER_MARGIN || e.y > 1f - BORDER_MARGIN) return true
+        }
+        return false
     }
 
     /** Unit direction (in pixels: x right, y down) of world gravity in the captured image. */

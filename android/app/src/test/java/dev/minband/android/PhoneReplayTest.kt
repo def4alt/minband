@@ -26,9 +26,11 @@ class PhoneReplayTest {
 
     private class Clip(val meta: Meta, val frames: TreeMap<Int, MutableList<Detection>>)
 
-    private class Run(val detectorHz: Double, val noise: Float, val confirmed: Set<Int>, val moving: Set<Int>, val medianMovingSpeed: Float, val medianLifeS: Double, val boxesPerFrame: Double, val walkers: Int) {
+    private class Run(val detectorHz: Double, val noise: Float, val confirmed: Set<Int>, val moving: Set<Int>, val medianMovingSpeed: Float, val medianLifeS: Double, val boxesPerFrame: Double, val walkers: Int,
+                      val vehicles: Int = 0, val movingVehicles: Int = 0, val drivenVehicles: Int = 0) {
         override fun toString() =
-            "detector %.2f Hz, lift noise %.2f m: %.1f boxes/frame, confirmed tracks %d (median life %.1f s), MOVING %d (%d at a walking pace), median moving speed %.2f m/s"
+            ("detector %.2f Hz, lift noise %.2f m: %.1f boxes/frame, confirmed tracks %d (median life %.1f s), MOVING %d (%d people at a walking pace), median moving speed %.2f m/s" +
+                if (vehicles > 0) "; vehicles %d, MOVING %d (%d above 2 m/s)".format(vehicles, movingVehicles, drivenVehicles) else "")
                 .format(detectorHz, noise, boxesPerFrame, confirmed.size, medianLifeS, moving.size, walkers, medianMovingSpeed)
     }
 
@@ -91,6 +93,7 @@ class PhoneReplayTest {
         val firstSeen = HashMap<Int, Double>(); val lastSeen = HashMap<Int, Double>()
         val speeds = ArrayList<Float>()
         val maxSpeed = HashMap<Int, Float>()
+        val classOf = HashMap<Int, Int>()
         var detBoxes = 0; var detCalls = 0
         class Pending(val frame: Int, val point: WorldPoint, val id: Int?)
         val pending = ArrayList<Pending>()
@@ -135,7 +138,7 @@ class PhoneReplayTest {
                 pending.clear()
             }
             for (tr in tracks) {
-                confirmed.add(tr.id); firstSeen.putIfAbsent(tr.id, t); lastSeen[tr.id] = t
+                confirmed.add(tr.id); firstSeen.putIfAbsent(tr.id, t); lastSeen[tr.id] = t; classOf[tr.id] = tr.classId
                 if (tr.id in mv) { moving.add(tr.id); speeds.add(tr.vel.length) }
                 maxSpeed[tr.id] = maxOf(maxSpeed[tr.id] ?: 0f, tr.vel.length)
             }
@@ -146,8 +149,10 @@ class PhoneReplayTest {
         val lives = confirmed.map { lastSeen.getValue(it) - firstSeen.getValue(it) }.sorted()
         val medianLife = if (lives.isEmpty()) 0.0 else lives[lives.size / 2]
         val detHz = if (detCalls > 1) (detCalls - 1) / ((lastFrame - present.first()) / m.fps) else 0.0
-        val walkers = moving.count { (maxSpeed[it] ?: 0f) >= 0.8f }
-        return Run(detHz, noiseSigma, confirmed, moving, median, medianLife, detBoxes.toDouble() / maxOf(detCalls, 1), walkers)
+        val isVehicle = { id: Int -> TrackedClass.vehicle(classOf[id] ?: -1) }
+        val walkers = moving.count { !isVehicle(it) && (maxSpeed[it] ?: 0f) >= 0.8f }
+        return Run(detHz, noiseSigma, confirmed, moving, median, medianLife, detBoxes.toDouble() / maxOf(detCalls, 1), walkers,
+            confirmed.count(isVehicle), moving.count(isVehicle), moving.count { isVehicle(it) && (maxSpeed[it] ?: 0f) >= 2f })
     }
 
     private val clip by lazy { load("/replay/vtest-yolov8n-256.csv") ?: error("missing test resource (run tools/movers/phone_detect.py)") }
@@ -167,13 +172,15 @@ class PhoneReplayTest {
         val r = try { replay(drone!!, 1, Tracker.Config.SLOW_DETECTOR, export = export) } finally { export?.close() }
         println("drone: $r")
         if (exportPath != null) println("verdicts exported to $exportPath")
-        // Unlabelled; the bounds come from `track.py track` on the same run (100 person tracks,
-        // 38 walkers of >= 3 m at a median 0.68 m/s: a parking lot where most people stand or
-        // amble) and from this chain's first pass (248 ids, 127 movers, 90 of them at a walking
-        // pace at some point). A regression that loses the walkers or tags everyone shows here.
-        assertTrue("walkers tracked and moving: $r", r.walkers >= 30)
-        assertTrue("not everyone is a mover: $r", r.moving.size <= r.confirmed.size * 0.7)
-        assertTrue("movers move: $r", r.medianMovingSpeed >= 0.15f)
+        // Unlabelled; the bounds come from `track.py track` on the same YOLO26s run (23 walkers
+        // at a median 1.1 m/s, 212 vehicles of which 35 drove, at a median 2.9 m/s: a parking lot
+        // where most cars are parked) and from this chain on it (13 people at a walking pace,
+        // 288 vehicle ids, 52 MOVING, 39 of them above 2 m/s). A regression that loses the
+        // walkers or the driving cars, or tags the parked ones, shows here.
+        assertTrue("walkers tracked and moving: $r", r.walkers >= 8)
+        assertTrue("driving cars are movers: $r", r.drivenVehicles >= 20)
+        assertTrue("parked cars are not: $r", r.movingVehicles <= r.vehicles * 0.3)
+        assertTrue("not everyone is a mover: $r", r.moving.size <= r.confirmed.size * 0.5)
         assertTrue("tracks live: $r", r.medianLifeS >= 2.0)
     }
 
