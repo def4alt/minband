@@ -25,11 +25,25 @@ from clika_runtime.modelverse import LoadOptions, ModelRegistry
 from detect import KEEP, NAME_MAP, TiledDetector, nms
 
 
+def check_device(requested: str, actual, allow_cpu_fallback: bool):
+    """Log the device ClikaRT actually loaded onto; fail loud if --device vulkan silently fell
+    back to CPU (the one observed cold-start transient: 'vulkan device 0 failed basic compute
+    check' excludes the device and ClikaRT runs on CPU at a fraction of the speed, no error)."""
+    actual = str(actual)
+    print(f"[detector] requested device={requested!r} actual device={actual!r}", file=sys.stderr)
+    if requested == "vulkan" and not actual.lower().startswith("vulkan") and not allow_cpu_fallback:
+        raise RuntimeError(
+            f"requested --device vulkan but ClikaRT loaded on {actual!r} (silent CPU fallback); "
+            "pass --allow-cpu-fallback to accept this")
+
+
 class ClikaTiledDetector(TiledDetector):
     def __init__(self, source: str, cache_dir: str, device: str = "vulkan",
-                 tile: int = 0, overlap: int = 96, conf: float = 0.25, offline: bool = True):
+                 tile: int = 0, overlap: int = 96, conf: float = 0.25, offline: bool = True,
+                 allow_cpu_fallback: bool = False):
         opts = LoadOptions(device=crt.Device.parse(device), cache_dir=cache_dir, offline=offline)
         self.model = ModelRegistry.builtin().load_detection(source, opts)
+        check_device(device, self.model.device, allow_cpu_fallback)
         self.classmap = {i: NAME_MAP.get(name.lower(), -1) for i, name in enumerate(self.model.labels)}
         self.fixed, self.size = 0, 0
         self.tile, self.overlap, self.conf = tile, overlap, conf
@@ -65,10 +79,13 @@ def main():
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--tile", type=int, default=0)
     ap.add_argument("--max-fps", type=float, default=0)
+    ap.add_argument("--allow-cpu-fallback", action="store_true",
+                     help="accept ClikaRT silently falling back to CPU when --device vulkan was requested")
     args = ap.parse_args()
 
     det = ClikaTiledDetector(args.model, args.cache_dir, device=args.device,
-                              tile=args.tile, conf=args.conf)
+                              tile=args.tile, conf=args.conf,
+                              allow_cpu_fallback=args.allow_cpu_fallback)
     cap = cv2.VideoCapture(args.source)
     fps_in = cap.get(cv2.CAP_PROP_FPS) or 30
     step = max(1, round(fps_in / args.max_fps)) if args.max_fps else 1
