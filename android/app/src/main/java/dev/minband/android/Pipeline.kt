@@ -135,7 +135,8 @@ class Pipeline(private val context: Context, private val listener: Listener) {
 
     init {
         detectExecutor.execute {
-            val d = YoloOnnxDetector(context)
+            val clika = ClikaDetector(context)
+            val d: Detector = if (clika.isAvailable) clika else YoloOnnxDetector(context)
             detector = d
             detectorStatus = if (d.isAvailable) "model ${d.modelName}" else "no detector: ${d.lastError}"
             publishState()

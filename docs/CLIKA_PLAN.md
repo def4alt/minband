@@ -448,3 +448,89 @@ exists, then get the app compiling, installed on the phone at 192.168.0.232:3673
 (reconnect via adb connect if that is stale), and the ClikaRT license provisioned
 on-device per the steps already written down. Stop and ask before installing a Rust
 toolchain if one is not already present -- same rule as the model/SDK downloads.
+
+## Session 3 log (2026-10-10 23:00-23:58 KST) -- Phase 2 closed on CPU, Vulkan open
+
+### toolchain unblocked
+
+- rustup (host stable-x86_64-pc-windows-gnu -- MSVC host linking failed, real
+  link.exe missing, only coreutils' `link` was on PATH via git-bash; GNU host
+  uses rustup's bundled self-contained mingw ld/gcc instead) plus target
+  aarch64-linux-android installed on both toolchains.
+- Android NDK r27c installed manually (no sdkmanager/cmdline-tools present) to
+  `%LOCALAPPDATA%\Android\Sdk\ndk\27.2.12479018`.
+- `tools/build-android.sh` runs clean; generates `dev.minband.core`
+  (`libminband_core.so` + `minband_core.kt`). `:app:compileDebugKotlin` green.
+
+### ClikaDetector.kt wired (new file) and real-world verified
+
+- Decompiled `clika-runtime-android-0.6.4.aar`'s `classes.jar` (javap) to
+  confirm the Kotlin vision API, since no docs exist for it: `VisionModel.open
+  (modelId, VisionLoadOptions(cacheDir, offline, device))`, async
+  `model.detect(ImageInput.Rgba8888(rgba, w, h), DetectOptions, VisionListener)`
+  with `onDetections`/`onDone`/`onError`, `Detection(label, labelId, score,
+  Box(left,top,right,bottom))` in **pixel** coords of the fed image (matches
+  the desktop decode). ClikaDetector blocks the detect-thread via
+  CountDownLatch to fit `Detector`'s synchronous contract. No tiling (unlike
+  the hub's 4K drone path): the phone's own camera frame is small enough for
+  one shot. Reuses `YoloOnnxDetector.capturedImageRect()` for the same
+  upright-to-sensor-orientation box remap, and `TrackedClass.byLabel` (COCO
+  label strings) for the class filter -- this app tracks person/handheld
+  objects, not edge/detector.py's vehicle set.
+- Two bugs found only by running on-device (no way to have known from docs):
+  1. `Modelverse.load()` must be called once before any `AutoModel*`/
+     `VisionModel` call -- `ClikaRtAndroid.load()` (MinBandApplication) only
+     places the license and loads the base `ClikaRT`/`clika_rt_jni` libs; the
+     modelverse layer ships its own native libs (`ClikaRT_modelverse`,
+     `clika_modelverse_jni`) and silently refuses with "Modelverse.load has
+     not succeeded in this process" otherwise.
+  2. `DetectOptions.labels` is an allow-list, not a filter toggle: passing
+     `emptyList()` for "no filter" actually means "allow nothing" and
+     silently zeroes every detection. Must be `null`.
+- Pipeline.kt now tries `ClikaDetector` first, falls back to `YoloOnnxDetector`
+  if unavailable.
+- Model snapshot pushed bitwise-identical to
+  `/data/local/tmp/clikart/model/models--ustc-community--dfine-nano-coco/...`
+  (same HF-cache layout as the laptop's `cache_dir`), world-readable
+  (`chmod a+rX`) so the app's uid can read it.
+
+### license: phone needed its own, the laptop's did not transfer
+
+- The credential at `~/.clika/runtime/license` the plan said to copy to the
+  phone is a `cert_bundle` license with `max_hardware: 1`, already consumed
+  by PIOTREKBOOK's own hardware fingerprint -- it is not a shared/multi-
+  hardware bundle (the "one `clikart-license-init` licenses both" note in
+  Phase 0 was about the laptop's two local Python installs sharing one host,
+  not laptop+phone). The phone came up `LICENSE_STATE_BLOCKED` ("hardware
+  seats all held by other units").
+- No MCP/CLI path can issue a new project license non-interactively:
+  `clika-cli projects licenses-create` explicitly refuses API-key auth
+  ("Session only ... do it in the web app, signed in as a user"), and the
+  MCP server only exposes license reads. User issued a second `cert_bundle`
+  (`platform_android: true`, `max_hardware: 1`) from the web app by hand;
+  provisioned onto the phone the same way as before (`adb push` +
+  `run-as cp` into `files/clika_license.txt`, overwriting the laptop's copy).
+
+### verified end-to-end on-device (CPU backend)
+
+- `device = "cpu"` in `ClikaDetector`'s `VisionLoadOptions`: model opens,
+  license accepted, no crash. Screenshot of the running session at the venue
+  shows `TRACKS 3` with correctly placed PERSON / BOTTLE / CHAIR / BACKPACK
+  boxes over a real scene (hackathon desk, a person, drink cups, chairs) --
+  confirms the whole chain: license -> Modelverse.load -> VisionModel.open ->
+  per-frame detect -> label-to-class-id -> box remap -> Lift3D -> tracker ->
+  overlay.
+
+### still open
+
+- **Vulkan backend on Adreno fails to load**: `ModelverseException: The
+  vulkan backend could not load: not shipped in this install` even though
+  `libClikaRT_vulkan.so` (139 MB) is present in the installed APK's
+  `lib/arm64-v8a/`. Not yet root-caused (risk already flagged in the Phase 4
+  risk table: "Vulkan on Adreno may fall back to CPU"). Demo currently runs
+  CPU-only on phone; laptop Vulkan path (Phase 1) is unaffected.
+- Remove/guard the per-30-frames debug log in `ClikaDetector.detect()`
+  (`Log.i(TAG, "raw ...")`) once Vulkan is sorted, or keep it -- it's cheap
+  and mirrors `YoloOnnxDetector`'s own periodic timing log.
+- Phase 2.5 verification (airplane-mode run, snapshot hash match report) and
+  the main-branch merge (Session 2 log step 6) still pending.
