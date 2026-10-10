@@ -102,7 +102,7 @@ u32  video_frame0   video frame index at tick 0 ; 0xFFFFFFFF unknown
 u16  fps_x100       video frame rate × 100 (29.97 = 2997) ; 0 unknown
 ```
 
-### 3.2 `Ego` (type 0x02, body 26 B)
+### 3.2 `Ego` (type 0x02, body 23 B)
 
 The drone's own state, the sensor footprint, and a one-line scene summary. Repeated every
 `T_ego`; sent at once when `nav`, GNSS state or link state changes.
@@ -367,11 +367,13 @@ never.
 
 ## 7. Sizes
 
+Checked by the `sizes_match_the_spec` test in `core/src/wire.rs`.
+
 | item | bytes on the wire (TLV included) |
 |---|---|
 | frame header | 10 (12 with CRC) |
 | `Session` | 37 |
-| `Ego` | 28 |
+| `Ego` | 25 |
 | `Pose` | 24 |
 | `Contact`, static single, floor regime | 23 |
 | `Contact`, moving group, thin regime (ray) | 27 |
@@ -382,8 +384,8 @@ never.
 | `Focus` | 7 |
 
 Worked floor at 100 B/s (f = 1, thin regime), 20 static contacts: contacts 20 x 25 B / 60 s =
-8.3 B/s, `Ego` 28 B / 5 s = 5.6 B/s, `Session` 37 B / 30 s = 1.2 B/s, frame headers about
-12 x 10 B / 60 s = 2 B/s: **about 17 B/s, 17 % of the link.** The remaining 83 B/s carries about
+8.3 B/s, `Ego` 25 B / 5 s = 5 B/s, `Session` 37 B / 30 s = 1.2 B/s, frame headers about
+12 x 10 B / 60 s = 2 B/s: **about 16.5 B/s, 17 % of the link.** The remaining 83 B/s carries about
 3 contact revisions per second, or one focused contact at 1 Hz plus two revisions per second. At
 12.5 B/s (f = 8, floor regime) the same scene floors at 2 B/s with `T_floor` = 8 min and `Ego`
 every 40 s: usable for "what is there", not for following movement. In the video regime the
