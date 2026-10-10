@@ -9,7 +9,12 @@ csv=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); out=$2
 mkdir -p "$out"; out=$(cd "$out" && pwd)
 cd "$here/../eval"
 : > "$out/minband.jsonl"
-run() { local name=$1; shift; echo "{\"run\": \"$name\", \"result\": $(node src/replay.ts "$csv" "$@" --json 2>/dev/null | tail -1)}" >> "$out/minband.jsonl"; }
+run() {  # a failed replay stops here with its error, instead of writing an empty result
+  local name=$1 r; shift
+  r=$(node src/replay.ts "$csv" "$@" --json | tail -1)
+  [ -n "$r" ] || { echo "replay $name: no result" >&2; return 1; }
+  echo "{\"run\": \"$name\", \"result\": $r}" >> "$out/minband.jsonl"
+}
 run theta0.15 --theta 0.15
 run theta0.5 --theta 0.5
 run telemetry --budget 450 --loss 0.05 --delay 6

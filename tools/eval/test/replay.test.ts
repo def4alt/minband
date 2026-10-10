@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { replayRows, unpack } from '../src/replay.ts';
+import { maxOf, replayRows, unpack } from '../src/replay.ts';
 import { generate } from '../src/synth.ts';
 import { baselineBbps, baselineC, baselineRows, minbandBps, thumbnailIntervalS, LINK_PROFILES, THUMBNAIL_CHIP_BYTES } from '../src/baselines.ts';
 import { toFrames } from '../src/gt.ts';
@@ -58,6 +58,14 @@ test('lossy link is deterministic per seed and actually drops datagrams', () => 
 test('unpack splits u16-LE length-prefixed datagrams', () => {
   const buf = new Uint8Array([2, 0, 0xaa, 0xbb, 0, 0, 1, 0, 0xcc]);
   assert.deepEqual(unpack(buf).map(d => [...d]), [[0xaa, 0xbb], [], [0xcc]]);
+});
+
+test('maxOf handles a busy 4K clip: half a million per-row errors (Math.max(...xs) overflowed the stack)', () => {
+  const xs = new Float64Array(500_000).map((_, i) => (i * 7919) % 1000 / 100);
+  xs[123_456] = 42;
+  assert.equal(maxOf(xs), 42);
+  assert.equal(maxOf([]), 0);
+  assert.equal(maxOf([-2, -1]), -1);
 });
 
 test('baseline B formula matches the server: entities * 31 B * 30 Hz * 8 + 30 Hz * 40 B * 8', () => {

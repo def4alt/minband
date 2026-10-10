@@ -83,6 +83,14 @@ export function unpack(buf: Uint8Array): Uint8Array[] {
 
 interface Twin { id: number; pos: [number, number, number] }
 
+/** Largest element; 0 for an empty array. A loop, not Math.max(...xs): a spread of a few hundred
+ * thousand per-row errors (a busy 4K clip) overflows the call stack. */
+export function maxOf(xs: ArrayLike<number>): number {
+  let m = xs.length ? -Infinity : 0;
+  for (let i = 0; i < xs.length; i++) if (xs[i] > m) m = xs[i];
+  return m;
+}
+
 /** p-quantile (nearest rank) of an unsorted array; 0 for an empty one. */
 export function quantile(xs: Float64Array | number[], p: number): number {
   if (!xs.length) return 0;
@@ -173,8 +181,8 @@ export function replayFrames(frames: Frame[], step: number, opts: ReplayOptions)
       lostDatagrams: lost,
       acksSent, acksDelivered, ackWireBytes: ackBytes,
       receiver: { gapsDetected: rs.gapsDetected, nacksSent: rs.nacksSent, outOfOrderDropped: rs.outOfOrderDropped },
-      errMean: mean(errs), errP95: quantile(errs, 0.95), errMax: errs.length ? Math.max(...errs) : 0,
-      errMeanPresent: mean(present), errP95Present: quantile(present, 0.95), errMaxPresent: present.length ? Math.max(...present) : 0,
+      errMean: mean(errs), errP95: quantile(errs, 0.95), errMax: maxOf(errs),
+      errMeanPresent: mean(present), errP95Present: quantile(present, 0.95), errMaxPresent: maxOf(present),
       missingRows: missing, availability: gtRows ? (gtRows - missing) / gtRows : 1, phantomRows: phantom, phantomMaxS: phantomMax / TICK_HZ,
       missingPenaltyM: penalty,
     };
