@@ -292,27 +292,22 @@ widths (3 m at any heading, +-50 %), with a bootstrap over the boxes.
 
 ## Reproducing
 
-From a fresh checkout (clips and weights are never committed; the battlefield clip URLs and licences
-are in the manifest kept with the clips, summarised here):
+From a fresh checkout (clips and weights are never committed; the battlefield clips' URLs, sha256,
+licences and splits are in `tools/footage/battlefield-clips.json`):
 
 ```bash
 cd tools/footage
 python3 -m venv .venv && .venv/bin/pip install onnxruntime opencv-python-headless numpy scipy
-mkdir -p models clips/battlefield
-# Appearance model: the VisDrone-trained YOLO26n-P2 ONNX (end2end 300x6, 960 input, AGPL-3.0) as
-# models/aerial-guardian.onnx; it is not redistributed here.
-# MEVA (CC-BY-4.0): the tuning clip, and the held-out clip by byte range from the public drop:
+mkdir -p models clips
+# Appearance model: the VisDrone-trained YOLO26n-P2 ONNX (end2end 300x6, 960 input, AGPL-3.0) from
+# github.com/Halok600/The-Aerial-Guardian (web/model/aerial-guardian.onnx); never committed here.
+curl -fsSL -o models/aerial-guardian.onnx https://raw.githubusercontent.com/Halok600/The-Aerial-Guardian/main/web/model/aerial-guardian.onnx
+# MEVA (CC-BY-4.0) tuning clip:
 .venv/bin/python meva.py fetch 2018-03-13.16-00-14 clips/
-curl -sS -r 11876031488-11928476543 -o clips/battlefield/meva-uav-0307-1720.mp4 \
-    https://s3.amazonaws.com/mevadata-public-01/uav-drop-01/meva-uav-drop-01.tar   # range of tar member 2018-03-07.17-20-30.17-21-05.uav1.mp4 as recorded in the clip manifest; the held-out run used it downscaled to 1920x1080
-# HIT-UAV thermal samples (CC-BY-4.0):
-for c in 60m-30_1 120m-30_3 70m-90_1; do curl -sSL -o clips/battlefield/hituav-$c.mov \
-    https://raw.githubusercontent.com/suojiashun/HIT-UAV-Infrared-Thermal-Dataset/main/video_sample/$c.mov; done
-# Military clips (no licence for reuse: local evaluation only, never commit frames):
-curl -sSL -o clips/battlefield/amad-test1.mp4 "https://media.githubusercontent.com/media/InvictusRex/Drone-Based-Reconnaissance-of-Military-Assets/legacy-ml-only-implementation/Testing%20Videos/Test1.mp4"
-curl -sSL -o clips/battlefield/amad-test2.mp4 "https://media.githubusercontent.com/media/InvictusRex/Drone-Based-Reconnaissance-of-Military-Assets/legacy-ml-only-implementation/Testing%20Videos/Test2.mp4"
-curl -sSL -o clips/battlefield/mvt-test10.mp4 https://github.com/Lin-Sinorodin/Military_Vehicles_Tracking/releases/download/v1.0.0/test10.mp4
-# (the evaluation transcoded the .mov / .gif sources to .mp4 with ffmpeg first; same frames)
+# The eight battlefield clips: download, sha256 check, and the same normalisation as the evaluation
+# copies (remux; GIF -> H.264; MEVA held-out 4K -> 1920 wide). Military clips have no licence for
+# reuse: local evaluation only, never commit frames.
+./battlefield.sh clips/battlefield
 cd ../../core && wasm-pack build --target nodejs --out-dir pkg-node --release -- --features wasm
 cd ../tools/eval && npm ci && cd ../footage
 # Each clip: frozen pipeline + old pipeline + ablations + x264 + eval + replays (run_clip.sh header)
@@ -328,8 +323,8 @@ for t in sources label_free audit minband ground; do .venv/bin/python -I tables.
 .venv/bin/python -I pooled.py
 ```
 
-## Viewer class names (for viewer/src/scene.ts, not changed here)
+## Viewer class names
 
-`CLASS_NAME` needs: 1 bicycle, 2 car, 3 motorcycle, 5 bus, 7 truck, 100 mover, 101 armoured.
-`kindOf` should draw 1, 2, 3, 5, 7, 101 as a vehicle (or at least not as a carried object) and 100 as
-an unclassified mover.
+Done in `viewer/src/scene.ts` after the merge: 1 bicycle, 2 car, 3 motorcycle, 5 bus, 7 truck as
+vehicles and two-wheelers, 101 armoured as a vehicle, 100 mover as the small heading box (its size
+is unknown).

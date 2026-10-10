@@ -1,0 +1,28 @@
+<section id="lowrate" data-transition="fade" style="background:#0B0D0F;color:#E9ECEF;font-family:'Inter', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;letter-spacing:6px;text-transform:uppercase;color:#FDD663">Below 4 kbit/s</p>
+<h2 style="font-family:'Inter', Arial, sans-serif;font-size:72px;font-weight:300;line-height:1.15">The heartbeat follows the budget.</h2>
+<div style="display:flex;gap:64px">
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<table style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:28px;color:#E9ECEF">
+<tr><th style="width:40%;text-align:left">Edge budget</th><th style="width:30%;text-align:right">Keyframe</th><th style="width:30%;text-align:right">Coasting at</th></tr>
+<tr><td>≥ 8 kbit/s</td><td style="text-align:right">2 s</td><td style="text-align:right">2.5 s</td></tr>
+<tr><td>4 kbit/s</td><td style="text-align:right">3 s</td><td style="text-align:right">3.8 s</td></tr>
+<tr><td>1.5 kbit/s</td><td style="text-align:right">6.3 s</td><td style="text-align:right">7.9 s</td></tr>
+<tr><td>≤ 600 bit/s</td><td style="text-align:right">15 s</td><td style="text-align:right">18.8 s</td></tr>
+</table>
+<p style="font-size:24px;line-height:1.5;color:#9AA3AD">Both ends derive it from the budget in the Ack, so silence still means "within threshold". DIS uses 5 s; Iridium SBD one message per 10–15 s.</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:24px">
+<table style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:28px;color:#E9ECEF">
+<tr><th style="width:40%;text-align:left">bit/s on wire</th><th style="width:30%;text-align:right">before</th><th style="width:30%;text-align:right">now</th></tr>
+<tr><td>static, 450 budget</td><td style="text-align:right">609</td><td style="text-align:right">112</td></tr>
+<tr><td>walker, 450 budget</td><td style="text-align:right">472</td><td style="text-align:right">452</td></tr>
+<tr><td>static, 1500 budget</td><td style="text-align:right">741</td><td style="text-align:right">181</td></tr>
+<tr><td>walker, 1500 budget</td><td style="text-align:right">1900</td><td style="text-align:right">1156</td></tr>
+</table>
+<p style="font-size:24px;line-height:1.5;color:#9AA3AD">The controller now counts the 28 B header, measures over a window sized to the budget, and paces keyframe parts, so a 4-packet radio queue does not drop the burst.</p>
+</div>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7480">Replay at each profile's budget, loss and delay (docs/EVAL_FINDINGS.md). Three walkers and the crowd still do not fit 450 bit/s: that is the compact codec's job.</p>
+<aside>Before this weekend the floor was a fixed 2 s heartbeat and it did not fit a telemetry link. Now a static room costs 112 bit/s at a 450 bit/s budget, and one walker fits. Say plainly what does not fit: crowds at 600 bit/s.</aside>
+</section>

@@ -25,3 +25,4 @@ tools/footage/clips/
 tools/footage/models/
 *.onnx
 *.pt
+docs/presentation/showcase/build/

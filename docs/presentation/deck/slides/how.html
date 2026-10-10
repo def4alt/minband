@@ -1,0 +1,27 @@
+<section id="how" data-transition="fade" style="background:#0B0D0F;color:#E9ECEF;font-family:'Inter', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;letter-spacing:6px;text-transform:uppercase;color:#FDD663">What runs where</p>
+<h2 style="font-family:'Inter', Arial, sans-serif;font-size:72px;font-weight:300;line-height:1.15">One Rust core on both ends of the link.</h2>
+<div style="display:flex;gap:0px;align-items:stretch">
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;border:1px solid #4A525B;padding:32px">
+<h3 style="font-size:32px;font-weight:400">Edge</h3>
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#9AA3AD">iPhone: ARKit marker origin, LiDAR depth, CoreML detector, Kalman tracker, Rust core via uniffi</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;border:1px solid #4A525B;border-left:none;padding:32px">
+<h3 style="font-size:32px;font-weight:400">Link box</h3>
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#9AA3AD">Raspberry Pi 5 between phone and laptop: tc netem profiles hf, lora, telemetry, contested, blackout</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;border:1px solid #4A525B;border-left:none;padding:32px">
+<h3 style="font-size:32px;font-weight:400">Twin</h3>
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#9AA3AD">Laptop: Node server, Rust core via WASM, acks and repair, multi-device fusion, CoT out to TAK</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:12px;border:1px solid #4A525B;border-left:none;padding:32px">
+<h3 style="font-size:32px;font-weight:400">Screens</h3>
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;line-height:1.5;color:#9AA3AD">Three.js twin with error rings, link activity strip, video-on-this-link; ATAK / WinTAK via CoT</p>
+</div>
+</div>
+<div style="display:flex;gap:48px">
+<p style="flex:1;font-size:24px;line-height:1.5;color:#9AA3AD"><b style="color:#E9ECEF">Golden vectors</b> pass native x86-64, WASM in Node, and aarch64 Linux (qemu); the same bytes and the same extrapolations.</p>
+<p style="flex:1;font-size:24px;line-height:1.5;color:#9AA3AD"><b style="color:#E9ECEF">The link box shapes in the kernel,</b> outside our server: the demo does not grade its own homework.</p>
+</div>
+<aside>Point at the hardware on the table: phone, Pi, laptop. The Pi is the radio: it reproduces rate, delay and loss, not framing. The predictor is bit-identical across platforms; golden vectors prove it, including on aarch64.</aside>
+</section>
