@@ -275,6 +275,7 @@ class Replay {
         contacts: rxs.filter((c: any) => !c.departed).map((c: any) => ({
           id: c.id, e: r2(c.e), n: r2(c.n), u: c.u ?? null, heading: c.heading ?? null, ceShown: r1(c.ce_shown), radius: r1(c.radius), count: c.count, mix: c.mix, motion: c.motion,
           course: Math.round(c.course), speed: r1(c.speed), liveness: c.liveness, lost: c.lost, group: c.group, located: c.located, silenceS: r1(c.silence_s), ray: ray(c),
+          conf: c.conf, firstS: c.first_seen,
           chip: this.chipsFor.get(c.id) ?? null })),
         pose: lastPose ? { tick: lastPose.tick, e: lastPose.x / 100, n: lastPose.y / 100, u: lastPose.z / 100, yaw: lastPose.yaw / 100, pitch: lastPose.pitch / 100, roll: lastPose.roll / 100 } : null,
         ego: rawEgo ? { e: r2(rawEgo.rec.dx * resM), n: r2(rawEgo.rec.dy * resM), altAgl: rawEgo.rec.alt_agl, heading: Math.round(rawEgo.rec.heading * 360 / 256),

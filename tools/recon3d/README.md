@@ -163,10 +163,11 @@ state is moving (the operator would see them drift); clean link (video regime).
 | + re-identification at the static estimate, tentative tracks (`m1_all`) | 55 % | 64.8 % (72.5 %) | 69.3 % (77.0 %) | 86.4 % (87.7 %) | 49.6 % (54.1 %) | 6.7 px / 1.41 m | 477 | 35/494 |
 | + 3D static estimate (`m2_3d`) | 65 % | 81.2 % (87.0 %) | 85.0 % (90.4 %) | 85.2 % (89.5 %) | 72.7 % (77.7 %) | 4.8 px / 1.02 m | 391 | 44/626 |
 | + tracks fused only with image overlap, image-space motion test, mover heights from their ray, edge waits 0.75 s / 1 s (`m3_merged`) | 87.5 % | 79.0 % (97.0 %) | 83.0 % (98.6 %) | 88.6 % (98.1 %) | 70.2 % (92.6 %) | 4.7 px / 0.93 m | 324 | 23/604 |
-| + edge grouping distance 3 -> 2 m (**final**, tag `final`) | 87.5 % | **85.9 % (96.2 %)** | 89.8 % (98.6 %) | 91.0 % (97.5 %) | 77.7 % (90.1 %) | 4.6 px / 0.90 m | 393 | 22/657 (3 %) |
+| + edge grouping distance 3 -> 2 m (tag `final`) | 87.5 % | 85.9 % (96.2 %) | 89.8 % (98.6 %) | 91.0 % (97.5 %) | 77.7 % (90.1 %) | 4.6 px / 0.90 m | 393 | 22/657 (3 %) |
+| + near false vehicles held back, 15 sightings before a report (**final**, tag `final2`) | 87.2 % | **88.6 % (96.4 %)** | 92.2 % (98.6 %) | 89.2 % (96.0 %) | 78.9 % (90.5 %) | 4.6 px / 0.90 m | 370 | 24/679 (4 %) |
 
 From the Mac rows on, the "< 20 px" column has the with-rings figure in brackets too, and the scorer's projections are
-unchanged. Movers shown moving (`motion_check.py`): 36 % (`mac_base`) -> 41 % -> 40 % -> 61 % -> **65 %** (210/325) final.
+unchanged. Movers shown moving (`motion_check.py`): 36 % (`mac_base`) -> 41 % -> 40 % -> 61 % -> 65 % -> **66 %** (209/319) final.
 `final` is a fresh, uncached lift.py run (the cached runs gave the identical scene).
 
 What each step was:
@@ -258,11 +259,11 @@ What each step was:
   final one (+5 % bytes): lift.py's heights wobble with the terrain under each estimate. Off.
 
 Against the target (>= 80 % of all objects as individual contacts; movers shown moving > 80 % with parked shown moving
-< 5 %): all objects **85.9 %** individually (96.2 % with rings), not hard 89.8 %, < 20 px 77.7 %, mover sightings 91.0 %;
-parked shown moving **3 %**; movers shown moving **65 %** — not met. What keeps movers from being shown moving: the
+< 5 %): all objects **88.6 %** individually (96.4 % with rings), not hard 92.2 %, < 20 px 78.9 %, mover sightings 89.2 %;
+parked shown moving **4 %**; movers shown moving **66 %** — not met. What keeps movers from being shown moving: the
 first seconds of a track (`unknown`, 39 sightings), creeping starts below 0.7 m/s (m1, m14, m5), and mover contacts that
 lose the one-to-one match to a parked neighbour's contact in the same small box (m10's lags ~28 px for its first 3 s,
-its filter starting at rest). Unmatched 656 -> 393 (~49 per frame).
+its filter starting at rest). Unmatched 656 -> 370 (~46 per frame).
 
 **Thin links** (`PROFILE=hf|lora|telemetry`, 45 s replay, the receiver's contacts projected through the edge's camera
 (`score_e2e.py --rx-cam edge`): these links carry `Ego`, not the camera `Pose`, so there is no drone view to score;
@@ -270,12 +271,39 @@ this measures where the contacts are in the world):
 
 | link | bytes delivered (45 s) | all objects: single (+ rings) | mover sightings | position error | unmatched |
 |---|---|---|---|---|---|
-| video (clean), `mac_base` -> final | 243 kB -> 228 kB | 63.1 % (78.5 %) -> 85.6 % (96.4 %) | 85.8 % (93.8 %) -> 91.0 % (97.5 %) | 1.31 -> 0.82 m | 659 -> 396 |
-| hf, 9.6 kbit/s | 49 kB -> 50 kB | 28.8 % (82.5 %) -> 47.4 % (83.6 %) | 51.9 % (78.1 %) -> 62.3 % (79.6 %) | 1.90 -> 1.15 m | 212 -> 133 |
-| lora, 2 kbit/s | 8.9 kB -> 9.0 kB | 19.4 % (73.6 %) -> 25.2 % (75.1 %) | 29.3 % (67.6 %) -> 34.0 % (72.8 %) | 1.66 -> 1.17 m | 92 -> 53 |
-| telemetry, 600 bit/s | 2.2 kB -> 2.2 kB | 4.2 % (32.6 %) -> 10.2 % (35.6 %) | 9.9 % (33.3 %) -> 16.7 % (32.1 %) | 1.24 -> 0.91 m | 25 -> 12 |
+| video (clean), `mac_base` -> final | 243 kB -> 225 kB | 63.1 % (78.5 %) -> 88.5 % (96.4 %) | 85.8 % (93.8 %) -> 89.2 % (96.0 %) | 1.31 -> 0.81 m | 659 -> 372 |
+| hf, 9.6 kbit/s | 49 kB -> 50 kB | 28.8 % (82.5 %) -> 46.8 % (84.0 %) | 51.9 % (78.1 %) -> 63.3 % (79.6 %) | 1.90 -> 1.04 m | 212 -> 127 |
+| lora, 2 kbit/s | 8.9 kB -> 9.0 kB | 19.4 % (73.6 %) -> 27.8 % (75.5 %) | 29.3 % (67.6 %) -> 34.9 % (74.7 %) | 1.66 -> 1.19 m | 92 -> 47 |
+| telemetry, 600 bit/s | 2.2 kB -> 2.2 kB | 4.2 % (32.6 %) -> 10.0 % (36.1 %) | 9.9 % (33.3 %) -> 16.4 % (30.6 %) | 1.24 -> 0.90 m | 25 -> 12 |
 
 The thin links coarsen into groups by design (PROTOCOL.md 6.4): individuals collapse, rings hold on hf and lora.
+
+**Presentation view** (the page's default; `?raw=1` draws every contact as the receiver holds it). Two changes, both
+measured. In lift.py, false vehicles near the camera: a vehicle track that has not moved, whose median box is >= 60 px
+or whose median range is < 100 m, and whose median detector confidence stays < 0.45, is not reported (close up the
+detector is sure of a real car: every audited vehicle with a box >= 60 px was >= 0.78; the 21 tracks it holds back are
+roofs, sheds, walls, bushes and blurred patches on their crops; the audit has one vehicle within 100 m, so that part is
+judged on the crops): every audit number unchanged, unmatched 393 -> 378. And 15 sightings (half a second of frames)
+before a track is reported, against 6: the detector's flickers (a roof called a bus for six frames, a bush) never reach
+the edge, whose contacts outlive their tracks by a minute: individual 85.9 -> 88.6 %, mover sightings 91.0 -> 89.2 %,
+unmatched 378 -> 370 (30 sightings: 87.2 %, movers 88.3 %, 296). Widening the near rule further would cost real objects:
+the audit has a car at 130-160 m and a person at 100-130 m at 0.33-0.34, like the junk. In the page: a live contact is drawn once it
+is 1 s old or its confidence (on the wire) is >= 0.5, a lost one only if it was that confident and for 10 s; bodies are
+opaque, a group is one object, no labels, fades of 0.6 s; parked objects hold an anchor (moved only past 1 m or 0.3 of
+their ring), every object glides to its target through a critically damped spring on the correction (movers continue
+along their own recent path, so they do not lag), a jump over 12 m is faded rather than slid, height and heading eased.
+Scored like the audit, the drawn set is 81.5 % of the inventory as single objects, 95.4 % with groups, every mover
+sighting the raw view had, 169 unmatched (raw: 88.6 / 96.4 %, 370). The ground writes no depth: it is a backdrop, so a
+car whose sent height is below the field (bases are noisy by a metre or two) is not drawn under it, and outside the
+drone view an object below the field is stood on it. In the drone view at 30 fps (4-40 s, 1920x1080):
+
+| | objects drawn per frame | visible jumps > 30 px in one frame | jerk p99 / p99.9, movers (px/frame^2) | parked |
+|---|---|---|---|---|
+| raw | 156 | 47 | 7.7 / 59.3 | 1.19 / 6.6 |
+| presentation | 118 | 0 | 1.2 / 3.0 | 0.55 / 1.8 |
+
+(The page draws a state once at its own time when it arrives, ahead of the recorder's next frame; that draw must not
+advance the smoothing, or every object holds for three frames and moves in 10 Hz steps.)
 
 Recording: `runs/recon3d/labrador-cal/rec/pov.mp4` (the operator's drone view, 0-40 s, `--rings 0`, clean link) and
 `pov_sbs.mp4` (the footage beside it), made on the Mac with Playwright's Chromium in SwiftShader; objects stand at
@@ -287,7 +315,12 @@ their sent heights on the contact-height ground, and only movers draw trails.
   cell a low percentile, a 30 m kernel average of the residuals from a robust plane fit, eased over 2 s; `?ground=flat` is the old
   u = 0 plane). The RANSAC plane is not the local ground here (objects stand a median 6-9 m above it); against the field the
   contacts' bases are a median 2.3-3.4 m off (1.4-2.2 m for contacts with a ring <= 3 m; the field cannot beat the noise of the
-  heights it is made of, and leave-one-out is within 0.7 m of that). An object within 3 m of the field stands on it, one more
+  heights it is made of, and leave-one-out is within 0.7 m of that). Steadiness: refitting the plane to every new contact and feeding each
+  contact's latest base made the ground heave (25 fixed points ahead of the drone each travelled a median 15 m up and
+  down in 37 s); the plane now follows its refits over 15 s, a contact's base is its own 4 s average, liveness no
+  longer weighs, and a cell averages its field over the time it has had contacts (up to 20 s): travel 15 -> 4.6 m,
+  all of it settling (travel = range; ~0.3 m per 5 s late in the clip). The price: the shown field sits a median
+  3.3-4.0 m from the live contacts' bases instead of 2.3-3.4 m. An object within 3 m of the field stands on it, one more
   than 6 m off keeps its sent height up to 12 m, beyond that it is drawn on the ground (`?snap=0` draws every object at its
   sent height). In the drone view every object stays at its sent height (that is what puts it on its pixels: 3 m of
   height moves a car 200 m out by ~20 px) and the ground comes up to it; the settling is for the chase, orbit and top

@@ -199,6 +199,7 @@ function groundAt(x, z) {
 const SNAP_MAX_M = 12;
 function standOn(d) {
   if (!SNAP || FLAT || view === 'drone') return d;
+  if (d < 0) return 0;                               // below the field: stood on it (a road user is never underground)
   const a = Math.abs(d), up = clamp((a - SNAP_M) / SNAP_M, 0, 1), down = 1 - clamp((a - SNAP_MAX_M) / SNAP_M, 0, 1);
   return d * (up * up * (3 - 2 * up)) * (down * down * (3 - 2 * down));
 }
@@ -215,6 +216,10 @@ const groundGeo = new THREE.PlaneGeometry(2, 2, GROUND_SEGS, GROUND_SEGS).rotate
 const ground = new THREE.Mesh(groundGeo,
   new THREE.ShaderMaterial({
     polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2,   // rings, trails and feet sit a few cm above it, far or near
+    // A backdrop, not a surface that hides: it writes no depth, so an object whose sent height is below the field (its
+    // base is noisy by a metre or two; the field is their consensus) is not swallowed by it, cars do not drive "under
+    // the ground" in the drone view, and the objects still hide one another.
+    depthWrite: false,
     uniforms: {
       uGround: { value: new THREE.Color(GROUND) }, uMinor: { value: new THREE.Color(0x1a1e23) }, uMajor: { value: new THREE.Color(0x343a41) },
       uFog: { value: new THREE.Color(HORIZON) }, uFogRange: { value: new THREE.Vector2(scene.fog.near, scene.fog.far) },
@@ -251,6 +256,7 @@ const ground = new THREE.Mesh(groundGeo,
       }`,
   }));
 ground.frustumCulled = false;
+ground.renderOrder = -5;                             // after the sky, before everything that stands on it
 scene.add(ground);
 const sky = new THREE.Mesh(
   new THREE.SphereGeometry(1000, 32, 16),
@@ -345,6 +351,32 @@ new THREE.LineLoop(unitCircle).computeLineDistances();  // the dashed ring's lin
 const objects = new Map();
 // ?rings=0 starts with the error rings hidden (far objects' honest rings span the drone view).
 let showRings = params.get('rings') !== '0', showTruth = false;
+// The presentation view (default) against ?raw=1, every contact as the receiver holds it. What the presentation view
+// leaves out and how it moves, from what crossed the link only:
+//   who is drawn: a live contact once it is SHOW_AGE_S old or its detector confidence (on the wire) is >= SHOW_CONF; a
+//   lost one only when it was that confident, and only until LOST_GRACE_S of silence. On the Labrador replay the
+//   receiver's unmatched contacts were half lost ones (roofs, vents and flickers the detector saw for a second, left
+//   standing with growing rings) and the rest low-confidence boxes. Scored the same way as the eye audit, the raw view
+//   draws 88.6 % of the inventory as single objects with 370 unmatched; this view 81.5 % (95.4 % with groups, every
+//   mover sighting the raw view had) with 169 unmatched, and far fewer objects per frame.
+//   how: everything opaque (liveness no longer dims a body), a group drawn as one object of its main class (at a 2 m
+//   link a group is mostly one object tracked twice), no labels; appear and disappear over FADE_S.
+//   motion: a parked object holds an anchor that moves only when its estimate moves by more than ANCHOR_M (or
+//   ANCHOR_RING of its ring), so range noise does not shake it; every object glides to its target: a jump against
+//   where it was expected to be (a revision correcting the dead reckoning, a kink where two states meet, an anchor move)
+//   is taken up by an offset that a critically damped spring returns to zero over ~SM_TAU_S (position and speed stay
+//   continuous: no start at full speed, no jerk), and a mover is expected to continue along its own recent path, so it
+//   does not lag; a jump over JUMP_M is a re-placement, faded out and in rather than slid across the scene. Height and
+//   heading ease too.
+const RAW = params.get('raw') === '1';
+const SHOW_CONF = 0.5, SHOW_AGE_S = 1, LOST_GRACE_S = 10, FADE_S = 0.6;
+const SM_TAU_S = 0.4, SM_TV_TAU_S = 0.4, SM_U_TAU_S = 1, SM_YAW_TAU_S = 0.5, ANCHOR_M = 1, ANCHOR_RING = 0.3, ANCHOR_YAW = 15, JUMP_M = 12;
+function shownClean(c, t) {
+  const conf = (c.conf ?? 255) / 255;
+  if (c.lost) return conf >= SHOW_CONF && c.silenceS < LOST_GRACE_S;
+  return t - (c.firstS ?? 0) >= SHOW_AGE_S || conf >= SHOW_CONF;   // first_seen: the session second it was first seen
+}
+const groupShape = (c) => (c.mix[0] > c.mix[1] ? 'person' : 'car');
 
 function shapeFor(c) {
   if (c.group) return null;
@@ -401,19 +433,20 @@ function contactObject(c) {
     ring.geometry = rg;
     const trailLine = new THREE.Line(tg, trailMat); trailLine.frustumCulled = false;
     scene.add(trailLine);
-    o = { root, ring, tag, el, body: null, bodyKey: '', trail: [], smooth: [], trailK: 0, trailLine, prev: null, cur: null };
+    o = { root, ring, tag, el, body: null, bodyKey: '', trail: [], smooth: [], trailK: 0, trailLine, prev: null, cur: null,
+      d: null, alpha: 0, show: true, gone: false, hist: [] };
     objects.set(c.id, o);
   }
   // The body: the chip once it arrived (and its data loaded), else the class stand-in; a group is a ring and a count.
   const haveChip = !!(c.chip && chipData[c.chip]);
-  const key = c.group ? 'group' : haveChip ? `chip:${c.chip}` : `stand:${shapeFor(c)}`;
+  const key = c.group ? (RAW ? 'group' : `stand:${groupShape(c)}`) : haveChip ? `chip:${c.chip}` : `stand:${shapeFor(c)}`;
   if (key !== o.bodyKey) {
     if (o.body) o.root.remove(o.body);
     o.body = null;
     if (haveChip) {
       o.body = chipMesh(c.chip);
-    } else if (!c.group) {
-      const s = shapeFor(c);
+    } else if (!c.group || !RAW) {
+      const s = c.group ? groupShape(c) : shapeFor(c);
       // Centred on the root, which sits at the class's centre height above the ground: the bottom touches it.
       o.body = new THREE.Mesh(standIn[s], solid.clone());
     }
@@ -464,29 +497,67 @@ function updateContacts(list, t, snap) {
     groundSample(c, pl, t);
     // The error ring: what the receiver can vouch for (ce_shown), on the ground.
     const r = Math.max(0.6, c.group ? Math.max(c.radius, c.ceShown) : c.ceShown);
-    const cur = { t, e: c.e, n: c.n, u, base, h: pl.h, sent: pl.sent, yaw: yawOf(c, chip), r };
+    const cur = { t, e: c.e, n: c.n, u, base, h: pl.h, sent: pl.sent, yaw: yawOf(c, chip), r, moving: c.motion === 'moving' };
     o.prev = !o.cur || snap ? cur : o.cur;
     o.cur = cur;
-    if (snap) { o.trail.length = 0; o.trailK = 0; }
+    o.show = RAW || shownClean(c, t); o.gone = false;
+    if (snap) { o.trail.length = 0; o.trailK = 0; o.d = null; o.hist.length = 0; o.alpha = o.show ? 1 : 0; }
     // The trail keeps where the object was shown (the previous state); the live head is added per frame.
     o.trail.push(o.prev);
     while (o.trail.length > 1 && (t - o.trail[0].t > 3 || o.trail.length > TRAIL_MAX)) o.trail.shift();
     updateTrail(o, c);
     const fresh = c.liveness === 'fresh';
-    if (o.body) {
-      const op = fresh ? (c.chip ? 1 : 0.85) : c.liveness === 'unheard' ? 0.55 : 0.3;
-      if (o.body.material.uniforms) o.body.material.uniforms.uOpacity.value = op; else o.body.material.opacity = op;
-    }
+    o.op = RAW ? (fresh ? (c.chip ? 1 : 0.85) : c.liveness === 'unheard' ? 0.55 : 0.3) : 1;
     o.ring.visible = showRings;
     o.ring.material = c.lost || !fresh ? ringLost : ringMat;
     const name = c.group ? `${c.count} ${c.mix[0] >= c.mix[1] ? 'dismounts' : 'vehicles'}` : chip ? CLASS[chip.cls] : c.mix[0] ? 'dismount' : 'vehicle';
     o.el.textContent = `${name}${c.motion === 'moving' ? ` ${c.speed.toFixed(1)} m/s` : ''}${c.chip ? '' : c.group ? '' : ' · chip pending'}`;
-    o.el.className = fresh ? 'tag' : 'tag dim';
+    o.el.className = fresh || !RAW ? 'tag' : 'tag dim';
     o.tag.position.set(0, 1.6, 0);
-    // Labels only on hover (docs/STYLE.md), and on groups, which have no body to read.
-    o.tag.visible = c.group || hovered === c.id;
+    // Labels only on hover (docs/STYLE.md), and in the raw view on groups, which have no body to read.
+    o.tag.visible = (RAW && c.group) || hovered === c.id;
   }
-  for (const [id, o] of objects) if (!live.has(id)) removeObject(id, o);
+  // A contact the receiver no longer holds: gone at once in the raw view, faded out in the presentation view.
+  for (const [id, o] of objects) if (!live.has(id)) { if (RAW) removeObject(id, o); else { o.show = false; o.gone = true; } }
+}
+// The presentation view's motion (above): the shown (e, n, u, yaw) of object o at display time tt, from its target.
+function smoothed(o, q, e, n, u, yaw, tt, commit) {
+  let d = o.d;
+  if (d && !commit) return { ...d.out, dt: 0 };
+  // A seek (or a long gap): start where the target is. A small step back in display time is not one: a state that
+  // arrives is drawn once at its own time before the clock's next frame, which may be a little earlier (the recorder
+  // steps, then renders at 1/3, 2/3, 1 of the step): the shown state just holds.
+  if (!d || tt < d.t - 0.5 || tt - d.t > 1) {
+    o.d = { t: tt, te: e, tn: n, tve: 0, tvn: 0, oe: 0, on: 0, ove: 0, ovn: 0, u, yaw, ae: e, an: n, ayaw: yaw, out: { e, n, u, yaw } };
+    return { e, n, u, yaw, dt: 0 };
+  }
+  if (tt <= d.t) return { ...d.out, dt: 0 };
+  const dt = tt - d.t;
+  d.t = tt;
+  let te = e, tn = n, ty = yaw;
+  if (!q.moving) {
+    if (Math.hypot(e - d.ae, n - d.an) > Math.max(ANCHOR_M, ANCHOR_RING * q.r)) { d.ae = e; d.an = n; }
+    if (Math.abs(wrap180(yaw - d.ayaw)) > ANCHOR_YAW) d.ayaw = yaw;
+    te = d.ae; tn = d.an; ty = d.ayaw;
+  } else { d.ae = e; d.an = n; d.ayaw = yaw; }
+  if (!q.moving) d.tve = d.tvn = 0;
+  const je = te - (d.te + d.tve * dt), jn = tn - (d.tn + d.tvn * dt);
+  if (Math.hypot(je, jn) > JUMP_M) { d.oe = d.on = d.ove = d.ovn = 0; d.tve = d.tvn = 0; o.alpha = 0; }
+  else {
+    d.oe -= je; d.on -= jn;
+    if (q.moving) { const kv = 1 - Math.exp(-dt / SM_TV_TAU_S); d.tve += ((te - d.te) / dt - d.tve) * kv; d.tvn += ((tn - d.tn) / dt - d.tvn) * kv; }
+  }
+  // The offset's critically damped spring (natural rate 1 / SM_TAU_S), in steps of at most 1/120 s.
+  const w = 1 / SM_TAU_S, steps = Math.max(1, Math.ceil(dt * 120)), hs = dt / steps;
+  for (let k = 0; k < steps; k++) {
+    d.ove += (-w * w * d.oe - 2 * w * d.ove) * hs; d.ovn += (-w * w * d.on - 2 * w * d.ovn) * hs;
+    d.oe += d.ove * hs; d.on += d.ovn * hs;
+  }
+  d.te = te; d.tn = tn;
+  d.u += (u - d.u) * (1 - Math.exp(-dt / SM_U_TAU_S));
+  d.yaw += wrap180(ty - d.yaw) * (1 - Math.exp(-dt / SM_YAW_TAU_S));
+  d.out = { e: te + d.oe, n: tn + d.on, u: d.u, yaw: d.yaw };
+  return { ...d.out, dt };
 }
 function removeObject(id, o) {
   scene.remove(o.root); scene.remove(o.ring); scene.remove(o.trailLine); o.trailLine.geometry.dispose();
@@ -496,14 +567,30 @@ function removeObject(id, o) {
 // angles the short way round. Each object stands on the ground field under it (standOn), and its ring and trail are
 // laid on that same ground, vertex by vertex, a few cm above it (a little more with range: the depth buffer).
 const lift = (x, z) => 0.12 + 0.001 * Math.hypot(x - camera.position.x, z - camera.position.z);
-function placeObjects(a) {
-  for (const [, o] of objects) {
+function placeObjects(a, tt, commit = true) {
+  for (const [id, o] of [...objects]) {
     const p = o.prev, q = o.cur;
-    const e = lerp(p.e, q.e, a), n = lerp(p.n, q.n, a), u = lerp(p.u, q.u, a), sent = lerp(p.base, q.base, a), h = u - sent;
+    let e = lerp(p.e, q.e, a), n = lerp(p.n, q.n, a), u = lerp(p.u, q.u, a), sent = lerp(p.base, q.base, a), yaw = lerpAng(p.yaw, q.yaw, a);
+    let op = o.op ?? 1;
+    if (!RAW) {
+      const s = smoothed(o, q, e, n, u, yaw, tt, commit);
+      ({ e, n, u, yaw } = s);
+      sent = u - q.h;
+      o.alpha = clamp(o.alpha + (o.show ? 1 : -1) * s.dt / FADE_S, 0, 1);
+      if (o.gone && o.alpha <= 0) { removeObject(id, o); continue; }
+      op = o.alpha;
+      if (s.dt > 0 && (!o.hist.length || tt - o.hist[o.hist.length - 1].t >= 0.1)) o.hist.push({ t: tt, e, n });
+      while (o.hist.length && tt - o.hist[0].t > 3) o.hist.shift();
+    }
+    if (o.body) {
+      if (o.body.material.uniforms) o.body.material.uniforms.uOpacity.value = op; else o.body.material.opacity = op;
+      o.body.visible = op > 0.01;
+    }
+    const h = u - sent;
     // The ground under it; an object without a height rides it. `off` is how far above the ground it stands.
     const g = groundAt(e, -n), off = q.sent ? standOn(sent - g) : 0, base = g + off;
     o.root.position.set(e, base + h, -n);
-    o.root.rotation.y = -lerpAng(p.yaw, q.yaw, a) * Math.PI / 180;
+    o.root.rotation.y = -yaw * Math.PI / 180;
     const r = lerp(p.r, q.r, a);
     o.ring.position.set(e, base + lift(e, -n), -n);
     o.ring.scale.set(r, 1, r);
@@ -512,18 +599,18 @@ function placeObjects(a) {
       for (let k = 0; k < rp.count; k++) rp.setY(k, r < 2 ? 0 : groundAt(e + rp.getX(k) * r, -n + rp.getZ(k) * r) + off + lift(e, -n) - ry);
       rp.needsUpdate = true;
     }
-    drawTrail(o, e, n, off);
+    drawTrail(o, e, n, off, op);
   }
 }
 // The smoothed history plus the live head, on the ground, fading to the tail; nothing while the contact is not moving.
-function drawTrail(o, e, n, off) {
-  const geo = o.trailLine.geometry, pos = geo.attributes.position, col = geo.attributes.color, sm = o.smooth;
+function drawTrail(o, e, n, off, op) {
+  const geo = o.trailLine.geometry, pos = geo.attributes.position, col = geo.attributes.color, sm = RAW ? o.smooth : o.hist;
   if (o.trailK < 0.03 || sm.length < 2) { geo.setDrawRange(0, 0); return; }
   const m = sm.length;
   for (let k = 0; k <= m; k++) {
     const x = k < m ? sm[k].e : e, z = -(k < m ? sm[k].n : n);
     pos.setXYZ(k, x, groundAt(x, z) + off + lift(x, z) + 0.02, z);
-    col.setXYZW(k, 1, 1, 1, o.trailK * (k / m) ** 1.5);
+    col.setXYZW(k, 1, 1, 1, op * o.trailK * (k / m) ** 1.5);
   }
   pos.needsUpdate = col.needsUpdate = true;
   geo.setDrawRange(0, m + 1);
@@ -623,7 +710,9 @@ function placeView(jump) {
 let groundSnap = false;                              // the next frame shows the new ground at once (a seek, a scene switch)
 let tArrive = 0, alphaFreeze = null, tPrev = 0, tCur = 0, footageS = 0, timeShown = '';
 const autoAlpha = () => clamp((performance.now() - tArrive) / STEP_MS, 0, 1);
-function apply(a) {
+// commit = false: draw without advancing the presentation view's smoothing (a state's arrival draws once at the frozen
+// alpha, possibly ahead of the clock's next frame).
+function apply(a, commit = true) {
   if (posePrev && poseCur) {
     dispPose = {
       e: lerp(posePrev.e, poseCur.e, a), n: lerp(posePrev.n, poseCur.n, a), u: lerp(posePrev.u, poseCur.u, a),
@@ -635,7 +724,7 @@ function apply(a) {
   groundSnap = false;
   updateDrone(dispPose);
   if (view === 'drone') placeView(false);
-  placeObjects(a);
+  placeObjects(a, lerp(tPrev, tCur, a), commit);
   placeTruth(a);
   // The clock shows the time on screen (between the two states), not the newest state's.
   const tt = `${lerp(tPrev, tCur, a).toFixed(1)} / ${footageS.toFixed(1)} s`;
@@ -740,7 +829,7 @@ ws.onmessage = (ev) => {
   updateTruth(s.edge.tracks, snap);
   tPrev = snap ? s.t : tCur; tCur = s.t; footageS = s.footageS;
   tArrive = performance.now();
-  apply(alphaFreeze ?? 0);
+  apply(alphaFreeze ?? 0, false);
   if (firstState && dispPose) { placeView(true); firstState = false; }
   // The video plays along and is re-seeked only on real drift: a seek every step never completes.
   if (!REC) {

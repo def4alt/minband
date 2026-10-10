@@ -56,7 +56,9 @@ ap.add_argument("--fps", type=float, default=30.0)
 ap.add_argument("--conf", type=float, default=1.5, help="pointmap confidence floor")
 ap.add_argument("--voxel", type=float, default=0.15, help="static map voxel (m)")
 ap.add_argument("--cell", type=float, default=0.5, help="terrain height field cell (m)")
-ap.add_argument("--min-hits", type=int, default=6, help="2D hits before a track is reported")
+ap.add_argument("--min-hits", type=int, default=15, help="2D hits before a track is reported (15, half a second of frames: "
+                "the detector's flickers, a roof or a bush seen for a few frames, never reach the edge, whose contacts live on for "
+                "a minute; Labrador clip, against 6: individual recall 85.9 -> 88.6 %%, mover sightings 91.0 -> 89.2 %%, unmatched 378 -> 370)")
 ap.add_argument("--far-cell", type=float, default=4.0, help="cell of the far terrain tier (m): every keyframe point, any confidence")
 ap.add_argument("--map-mask", default="inner", choices=["inner", "full"], help="what of each detection is cut out of the "
                 "terrain's map: its own pixels (inner: the ground between parked cars stays) or its dilated box (full, the old way)")
@@ -499,6 +501,15 @@ PERSON_MIN_CONF_SUM = 9.0
 PERSON_MIN_ASPECT = 1.6
 PERSON_MAX_PERCH_M, PERSON_PERCH_R_M, PERSON_PERCH_PCT, PERCH_COVER = 3.0, 15.0, 10, 0.8
 PERSON_HOLD_S = 2.0
+# False vehicles near the camera. Close up a car is a big, clear box and the detector is sure of it (every audited
+# vehicle whose box was >= 60 px had a median confidence >= 0.78 on the Labrador clip); the big boxes it is unsure of
+# are roofs, sheds, walls and bushes (tracks it found 60-200 px wide at a median confidence of 0.16-0.32). The same
+# within VEH_NEAR_M of the camera, where a road vehicle (a two-wheeler too) is never small: the seven vehicle tracks
+# there under 0.45 were, on their crops, blurred patches, a bush, rubble and a roof corner (the eye audit has only one
+# vehicle that close, so this part is judged on the crops). A vehicle track that has not moved, whose median box is
+# VEH_NEAR_PX or more or whose median range is under VEH_NEAR_M, and whose median confidence stays under
+# VEH_NEAR_CONF, is not reported. Far vehicles are small and legitimately uncertain, and are not asked.
+VEH_NEAR_PX, VEH_NEAR_M, VEH_NEAR_CONF = 60.0, 100.0, 0.45
 _r_cells = int(round(PERSON_PERCH_R_M / args.cell))
 _gg = np.arange(-_r_cells, _r_cells + 1)
 PERCH_DISC = (_gg[:, None] ** 2 + _gg[None, :] ** 2) <= _r_cells ** 2
@@ -547,7 +558,7 @@ def new_track(p, cl, t, tid2, R=None):
     return {"kf": KF(p, 2.0 if veh else 0.8, 0.35 if veh else 0.25, R), "last_t": t, "first_t": t, "hits": 0, "misses": 0,
             "coarse": COARSE[cl], "cls": defaultdict(float), "live2d": tid2,
             "win": [], "swin": [], "Is": np.zeros((2, 2)), "bs": np.zeros(2), "Is3": np.zeros((3, 3)), "bs3": np.zeros(3), "moving": False, "flip_since": None,
-            "asp": [], "person_ok": False, "person_bad_since": None, "want3": None, "last": None, "p3": p}
+            "asp": [], "vbox": [], "person_ok": False, "person_bad_since": None, "want3": None, "last": None, "p3": p}
 
 
 def knob(name, default):
@@ -801,6 +812,9 @@ for f in dets:
         s["cls"][cl] += d["conf"]
         if cl == 0:
             s["asp"].append(silhouette(d, L, i))
+        else:
+            x1, y1, x2, y2 = d["box"]
+            s["vbox"].append((max(x2 - x1, y2 - y1), d["conf"], float(np.linalg.norm(L["enu"] - cam_enu[i]))))
         if s["coarse"] == 0 and s["hits"] >= 10 and np.hypot(*s["kf"].x[2:]) > RIDER_MPS:
             s["cls"][3] += 2 * d["conf"]
             if not s.get("rider"):
@@ -861,6 +875,10 @@ for f in dets:
                     s["person_ok"] = False
                     vetoed[why].add(tid)
                     continue
+        elif not s["moving"] and s["vbox"] and np.median([b[1] for b in s["vbox"]]) < VEH_NEAR_CONF \
+                and (np.median([b[0] for b in s["vbox"]]) >= VEH_NEAR_PX or np.median([b[2] for b in s["vbox"]]) < VEH_NEAR_M):
+            vetoed["near vehicle"].add(tid)
+            continue
         # Error radius (1 sigma) in the reconstruction's frame: the estimate's spread plus the ranging error. The
         # estimate averages frame noise away but not a terrain height's bias (the same cells under a parked car),
         # so the ranging term of this sighting's tier stays (ray_terms).
@@ -1001,7 +1019,7 @@ with open(out / "tracks3d.csv", "w") as fh:
 print(f"yaw: {sum(not np.isnan(y) for y in yaws)} of {len(yaws)} rows; tracks by source {dict(yaw_kind)}")
 print(f"tracks: {next_id - 1} ({merges} 2D id switches re-joined in 3D, {split} 2D ids split off a track that held another object, {dups} duplicates merged, {riders_fast} fast dismounts relabelled riders, "
       f"{rejects} gated-out measurements), reported {len(reported)}, rows {len(rows)}")
-print("person tracks held back at least once, by the first test they failed: "
+print("tracks held back at least once, by the first test they failed: "
       + ", ".join(f"{why} {len(ids)}" for why, ids in sorted(vetoed.items())) + f"; never reported: {len(set().union(*vetoed.values()) - reported)}")
 
 # ---- 4. appearance chips ---------------------------------------------------------------------------

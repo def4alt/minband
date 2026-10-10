@@ -17,6 +17,8 @@ pts += list(by.items())
 res = collections.Counter()
 for frame, objs in pts:
     s = steps.get(round(frame / 30 * 10)); C = s["rx"]["contacts"]
+    if not C:   # nothing reported yet (the first half second of the clip)
+        continue
     P = np.array([[c["e"], c["n"], c["u"] or .75] for c in C]); px, z = project(P, s["rx"]["pose"], f, W, H)
     m = match(objs, [(c["id"], px[j], z[j]) for j, c in enumerate(C) if not c["group"] and z[j] > 0], [], f)
     byid = {c["id"]: c for c in C}
