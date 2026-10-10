@@ -29,10 +29,20 @@ import type { GlobalEntity } from './types.js';
 export const COT_MULTICAST = 'udp://239.2.3.1:6969'; // ATAK situational awareness group
 const UNKNOWN = 9999999;
 
-/** COCO ids the edge tracks (core/src/classes.rs, viewer CLASS_NAME); person leads as dismount. */
+/** Class ids the edge tracks (core/src/classes.rs, viewer CLASS_NAME): COCO's, person leads as
+ *  dismount; from 100 up MinBand's own (drone footage, tools/footage). The type stays a-u-G for all
+ *  of them: the class goes in the callsign and remarks, never into the CoT type. */
 const LABEL: Record<number, string> = {
-  0: 'dismount', 24: 'backpack', 25: 'umbrella', 26: 'handbag', 28: 'suitcase', 39: 'bottle', 41: 'cup',
+  0: 'dismount', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck',
+  24: 'backpack', 25: 'umbrella', 26: 'handbag', 28: 'suitcase', 39: 'bottle', 41: 'cup',
   56: 'chair', 57: 'couch', 58: 'plant', 59: 'bed', 60: 'table', 62: 'tv', 63: 'laptop', 67: 'phone', 73: 'book',
+  100: 'mover', 101: 'armoured',
+};
+/** What the label rests on, for the remarks. */
+const NOTE: Record<number, string> = {
+  0: ' (COCO person)',
+  100: ' (unclassified ground mover: motion only, no appearance class)',
+  101: ' (armoured vehicle: tank/IFV/APC by appearance, unverified)',
 };
 export const classLabel = (c: number) => LABEL[c] ?? `class ${c}`;
 
@@ -69,7 +79,7 @@ export function cotEvents(global: readonly GlobalEntity[], anchor: GeoAnchor, no
       time: nowMs, start: nowMs, stale: g.stale ? nowMs : nowMs + validityMs(o),
       lat: p.lat, lon: p.lon, hae: altKnown ? p.alt : UNKNOWN, ce, le: altKnown ? ce : UNKNOWN,
       callsign: `${label.toUpperCase()} ${g.gid}`, course, speed,
-      remarks: `MinBand ${g.gid}: ${label}${g.class === 0 ? ' (COCO person)' : ''}, ${n} source${n === 1 ? '' : 's'}`
+      remarks: `MinBand ${g.gid}: ${label}${NOTE[g.class] ?? ''}, ${n} source${n === 1 ? '' : 's'}`
         + `${coasting ? ', coasting' : ''}${g.stale ? ', stale' : ''}. `
         + (ce < UNKNOWN ? `ce ${ce.toFixed(2)} m is the twin's error bound (grows while the link is silent). ` : '')
         + 'Position dead-reckoned between edge updates; affiliation not assessed.',
