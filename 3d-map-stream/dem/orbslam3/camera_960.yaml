@@ -1,0 +1,31 @@
+%YAML:1.0
+# MEVA UAV1 clip downscaled 3840x2160 -> 960x540; focal from MASt3R (hfov ~82 deg), no distortion model
+File.version: "1.0"
+Camera.type: "PinHole"
+Camera1.fx: 548.0
+Camera1.fy: 548.0
+Camera1.cx: 480.0
+Camera1.cy: 270.0
+Camera1.k1: 0.0
+Camera1.k2: 0.0
+Camera1.p1: 0.0
+Camera1.p2: 0.0
+Camera.width: 960
+Camera.height: 540
+Camera.fps: 10
+Camera.RGB: 1
+ORBextractor.nFeatures: 2000
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+Viewer.ViewpointF: 500.0

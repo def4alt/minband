@@ -1,0 +1,12 @@
+# DEM experiment (python 3.10/3.11). torch: install the build for your platform first (CUDA wheel on the GPU box).
+numpy<2
+scipy
+pillow
+matplotlib
+transformers>=4.45   # Depth Anything V2 (depth-anything/Depth-Anything-V2-Small-hf, downloaded on first run)
+open3d               # dem_from_cloud.py only (reads the MASt3R .ply)
+# MoGe2-Aerial (--moge): git clone https://github.com/kuieless/AerialMetric, then in that checkout
+#   pip install peft click "utils3d @ git+https://github.com/EasternJournalist/utils3d.git" \
+#               "pipeline @ git+https://github.com/EasternJournalist/pipeline.git" && pip install --no-deps -e MoGe/
+#   huggingface-cli download Kuiee/AerialMetric-ECCV2026 weights/Moge2-Aerial.pt --repo-type dataset --local-dir .
+# and export AERIAL_METRIC=/path/to/AerialMetric
