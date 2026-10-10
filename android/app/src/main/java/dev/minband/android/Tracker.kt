@@ -72,7 +72,7 @@ class Tracker(val config: Config = Config()) {
             when (cls) {
                 TrackedClass.PERSON -> 0.7f
                 TrackedClass.CHAIR, TrackedClass.LAPTOP, TrackedClass.TV -> 0.1f
-                TrackedClass.CAR, TrackedClass.MOTORCYCLE, TrackedClass.BUS, TrackedClass.TRUCK -> 1f
+                TrackedClass.CAR, TrackedClass.MOTORCYCLE, TrackedClass.BUS, TrackedClass.TRUCK -> 3f
                 else -> 0.3f
             }
         },
@@ -153,6 +153,12 @@ class Tracker(val config: Config = Config()) {
         private var acrossAt = 0
         fun pushSigmaAcross(v: Float) { acrossSigmas[acrossAt] = v; acrossAt = (acrossAt + 1) % SIGMA_WINDOW; if (acrossN < SIGMA_WINDOW) acrossN++ }
         val sigmaAcross: Float get() { if (acrossN == 0) return 0f; val a = acrossSigmas.copyOf(acrossN); a.sort(); return a[acrossN / 2] }
+        /** Pixel-motion evidence of the last SIGMA_WINDOW hits that had any (1 moving, 0 still). */
+        private val motions = FloatArray(SIGMA_WINDOW)
+        private var motionN = 0
+        private var motionAt = 0
+        fun pushMotion(v: Float) { if (v < 0f) return; motions[motionAt] = if (v >= 0.5f) 1f else 0f; motionAt = (motionAt + 1) % SIGMA_WINDOW; if (motionN < SIGMA_WINDOW) motionN++ }
+        val motion: Float get() = if (motionN == 0) -1f else motions.copyOf(motionN).sum() / motionN
         /** Box heights (px along gravity) of the last SIGMA_WINDOW hits that had one; the median gates the next hit's size. */
         private val heights = FloatArray(SIGMA_WINDOW)
         private var heightN = 0
@@ -174,6 +180,8 @@ class Tracker(val config: Config = Config()) {
         const val ALONG_COST = 0.25f
         /** A vehicle's duplicate is farther from it than a person's: the detector's second box on a 4.5 m car sits on its other half. 1.5 m, under the 2.5 m between cars parked side by side. */
         const val VEHICLE_MERGE_SCALE = 3f
+        /** Two tracks merge only when their velocities differ by less than this (m/s). */
+        const val MERGE_MAX_DV = 1f
         /** Hits whose sigmas make a track's sigma (their median). */
         const val SIGMA_WINDOW = 5
     }
@@ -222,7 +230,14 @@ class Tracker(val config: Config = Config()) {
                     val ax = d.x - u.x * along; val az = d.z - u.z * along
                     val across = sqrt(ax * ax + az * az)
                     val sinceHit = (time - e.lastHit).toFloat().coerceAtLeast(0f)
-                    val acrossGate = maxOf(base, TrackedClass.walkSpeed(pt.classId) * sinceHit)
+                    // A vehicle's gate is its prediction's own uncertainty: a parked car's track is
+                    // sure of where it is and must not take the car driving past it (with "10 m/s
+                    // times the gap" it did, and the parked car was tagged MOVING while the driving
+                    // one lost its track); a new or unseen one is unsure and reaches far.
+                    // (A track of fewer than three hits does not know its velocity yet: it keeps the
+                    // wide reach, or a car driving 1-2 m between detections is never born.)
+                    val acrossGate = if (TrackedClass.vehicle(pt.classId) && e.hits >= 3) maxOf(base, config.gateSigmas * sqrt(e.s.ppp + noiseAcross(pt)))
+                        else maxOf(base, TrackedClass.walkSpeed(pt.classId) * sinceHit)
                     // The range-wide along gate is for a person whose legs are hidden; a vehicle's
                     // box bottom is its ground contact, and 1.5x its 50 m range from a drone let a
                     // parked car's track hop to the next car along the ray whenever its own box
@@ -258,6 +273,7 @@ class Tracker(val config: Config = Config()) {
                 e.pushSigma(sqrt(r))
                 e.pushHeight(pt.heightPx)
                 e.pushSigmaAcross(pt.sigmaAcross)
+                e.pushMotion(pt.motion)
                 e.lastHit = maxOf(e.lastHit, time)
                 updateConf(e, pt.conf)
                 if (e.id == null && e.hits >= config.birthHits) { e.id = nextId; nextId += 1 }
@@ -266,7 +282,7 @@ class Tracker(val config: Config = Config()) {
                 val r = noise(pt)
                 val vs = config.initialVelocitySigma(pt.classId)
                 val c = clampf(pt.conf, 0f, 1f)
-                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt(), sqrt(r), pt.heightPx).also { it.pushSigmaAcross(pt.sigmaAcross) }
+                val e = Entry(pt.classId, null, 1, time, State(pt.pos, Vec3.ZERO, r, 0f, vs * vs, time), c, (c * 255f).roundToInt(), sqrt(r), pt.heightPx).also { it.pushSigmaAcross(pt.sigmaAcross); it.pushMotion(pt.motion) }
                 if (config.birthHits <= 1) { e.id = nextId; nextId += 1; result[m] = e.id }
                 entries.add(e)
             }
@@ -290,7 +306,7 @@ class Tracker(val config: Config = Config()) {
             // Extrapolate only up to the coasting horizon; past it the track stands still.
             val horizon = e.lastHit + config.coastS
             val dt = (minOf(time, horizon) - e.s.time).coerceAtLeast(0.0).toFloat()
-            out.add(Track(id, e.classId, e.s.p + v * dt, if (time > horizon) Vec3.ZERO else v, e.confOut, e.hits, e.sigma, e.sigmaAcross))
+            out.add(Track(id, e.classId, e.s.p + v * dt, if (time > horizon) Vec3.ZERO else v, e.confOut, e.hits, e.sigma, e.sigmaAcross, e.motion))
         }
         out.sortBy { it.id }
         out
@@ -314,7 +330,10 @@ class Tracker(val config: Config = Config()) {
                 var j = i + 1
                 while (j < entries.size) {
                     val b = entries[j]
-                    if (b.id != null && TrackedClass.sameKind(b.classId, a.classId) && groundDistance(a.s.p, b.s.p) < config.mergeDist * (if (TrackedClass.vehicle(a.classId)) VEHICLE_MERGE_SCALE else 1f)) {
+                    // Two objects passing each other are close for a moment but move differently:
+                    // only tracks that also agree on velocity are one object seen twice.
+                    if (b.id != null && TrackedClass.sameKind(b.classId, a.classId) && groundDistance(a.s.p, b.s.p) < config.mergeDist * (if (TrackedClass.vehicle(a.classId)) VEHICLE_MERGE_SCALE else 1f) &&
+                        (a.s.v - b.s.v).length < MERGE_MAX_DV) {
                         if (b.hits > a.hits) { entries.removeAt(i); removedA = true; break }
                         entries.removeAt(j); continue
                     }

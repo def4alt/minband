@@ -36,8 +36,13 @@ object Lift3D {
     /** What one frame contributes: camera -> world, intrinsics, and the world floor height if known. */
     class FrameGeometry(val cameraToWorld: Mat4, val intrinsics: Intrinsics, val floorY: Float?)
 
-    /** `maxRange`: farthest lift kept (m). The phone's 8 m; a drone replay passes its own. */
-    fun lift(dets: List<Detection>, geo: FrameGeometry, depth: DepthSampler?, origin: Origin, maxRange: Float = DEPTH_RANGE.endInclusive): List<WorldPoint> {
+    /**
+     * `maxRange`: farthest lift kept (m). The phone's 8 m; a drone replay passes its own.
+     * `acrossPx`: the box centre's error in pixels behind the bearing sigma: the phone's 3; drone
+     * footage registered onto one frame by homography adds the registration's error (15-40 px at
+     * the frame's edges while the drone turns).
+     */
+    fun lift(dets: List<Detection>, geo: FrameGeometry, depth: DepthSampler?, origin: Origin, maxRange: Float = DEPTH_RANGE.endInclusive, acrossPx: Float = ACROSS_PX): List<WorldPoint> {
         if (dets.isEmpty()) return emptyList()
         val cam = geo.cameraToWorld
         val k = geo.intrinsics
@@ -120,7 +125,7 @@ object Lift3D {
                 Lift.WIDTH -> maxOf(WIDTH_SIGMA_MIN, WIDTH_SIGMA_REL * range)
                 Lift.SQUAT -> maxOf(WIDTH_SIGMA_MIN, SQUAT_SIGMA_REL * range)
             }
-            var sigmaAcross = if (how == Lift.DEPTH) DEPTH_SIGMA else maxOf(ACROSS_SIGMA_MIN, range / k.fx * ACROSS_PX)
+            var sigmaAcross = if (how == Lift.DEPTH) DEPTH_SIGMA else maxOf(ACROSS_SIGMA_MIN, range / k.fx * acrossPx)
             // A box cut by the frame's side (across gravity) is centred on the visible part, not on
             // the object: as more of it leaves the frame the centre, and the bearing, slide inward
             // with the object standing still, and cut on one side then the other it swings by the
@@ -137,7 +142,7 @@ object Lift3D {
                 // paths agree.
                 m = Vec3(m.x, floorInMarker, m.z)
             }
-            out.add(WorldPoint(d.classId, m, d.conf, i, sigma, eye, sigmaAcross, heightPx))
+            out.add(WorldPoint(d.classId, m, d.conf, i, sigma, eye, sigmaAcross, heightPx, d.motion))
         }
         return out
     }

@@ -143,6 +143,11 @@ cd android && ./gradlew :app:testDebugUnitTest --tests "dev.minband.android.Phon
 #     With vehicles (YOLO26s run, the flags that clean its boxes; see --help for each):
 tools/footage/.venv/Scripts/python tools/movers/footage_boxes.py runs/footage/<run> --classes 0,2,3,5,7 --max-height 0.05     --person-on-vehicle 0.5 --max-vehicle-width 0.08 --max-vehicle-height 0.07 --bus-min-conf 0.5     --ground-from runs/footage/meva-uav-2018-03-07.11-08-44 --out android/app/src/test/resources/replay/drone-meva.csv
 
+#     Pixel motion for the vehicle rule: run moving-target indication on the same frames first
+#     (registered differencing 0.3 s apart); footage_boxes.py then writes each box's overlap with a
+#     moving blob (`mti` column) and a vehicle is MOVING only when its hits show it.
+(cd tools/footage && .venv/Scripts/python track.py mti clips/<clip>.mp4 --start 20 --end 80 --every 6 --out ../../runs/footage/<run>)
+
 # 1c. The chain's verdicts painted back onto the drone clip (a 1080p mp4 to show people): the JVM
 #     replay exports one verdict per box, render_replay.py draws them (amber MOVING, grey static).
 cd android && MINBAND_REPLAY_EXPORT=$PWD/../runs/footage/<run>/verdicts.csv ./gradlew :app:testDebugUnitTest --tests "*PhoneReplayTest.droneClip*" --rerun; cd ..

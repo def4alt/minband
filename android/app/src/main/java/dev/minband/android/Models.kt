@@ -9,7 +9,15 @@ package dev.minband.android
  * `IMAGE_NORMALIZED` coordinates, `Camera.imageIntrinsics` (after scaling by the image size) and
  * the depth image share.
  */
-data class Detection(val classId: Int, val bbox: RectF, val conf: Float)
+data class Detection(
+    val classId: Int, val bbox: RectF, val conf: Float,
+    /**
+     * Pixel-level motion evidence inside the box, 0..1, or -1 when there is none to say (the
+     * phone). Drone footage gets it from moving-target indication (tools/footage/mti.py: frames
+     * 0.3 s apart registered and differenced): the share of a moving blob that lies in the box.
+     */
+    val motion: Float = -1f,
+)
 
 /** Axis-aligned rectangle in normalized coordinates, origin top-left. */
 data class RectF(val x: Float, val y: Float, val width: Float, val height: Float) {
@@ -26,7 +34,9 @@ data class RectF(val x: Float, val y: Float, val width: Float, val height: Float
  * can scale with it; `sigmaAcross` the same across the ray (bearing: small, unless the boxes were
  * cut by the frame's side).
  */
-data class Track(val id: Int, val classId: Int, val pos: Vec3, val vel: Vec3, val conf: Int, val hits: Int = 0, val sigma: Float = 0f, val sigmaAcross: Float = 0f)
+data class Track(val id: Int, val classId: Int, val pos: Vec3, val vel: Vec3, val conf: Int, val hits: Int = 0, val sigma: Float = 0f, val sigmaAcross: Float = 0f,
+                 /** Share of the recent hits that showed pixel motion (`WorldPoint.motion` >= 0.5), -1 when none of them said. */
+                 val motion: Float = -1f)
 
 /**
  * A lifted detection: 3D point in the marker frame (Y up). `detectionIndex` points back into the
@@ -54,6 +64,8 @@ data class WorldPoint(
      * explains it, a passer-by filling the view in front of the person does.
      */
     val heightPx: Float = 0f,
+    /** The detection's pixel-motion evidence (`Detection.motion`), -1 unknown. */
+    val motion: Float = -1f,
 )
 
 /** A detection box ready for the overlay: `rect` in normalized view coordinates (origin top-left). */

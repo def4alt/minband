@@ -42,6 +42,7 @@ def main() -> int:
                     help="drop vehicle boxes taller than this fraction of the frame (a 'truck' over a roof edge was 0.2 of it; cars from 28 m up are under 0.06)")
     ap.add_argument("--bus-min-conf", type=float, default=0.0,
                     help="drop bus boxes below this confidence (the clip has no bus; its 'buses' were two parked cars or a building's edge)")
+    ap.add_argument("--no-mti", action="store_true", help="ignore detections-mti.npy (track.py mti) even when the run has it")
     ap.add_argument("--ground-from", help="take the camera's ground fit from this run's summary.json instead (same clip, another detector: the fit comes from people's box widths, which differ between models)")
     args = ap.parse_args()
 
@@ -83,46 +84,77 @@ def main() -> int:
                 return True
         return False
 
+    # Pixel motion (track.py mti: registered frame differencing 0.3 s apart), per frame. A box's
+    # `mti` is the largest share of a moving blob's area that lies inside it (0 still, -1 unknown).
+    mti_path = os.path.join(args.run, "detections-mti.npy")
+    blobs: dict[int, list] = {}
+    if os.path.exists(mti_path) and not args.no_mti:
+        for row in np.load(mti_path):
+            blobs.setdefault(int(row[0]), []).append(row[1:5])
+
+    def motion_in(frame, x1, y1, x2, y2):
+        if not blobs: return -1.0
+        best = 0.0
+        for bx1, by1, bx2, by2 in blobs.get(frame, ()):
+            ix = max(0.0, min(x2, bx2) - max(x1, bx1)); iy = max(0.0, min(y2, by2) - max(y1, by1))
+            # Intersection over the smaller of the two: a moving car's blob is the union of its
+            # positions 0.3 s apart (longer than the box), a walker's blob may be just the legs.
+            best = max(best, ix * iy / max(1e-6, min((bx2 - bx1) * (by2 - by1), (x2 - x1) * (y2 - y1))))
+        return best
+
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     n = dropped = dropped_vehicles = 0
+    out_rows = []
+    for k, row in enumerate(dets):
+        frame, x1, y1, x2, y2, conf, cls = row
+        if int(cls) not in keep:
+            continue
+        if int(cls) in (2, 3, 5, 7) and (
+                (args.max_vehicle_width and (x2 - x1) / w > args.max_vehicle_width)
+                or (args.max_vehicle_height and (y2 - y1) / h > args.max_vehicle_height)
+                or conf < args.vehicle_min_conf
+                or (int(cls) == 5 and conf < args.bus_min_conf)):
+            dropped_vehicles += 1; continue
+        if k in drop_ids:
+            dropped_vehicles += 1; continue
+        if int(cls) == 0 and args.max_height and (y2 - y1) / h > args.max_height:
+            dropped += 1; continue
+        if int(cls) == 0 and args.person_on_vehicle and inside_vehicle(int(frame), x1, y1, x2, y2):
+            dropped += 1; continue
+        H = homs.get(int(frame))
+        if H is None:
+            continue
+        # The four corners through the homography, then their bounding box (reference pixels).
+        pts = np.array([[x1, y1, 1], [x2, y1, 1], [x1, y2, 1], [x2, y2, 1]], np.float64).T
+        q = H @ pts
+        if (q[2] <= 1e-9).any():
+            continue
+        q = q[:2] / q[2]
+        # Not clipped to the reference frame: when the drone turns, part of the view lies outside
+        # it, and clipping dropped everything there (a driving car on the left of the view, and
+        # later every car on that side). Absurd mappings (near the horizon) are dropped.
+        if q[0].min() < -2 * w or q[0].max() > 3 * w or q[1].min() < -2 * h or q[1].max() > 3 * h:
+            continue
+        out_rows.append((int(frame) - f0, conf, int(cls), q[0].min(), q[1].min(), q[0].max(), q[1].max(),
+                         x1, y1, x2, y2, motion_in(int(frame), x1, y1, x2, y2)))
+
+    # The replay's virtual image: the reference frame grown to hold every box, with the camera's
+    # principal point moved to match (the JVM replay reads cam_cx / cam_cy).
+    cx0 = min([0.0] + [r[3] for r in out_rows]); cy0 = min([0.0] + [r[4] for r in out_rows])
+    cx1 = max([float(w)] + [r[5] for r in out_rows]); cy1 = max([float(h)] + [r[6] for r in out_rows])
+    W, Hc = cx1 - cx0, cy1 - cy0
     with open(args.out, "w", newline="") as fh:
-        fh.write(f"# video={meta['video']} width={w} height={h} fps={fps:.3f} model={meta.get('model', '?')} "
-                 f"cam_f={ground['f_px']:.1f} cam_pitch={ground['pitch_deg']:.2f} cam_height={ground['height_m']:.2f} source=footage\n")
+        fh.write(f"# video={meta['video']} width={int(round(W))} height={int(round(Hc))} fps={fps:.3f} model={meta.get('model', '?')} "
+                 f"cam_f={ground['f_px']:.1f} cam_pitch={ground['pitch_deg']:.2f} cam_height={ground['height_m']:.2f} "
+                 f"cam_cx={w / 2 - cx0:.1f} cam_cy={h / 2 - cy0:.1f} source=footage\n")
         wr = csv.writer(fh)
         # ox..oh: the same box in its own video frame (normalized), for drawing the replay's
         # verdicts back onto the footage (`render_replay.py`); the JVM reader ignores them.
-        wr.writerow(["frame", "t", "cls", "conf", "x", "y", "w", "h", "ox", "oy", "ow", "oh"])
-        for k, row in enumerate(dets):
-            frame, x1, y1, x2, y2, conf, cls = row
-            if int(cls) not in keep:
-                continue
-            if int(cls) in (2, 3, 5, 7) and (
-                    (args.max_vehicle_width and (x2 - x1) / w > args.max_vehicle_width)
-                    or (args.max_vehicle_height and (y2 - y1) / h > args.max_vehicle_height)
-                    or conf < args.vehicle_min_conf
-                    or (int(cls) == 5 and conf < args.bus_min_conf)):
-                dropped_vehicles += 1; continue
-            if k in drop_ids:
-                dropped_vehicles += 1; continue
-            if int(cls) == 0 and args.max_height and (y2 - y1) / h > args.max_height:
-                dropped += 1; continue
-            if int(cls) == 0 and args.person_on_vehicle and inside_vehicle(int(frame), x1, y1, x2, y2):
-                dropped += 1; continue
-            H = homs.get(int(frame))
-            if H is None:
-                continue
-            # The four corners through the homography, then their bounding box.
-            pts = np.array([[x1, y1, 1], [x2, y1, 1], [x1, y2, 1], [x2, y2, 1]], np.float64).T
-            q = H @ pts
-            q = q[:2] / q[2]
-            bx0, by0 = q[0].min() / w, q[1].min() / h
-            bx1, by1 = q[0].max() / w, q[1].max() / h
-            bx0, by0, bx1, by1 = max(0.0, bx0), max(0.0, by0), min(1.0, bx1), min(1.0, by1)
-            if bx1 - bx0 < 1e-3 or by1 - by0 < 1e-3:
-                continue
-            fr = int(frame) - f0
-            wr.writerow([fr, f"{fr / fps:.3f}", int(cls), f"{conf:.3f}", f"{bx0:.4f}", f"{by0:.4f}", f"{bx1 - bx0:.4f}", f"{by1 - by0:.4f}",
-                         f"{x1 / w:.4f}", f"{y1 / h:.4f}", f"{(x2 - x1) / w:.4f}", f"{(y2 - y1) / h:.4f}"])
+        wr.writerow(["frame", "t", "cls", "conf", "x", "y", "w", "h", "ox", "oy", "ow", "oh", "mti"])
+        for fr, conf, cls, qx0, qy0, qx1, qy1, x1, y1, x2, y2, mot in out_rows:
+            wr.writerow([fr, f"{fr / fps:.3f}", cls, f"{conf:.3f}", f"{(qx0 - cx0) / W:.5f}", f"{(qy0 - cy0) / Hc:.5f}",
+                         f"{(qx1 - qx0) / W:.5f}", f"{(qy1 - qy0) / Hc:.5f}",
+                         f"{x1 / w:.4f}", f"{y1 / h:.4f}", f"{(x2 - x1) / w:.4f}", f"{(y2 - y1) / h:.4f}", f"{mot:.2f}"])
             n += 1
     print(f"{n} boxes ({dropped} person boxes and {dropped_vehicles} duplicate or implausible vehicle boxes dropped) -> {args.out} (camera f {ground['f_px']:.0f} px, pitch {ground['pitch_deg']:.1f} deg, {ground['height_m']:.1f} m up)")
     return 0

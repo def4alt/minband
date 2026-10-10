@@ -200,8 +200,16 @@ class OverlayMotion {
                     // a driving one goes one way. Measured on a drone clip: parked cars tagged
                     // at 1.0-2.4 m within 3 s, driving ones at 1-10 m, so distance alone could
                     // not tell them apart, the path's straightness could.
-                    val drove = !TrackedClass.vehicle(t.classId) || (t.hits >= VEHICLE_MIN_HITS && speed >= VEHICLE_SPEED && steady(window, j.refPos, d))
-                    if (moved && drove && speed >= SPEED_FLOOR) s.moving = true
+                    // ...spread over the window: a track that took a neighbour's box (parked cars
+                    // stand 2.5-4 m apart) makes one jump and stays, which is not driving. And not
+                    // when the lift itself is guesswork (a floor ray near the horizon, 100 m out,
+                    // swung 57-94 m between hits).
+                    val drove = !TrackedClass.vehicle(t.classId) || (t.hits >= VEHICLE_MIN_HITS && speed >= VEHICLE_SPEED &&
+                        (t.motion >= 0f || (t.sigma <= VEHICLE_MAX_SIGMA_REL * range && steady(window, j.refPos, d) && even(window, d))))
+                    // With pixel-motion evidence (drone footage), a vehicle must also be seen
+                    // moving in the image: parked cars do not difference, whatever their track did.
+                    val seen = !TrackedClass.vehicle(t.classId) || t.motion < 0f || t.motion >= MOTION_MIN_SHARE
+                    if (moved && drove && seen && speed >= SPEED_FLOOR) s.moving = true
                     if (s.moving || t.id == debugId) {
                         val line = "id %d %s t=%.1f d=(%.2f,%.2f) raw=(%.2f,%.2f) drift=(%.2f,%.2f) eyeDisp=%s observed=%d dragged=%s range=%.1f needAlong=%.2f needAcross=%.2f sigma=%.2f hits=%d speed=%.2f -> %s".format(
                             t.id, TrackedClass.name(t.classId), nowS, d.x, d.z, j.d.x, j.d.z, drift.x, drift.z, eyeDisp?.let { "(%.2f,%.2f)".format(it.x, it.z) } ?: "-", observed.size, dragged, range, needAlong, needAcross, t.sigma, t.hits, speed, if (s.moving) "MOVING" else "static")
@@ -264,6 +272,14 @@ class OverlayMotion {
         return path < 1e-3f || net / path >= VEHICLE_STRAIGHTNESS
     }
 
+    /** No single step between the window's robust samples carries more than VEHICLE_MAX_STEP_SHARE of the net displacement. */
+    private fun even(window: List<Rob>, d: Vec3): Boolean {
+        val net = kotlin.math.sqrt(d.x * d.x + d.z * d.z)
+        if (net < 1e-3f) return false
+        for (k in 1 until window.size) if (ground(window[k].pos, window[k - 1].pos) > VEHICLE_MAX_STEP_SHARE * net) return false
+        return true
+    }
+
     private fun ground(a: Vec3, b: Vec3): Float { val dx = a.x - b.x; val dz = a.z - b.z; return kotlin.math.sqrt(dx * dx + dz * dz) }
 
     companion object {
@@ -306,11 +322,17 @@ class OverlayMotion {
         const val DRAG_TOLERANCE = 0.5f
         /** A vehicle is a mover only after this many hits, at this speed, on a path this straight (net / length) that never steps back more than VEHICLE_SLACK_M (see `steady`). */
         const val VEHICLE_MIN_HITS = 5
+        /** Share of a vehicle's recent hits with pixel motion (MTI) needed to call it a mover, when the footage provides it. */
+        const val MOTION_MIN_SHARE = 0.4f
         const val VEHICLE_SPEED = 0.5f
         const val VEHICLE_STRAIGHTNESS = 0.7f
         const val VEHICLE_SLACK_M = 0.3f
+        /** Largest share of a vehicle's net displacement one robust step (0.5 s) may carry: a car driving evenly moves about a sixth per step, a track that jumped to the next car all of it at once. */
+        const val VEHICLE_MAX_STEP_SHARE = 0.5f
+        /** A vehicle is not judged while its lift sigma exceeds this fraction of its range (floor rays near the horizon). */
+        const val VEHICLE_MAX_SIGMA_REL = 0.25f
         /** A vehicle's displacement over the window to be a mover: a parked car's track wandered up to 2.4 m in 3 s from a drone; a car driving at 1 m/s covers 3 m. */
-        const val VEHICLE_MOVE_M = 2.0f
+        const val VEHICLE_MOVE_M = 1.0f
         /**
          * No judgement while the camera moves faster than this (m/s): a hand holding the phone
          * still does not, a holder walking does (0.3-0.6 m/s in a room session, with a seated

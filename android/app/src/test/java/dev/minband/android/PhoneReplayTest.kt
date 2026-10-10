@@ -22,7 +22,9 @@ import kotlin.math.sin
  */
 class PhoneReplayTest {
     /** Frame size and rate, and the camera the boxes are lifted with (the `tools/footage` ground fit; the vtest values are the default). */
-    private class Meta(val width: Int, val height: Int, val fps: Double, val f: Float = 419f, val pitchDeg: Double = 42.2, val height_m: Float = 5.1f, val maxRange: Float = 8f)
+    private class Meta(val width: Int, val height: Int, val fps: Double, val f: Float = 419f, val pitchDeg: Double = 42.2, val height_m: Float = 5.1f, val maxRange: Float = 8f,
+                       /** Principal point (px) when the image is not centred on it: a drone replay's reference frame grown to hold boxes outside it. */
+                       val cx: Float = width / 2f, val cy: Float = height / 2f)
 
     private class Clip(val meta: Meta, val frames: TreeMap<Int, MutableList<Detection>>)
 
@@ -41,11 +43,15 @@ class PhoneReplayTest {
         val meta = Meta(kv.getValue("width").toInt(), kv.getValue("height").toInt(), kv.getValue("fps").toDouble(),
             kv["cam_f"]?.toFloat() ?: 419f, kv["cam_pitch"]?.toDouble() ?: 42.2, kv["cam_height"]?.toFloat() ?: 5.1f,
             // Drone footage: people 30-120 m from the camera; the phone's 8 m cull would keep none.
-            maxRange = if (kv["source"] == "footage") 150f else 8f)
+            maxRange = if (kv["source"] == "footage") 150f else 8f,
+            cx = kv["cam_cx"]?.toFloat() ?: (kv.getValue("width").toInt() / 2f), cy = kv["cam_cy"]?.toFloat() ?: (kv.getValue("height").toInt() / 2f))
         val frames = TreeMap<Int, MutableList<Detection>>()
+        // Optional `mti` column: pixel-motion evidence per box (footage_boxes.py with a track.py mti run).
+        val mtiCol = lines[1].split(',').indexOf("mti")
         for (line in lines.drop(2)) {
             val c = line.split(',')
-            val det = Detection(c[2].toInt(), RectF(c[4].toFloat(), c[5].toFloat(), c[6].toFloat(), c[7].toFloat()), c[3].toFloat())
+            val motion = if (mtiCol >= 0 && System.getenv("MINBAND_NO_MTI") == null) c[mtiCol].toFloat() else -1f
+            val det = Detection(c[2].toInt(), RectF(c[4].toFloat(), c[5].toFloat(), c[6].toFloat(), c[7].toFloat()), c[3].toFloat(), motion)
             frames.getOrPut(c[0].toInt()) { ArrayList() }.add(det)
         }
         return Clip(meta, frames)
@@ -75,12 +81,15 @@ class PhoneReplayTest {
         val rng = java.util.Random(7)
         val m = clip.meta
         // The clip's ground fit (vtest.avi: ~85 deg horizontal field of view, 42.2 deg down, 5.1 m up).
-        val k = Lift3D.Intrinsics(fx = m.f, fy = m.f, cx = m.width / 2f, cy = m.height / 2f, width = m.width, height = m.height)
+        val k = Lift3D.Intrinsics(fx = m.f, fy = m.f, cx = m.cx, cy = m.cy, width = m.width, height = m.height)
         val cam = camera(m.pitchDeg, m.height_m)
         val origin = Origin().apply { observeHorizontalPlane(0f, isFloor = true); lockManual(cam) }
         val geo = Lift3D.FrameGeometry(cam, k, origin.floorY)
         val tracker = Tracker(config)
+        // Drone footage (registered by homography): motion is judged against the local scene.
         val motion = OverlayMotion()
+        val debugId = System.getenv("MINBAND_REPLAY_DEBUG_ID")?.toIntOrNull()
+        motion.debugId = debugId
         val eye = origin.toMarker(cam.origin)
 
         // Detection frames: every `stride`-th of the frames the clip has boxes for (a footage run
@@ -104,7 +113,7 @@ class PhoneReplayTest {
         while (t <= end) {
             while (nextDet / m.fps <= t) {
                 val dets = clip.frames[nextDet] ?: emptyList()
-                var points = Lift3D.lift(dets, geo, null, origin, m.maxRange)
+                var points = Lift3D.lift(dets, geo, null, origin, m.maxRange, if (m.maxRange > 8f) DRONE_ACROSS_PX else Lift3D.ACROSS_PX)
                 // The phone's lift noise (see above), and, as Lift3D does, the point says its sigma.
                 if (noiseSigma > 0f) points = points.map { p ->
                     val eye = p.eye ?: origin.toMarker(cam.origin)
@@ -118,6 +127,7 @@ class PhoneReplayTest {
                     p.copy(pos = p.pos + u * along + side * across, sigma = noiseSigma)
                 }
                 val ids = tracker.update(points, nextDet / m.fps)
+                if (debugId != null) for ((p, id) in points.zip(ids)) if (id == debugId) println("  hit t=%.2f pos=(%.2f,%.2f) sigma=%.2f across=%.2f h=%.0f".format(nextDet / m.fps, p.pos.x, p.pos.z, p.sigma, p.sigmaAcross, p.heightPx))
                 if (export != null) for ((p, id) in points.zip(ids)) pending.add(Pending(nextDet, p, id))
                 detBoxes += dets.size; detCalls += 1
                 if (!detFrames.hasNext()) { nextDet = Int.MAX_VALUE; break }
@@ -125,6 +135,7 @@ class PhoneReplayTest {
             }
             val tracks = tracker.tracks(t)
             val mv = motion.update(tracks, t, eye)
+            if (debugId != null) tracks.firstOrNull { it.id == debugId }?.let { tk -> if (((t * 30).toInt() % 6) == 0) println("  track t=%.2f pos=(%.2f,%.2f) vel=(%.2f,%.2f) hits=%d %s".format(t, tk.pos.x, tk.pos.z, tk.vel.x, tk.vel.z, tk.hits, if (tk.id in mv) "MOVING" else "")) }
             if (export != null) { for (l in motion.flips) export.println("# flip $l"); }
             motion.flips.clear()
             if (export != null && pending.isNotEmpty()) {
@@ -146,6 +157,7 @@ class PhoneReplayTest {
             }
             t += tickDt
         }
+        motion.debugLines.filter { it.contains("MOVING") }.take(3).forEach { println("  judge $it") }
         speeds.sort()
         val median = if (speeds.isEmpty()) 0f else speeds[speeds.size / 2]
         val lives = confirmed.map { lastSeen.getValue(it) - firstSeen.getValue(it) }.sorted()
@@ -156,6 +168,9 @@ class PhoneReplayTest {
         return Run(detHz, noiseSigma, confirmed, moving, median, medianLife, detBoxes.toDouble() / maxOf(detCalls, 1), walkers,
             confirmed.count(isVehicle), moving.count(isVehicle), moving.count { isVehicle(it) && (maxSpeed[it] ?: 0f) >= 2f })
     }
+
+    /** Bearing error of a drone box in pixels: the homography registration's, measured as 10-100 px over a minute and more while the drone turns. */
+    private val DRONE_ACROSS_PX = (System.getenv("MINBAND_DRONE_ACROSS_PX")?.toFloatOrNull() ?: Lift3D.ACROSS_PX)
 
     private val clip by lazy { load("/replay/vtest-yolov8n-256.csv") ?: error("missing test resource (run tools/movers/phone_detect.py)") }
 
@@ -176,9 +191,9 @@ class PhoneReplayTest {
         if (exportPath != null) println("verdicts exported to $exportPath")
         // Unlabelled; the bounds come from `track.py track` on the same YOLO26s run (23 walkers
         // at a median 1.1 m/s, 212 vehicles of which 35 drove, at a median 2.9 m/s: a parking lot
-        // where most cars are parked) and from this chain on it (13 people at a walking pace,
-        // 276 vehicle ids, 35 MOVING, 27 of them above 2 m/s; 29 of the 35 moved 100+ px in the
-        // footage, before the steady-path rule 12 of 52 had not). A regression that loses the
+        // where most cars are parked) and from this chain on it with pixel-motion evidence (MTI)
+        // and the view's full extent: 13 people at a walking pace, 579 vehicle ids, 25 MOVING, 24
+        // of them above 2 m/s; 19 of the 25 crossed the footage at 15+ px/s, the rest slowly. A regression that loses the
         // walkers or the driving cars, or tags the parked ones, shows here.
         assertTrue("walkers tracked and moving: $r", r.walkers >= 8)
         assertTrue("driving cars are movers: $r", r.drivenVehicles >= 20)
