@@ -60,6 +60,9 @@
     #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; letter-spacing: .3em; }
     #key { position: absolute; left: var(--pad); right: var(--pad); bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px 20px; pointer-events: none; z-index: 2; color: var(--ink-3); }
     #key span { display: inline-flex; align-items: center; gap: 8px; }
+    #frame { position: absolute; top: 14px; right: var(--pad); z-index: 3; display: flex; align-items: baseline; gap: 10px; color: var(--ink-2); }
+    #frame:hover { color: var(--ink); }
+    #frame .k { font-family: var(--mono); letter-spacing: 0; color: var(--ink-3); }
     /* Hover / tap tag: class · id · state · error radius, then the grid reference when there is one. */
     .tag3d { font: 400 9.5px/1.5 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); white-space: pre; pointer-events: none; padding: 0 0 4px 7px; border-left: 1px solid var(--ink-3); }
     .tag3d.lost { border-left-color: var(--ink); }
@@ -196,7 +199,10 @@
           <span><svg width="13" height="9" viewBox="0 0 13 9"><ellipse cx="6.5" cy="4.5" rx="6" ry="4" fill="none" stroke="currentColor"/></svg>error radius</span>
           <span><svg width="13" height="9" viewBox="0 0 13 9"><ellipse cx="6.5" cy="4.5" rx="6" ry="4" fill="none" stroke="currentColor" stroke-dasharray="2.2 1.6"/></svg>coasting</span>
           <span><svg width="8" height="8" viewBox="0 0 8 8"><rect x=".5" y=".5" width="7" height="7" fill="none" stroke="currentColor" stroke-dasharray="1 2"/></svg>stale</span>
+          <span id="keyGrid" hidden><svg width="9" height="9" viewBox="0 0 9 9"><path d="M.5 0v9M4.5 0v9M8.5 0v9M0 .5h9M0 4.5h9M0 8.5h9" fill="none" stroke="currentColor"/></svg><span id="keyGridV">10 m grid</span></span>
         </div>
+        <!-- Wide area (entities over tens to hundreds of metres): re-frame the twin; also the F key. -->
+        <button id="frame" hidden title="frame the twin (F)">Frame<span class="k">F</span></button>
       </div>
       <section id="camera" hidden aria-label="raw video stand-in">
         <div class="capbar">

@@ -127,6 +127,30 @@ hairlines; each moves only when a datagram arrived, a bit was delivered or a hea
   activity strip beside the twin and the video-on-this-link panel open. The operator view stays as
   "Restraint" describes. The per-datagram click (`CLICK`) is off by default.
 
+## Wide area (added 2026-10-10)
+
+Real drone footage spreads entities over 50 to 200 m; the contour field is drawn for a room around
+the marker. The viewer switches to a wide mode when the 90th-percentile distance of the entities
+from their centroid stays above 15 m (back below 8 m for 2.5 s), and nothing else changes in the
+room mode.
+
+- **Ground.** A flat hairline grid at `--ink-4` replaces the contour field, 10 cells to the scale
+  radius (20, 50, 100, 200 ... m from the entities' extent), fading out radially and into the fog.
+  The key adds the spacing (`10 M GRID`). Rings lie on it.
+- **Glyphs are map symbols.** Each class keeps a minimum size on screen (a dismount about 26 px
+  tall, a vehicle about 24 px long), magnified from true size only as far as needed and never
+  shrunk; zooming in returns them to true size. Vehicles turn to their heading. Velocity arrows
+  start at the glyph's edge and show one second of travel, between 12 and 90 px. Dash patterns keep
+  their room length on screen. **Error rings stay true metres** (they are error bars, not
+  symbols), capped at half the scale radius with the same outward ticks.
+- **Devices.** The frustum keeps about 44 px of depth at its own distance, and a dotted drop to a
+  small ground cross marks the drone's nadir; the hover tag adds its height (`DEV 100 · ALT 59 M`).
+- **Framing.** When the mode starts the camera glides once (600 ms) onto the entities from where
+  the drone looks, about 55 degrees down, and follows the bounds while the feed fills in over the
+  first 2.5 s. After that it never moves on its own: `F` or the `FRAME` text control (top right
+  of the twin, wide mode only) re-frames from the operator's bearing. Touching the orbit ends any
+  glide.
+
 ## Charts: colour for series (added 2026-10-09)
 
 Exception to monochrome: in the eval charts and the viewer's graphs, series are told apart by
