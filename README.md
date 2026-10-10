@@ -16,6 +16,7 @@ with emulated impairment.
 | `server/` | UDP ingest, reliability/resync, world model, multi-device fusion, metrics, WebSocket fan-out, in-process link shaper and link profiles (time on air), CoT export to TAK, geodetic anchor (WGS84/MGRS). | TypeScript (Node) |
 | `viewer/` | Three.js twin, error rings and coasting/staleness, link profiles and airtime, link activity strip, video-on-this-link panel, bytes/sec graph, mock snapshot server. | TypeScript (Vite) |
 | `ios/` | ARKit (marker origin, pose, depth) + Vision/CoreML detection + tracker + core FFI + UDP client; opt-in H.264 baseline measurement (VideoToolbox). | Swift |
+| `android/` | ARCore (marker origin, pose, Depth API where it works, else floor plane) + ONNX Runtime YOLO detection + tracker + core via uniffi Kotlin bindings + UDP client. Same wire protocol and ground-truth log as iOS. | Kotlin |
 | `tools/` | Pi 5 link box (`pi-link.sh`, tc netem profiles), golden vectors on aarch64 under qemu, dummynet (macOS), evaluation, baselines and charts. | Shell / TS |
 | `e2e/` | End-to-end tests: real server + WASM core + sim edges over UDP, viewer in headless Chromium, kernel shaping on `lo`, CoT listener; fallback-run recorder. | TypeScript (Node) |
 | `proto/` | Wire protocol spec. | Markdown |
