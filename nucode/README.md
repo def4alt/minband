@@ -24,14 +24,24 @@ python flash.py rx   # fw/rx_peripheral -> RX board
 ## Run the bridge
 
 ```
-python bridge.py --serial <RX_COM> --udp-forward 127.0.0.1:27777 --http-port 28766   # bridge B (RX side)
-python bridge.py --serial <TX_COM> --udp-listen 27788 --http-port 28765              # bridge A (TX side)
+python bridge.py --serial <RX_COM> --udp-forward 127.0.0.1:7777 --http-port 28766   # bridge B (RX side)
+python bridge.py --serial <TX_COM> --udp-listen 7788 --http-port 28765              # bridge A (TX side)
 ```
+
+Ports here (7788/7777) must match whatever `linktest.py --to`/`--echo-port`
+you run against it (see its own docstring for the default) - a mismatch
+here silently produces 100% loss with no error, since bridge B just
+forwards into a void. Always check with a small (40B) run first.
 
 UDP traffic sent to bridge A's `--udp-listen` port goes out over BLE to
 bridge B, which forwards it to `--udp-forward`; replies flow back over the
 same path (bridge A remembers the last peer, no fixed forward address).
-`GET /telemetry` on either bridge's `--http-port` reports live stats.
+`GET /telemetry` on either bridge's `--http-port` reports live stats:
+`crc_errors`/`oversize_drops`/`unknown_type_drops` (framing-level faults),
+`seq_lost` (cumulative count of TYPE_DATA frames that never arrived at
+all, inferred from gaps in each frame's wire sequence number - catches
+loss that leaves no corrupt bytes behind for CRC to flag), `seq_last`
+(highest sequence number seen so far).
 
 ## Measurements (2026-10-10)
 

@@ -23,6 +23,7 @@ import argparse
 import http.server
 import json
 import socket
+import struct
 import sys
 import threading
 import time
@@ -49,8 +50,15 @@ def crc16_ccitt(data: bytes, crc: int = 0xFFFF) -> int:
     return crc
 
 
-def slip_encode(frame_type: int, payload: bytes) -> bytes:
-    body = bytes([frame_type]) + payload
+def slip_encode(frame_type: int, payload: bytes, seq: int = 0) -> bytes:
+    # TYPE_DATA carries a monotonic u16 sequence number right after the type
+    # byte, so the receiver can detect gaps (lost frames) even when a frame
+    # vanishes cleanly with no corrupt bytes left behind to trip the CRC
+    # check. No ack/retry - just loss visibility for a lossy link.
+    if frame_type == TYPE_DATA:
+        body = bytes([frame_type]) + struct.pack("<H", seq) + payload
+    else:
+        body = bytes([frame_type]) + payload
     crc = crc16_ccitt(body)
     body += bytes([crc & 0xFF, (crc >> 8) & 0xFF])
 
@@ -70,9 +78,10 @@ class SlipDecodeError(Exception):
     pass
 
 
-def slip_decode(raw: bytes) -> tuple[int, bytes]:
-    """Decode one de-escaped frame's body (no END bytes). Returns (type, payload).
-    Raises SlipDecodeError on bad CRC, too-short frame, or unknown type."""
+def slip_decode(raw: bytes) -> tuple[int, int | None, bytes]:
+    """Decode one de-escaped frame's body (no END bytes). Returns (type, seq, payload);
+    seq is None for non-TYPE_DATA frames. Raises SlipDecodeError on bad CRC,
+    too-short frame, or unknown type."""
     out = bytearray()
     i = 0
     while i < len(raw):
@@ -96,9 +105,16 @@ def slip_decode(raw: bytes) -> tuple[int, bytes]:
         raise SlipDecodeError("frame too short")
 
     frame_type = out[0]
-    payload = bytes(out[1:-2])
+    if frame_type == TYPE_DATA:
+        if len(out) < 5:
+            raise SlipDecodeError("frame too short")
+        seq = out[1] | (out[2] << 8)
+        payload = bytes(out[3:-2])
+    else:
+        seq = None
+        payload = bytes(out[1:-2])
     crc_received = out[-2] | (out[-1] << 8)
-    crc_computed = crc16_ccitt(bytes([frame_type]) + payload)
+    crc_computed = crc16_ccitt(bytes(out[:-2]))
     if crc_received != crc_computed:
         raise SlipDecodeError("bad CRC")
     if frame_type not in (TYPE_DATA, TYPE_TELEMETRY):
@@ -106,7 +122,7 @@ def slip_decode(raw: bytes) -> tuple[int, bytes]:
     if len(payload) > MAX_PAYLOAD:
         raise SlipDecodeError("oversize payload")
 
-    return frame_type, payload
+    return frame_type, seq, payload
 
 
 class SlipFramer:
@@ -139,6 +155,8 @@ class Stats:
         self.crc_errors = 0
         self.oversize_drops = 0
         self.unknown_type_drops = 0
+        self.seq_lost = 0
+        self.seq_last = None
         self.last_telemetry = None
 
     def snapshot_and_reset_rates(self):
@@ -151,6 +169,8 @@ class Stats:
                 crc_errors=self.crc_errors,
                 oversize_drops=self.oversize_drops,
                 unknown_type_drops=self.unknown_type_drops,
+                seq_lost=self.seq_lost,
+                seq_last=self.seq_last,
             )
             self.serial_to_udp_bytes = 0
             self.serial_to_udp_frames = 0
@@ -170,10 +190,15 @@ class Bridge:
         self.stats = Stats()
         self.serial_write_lock = threading.Lock()
         self.cumulative = Stats()
+        self.tx_seq = 0
+        self.rx_expected_seq = None
 
     def write_frame(self, frame_type: int, payload: bytes):
         with self.serial_write_lock:
-            self.ser.write(slip_encode(frame_type, payload))
+            seq = self.tx_seq
+            if frame_type == TYPE_DATA:
+                self.tx_seq = (self.tx_seq + 1) & 0xFFFF
+            self.ser.write(slip_encode(frame_type, payload, seq))
 
     def serial_reader_loop(self):
         framer = SlipFramer()
@@ -187,7 +212,7 @@ class Bridge:
                 continue
             for raw in framer.feed(data):
                 try:
-                    frame_type, payload = slip_decode(raw)
+                    frame_type, seq, payload = slip_decode(raw)
                 except SlipDecodeError as e:
                     with self.stats.lock:
                         if "CRC" in str(e):
@@ -199,6 +224,11 @@ class Bridge:
                     continue
 
                 if frame_type == TYPE_DATA:
+                    with self.stats.lock:
+                        if self.rx_expected_seq is not None:
+                            self.stats.seq_lost += (seq - self.rx_expected_seq) & 0xFFFF
+                        self.rx_expected_seq = (seq + 1) & 0xFFFF
+                        self.stats.seq_last = seq
                     dest = self.udp_forward or self.last_peer
                     if dest is None:
                         continue  # no destination known yet; drop
@@ -248,7 +278,7 @@ class Bridge:
                     f"udp->serial {rates['udp_to_serial_bytes']}B/s "
                     f"{rates['udp_to_serial_frames']}f/s | "
                     f"crc_err={rates['crc_errors']} oversize={rates['oversize_drops']} "
-                    f"unknown_type={rates['unknown_type_drops']} | "
+                    f"unknown_type={rates['unknown_type_drops']} seq_lost={rates['seq_lost']} "
                     f"telemetry={telem}"
                 )
 
@@ -271,6 +301,8 @@ class Bridge:
                         "crc_errors": bridge.stats.crc_errors,
                         "oversize_drops": bridge.stats.oversize_drops,
                         "unknown_type_drops": bridge.stats.unknown_type_drops,
+                        "seq_lost": bridge.stats.seq_lost,
+                        "seq_last": bridge.stats.seq_last,
                     }
                 with bridge.cumulative.lock:
                     payload["cumulative_serial_to_udp_frames"] = bridge.cumulative.serial_to_udp_frames
@@ -304,7 +336,7 @@ def run_selftest() -> int:
     if len(frames) != 1:
         failures.append(f"SLIP round-trip: expected 1 frame, got {len(frames)}")
     else:
-        t, p = slip_decode(frames[0])
+        t, seq, p = slip_decode(frames[0])
         if t != TYPE_DATA or p != payload:
             failures.append("SLIP round-trip: payload mismatch")
 
@@ -315,7 +347,7 @@ def run_selftest() -> int:
     if len(frames) != 1:
         failures.append(f"1200B round-trip: expected 1 frame, got {len(frames)}")
     else:
-        t, p = slip_decode(frames[0])
+        t, seq, p = slip_decode(frames[0])
         if p != big_payload:
             failures.append("1200B round-trip: payload mismatch")
 
@@ -342,7 +374,7 @@ def run_selftest() -> int:
     if len(frames) != 1:
         failures.append(f"resync after noise: expected 1 frame, got {len(frames)}")
     else:
-        t, p = slip_decode(frames[0])
+        t, seq, p = slip_decode(frames[0])
         if p != b"resync-ok":
             failures.append("resync after noise: payload mismatch")
 
@@ -353,12 +385,34 @@ def run_selftest() -> int:
     if len(frames) != 1:
         failures.append(f"telemetry decode: expected 1 frame, got {len(frames)}")
     else:
-        t, p = slip_decode(frames[0])
+        t, seq, p = slip_decode(frames[0])
         if t != TYPE_TELEMETRY:
             failures.append("telemetry decode: wrong type")
         decoded = json.loads(p.decode("utf-8"))
         if decoded.get("tx_power") != 4 or decoded.get("rssi") != -55:
             failures.append("telemetry decode: field mismatch")
+
+    # TYPE_DATA sequence number round-trips and the gap-detection math
+    # (used to count cleanly-vanished frames with no corrupt bytes left
+    # behind) handles u16 wraparound correctly.
+    for seq_in in (0, 1234, 65535):
+        frames = SlipFramer().feed(slip_encode(TYPE_DATA, b"x", seq=seq_in))
+        _, seq_out, _ = slip_decode(frames[0])
+        if seq_out != seq_in:
+            failures.append(f"seq round-trip: expected {seq_in}, got {seq_out}")
+    gap_cases = [
+        (6, 6, 0),       # next expected arrives in order: no gap
+        (6, 9, 3),       # skipped 6,7,8: gap of 3
+        (0, 0, 0),       # wraps around, in order: no gap
+        (65535, 1, 2),   # skipped 65535,0: gap of 2
+    ]
+    for expected_seq, received_seq, want_gap in gap_cases:
+        gap = (received_seq - expected_seq) & 0xFFFF
+        if gap != want_gap:
+            failures.append(
+                f"seq gap math: expected={expected_seq} received={received_seq} "
+                f"want gap={want_gap}, got {gap}"
+            )
 
     if failures:
         for f in failures:
