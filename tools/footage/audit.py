@@ -180,8 +180,9 @@ def cmd_sample(a):
     _, log, _ = load_run(a.run)
     olog = load_run(a.old)[1] if a.old else None
     os.makedirs(a.out, exist_ok=True)
-    frames = set(np.unique(log[:, 0]).astype(int))
-    if olog is not None: frames &= set(np.unique(olog[:, 0]).astype(int)) | set()
+    # Every detection frame of the schedule, with or without detections (an empty frame can hold misses).
+    sched = next((p for p in (os.path.join(a.run, 'detect.json'), os.path.join(a.run, '..', 'detect.json')) if os.path.exists(p)), None)
+    frames = set(int(k) for k in json.load(open(sched))['homographies']) if sched else set(np.unique(log[:, 0]).astype(int))
     frames = sample_frames(frames, a.n, a.seed)
     cap = cv2.VideoCapture(a.video)
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)); H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -202,7 +203,9 @@ def cmd_sample(a):
             kind = 'old_only' if not it['new'] else ('mti' if k == MOVER else ('app_vehicle' if k in VEHICLES else 'app_person'))
             pad = 3
             cv2.rectangle(ann, (int(x1) - pad, int(y1) - pad), (int(x2) + pad, int(y2) + pad), COL[kind], 2 if (it['new_confirmed'] or it['old_confirmed']) else 1)
-            cv2.putText(ann, str(bid), (int(x2) + pad + 1, int(y1) + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, COL[kind], 1, cv2.LINE_AA)
+            org = (int(x2) + pad + 2, int(y1) + 14)  # id, outlined so it reads on any background
+            cv2.putText(ann, str(bid), org, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.putText(ann, str(bid), org, cv2.FONT_HERSHEY_SIMPLEX, 0.6, COL[kind], 2, cv2.LINE_AA)
             boxes[bid] = {**it, 'box': [round(float(v), 1) for v in it['box']]}
         index['frames'][str(n)] = {'boxes': boxes, 'tiles': []}
         for ti, (x0, y0, x1, y1) in enumerate(tiles):
@@ -219,7 +222,12 @@ def cmd_sample(a):
 
 def score_dir(d):
     """Precision / recall of the old and the new pipeline from the developer's labels, at the detection
-    level (every box the tracker saw) and the track level (boxes in confirmed tracks)."""
+    level (every box the tracker saw) and the track level (boxes in confirmed tracks).
+
+    Labels per frame: tp (box ids on a visible object), fp (on nothing), dup (a second box on an object
+    that already has one in the same run, e.g. a shadow or a second class), fn (objects with no box),
+    same ({id: id}: an old-only and a new-only box on the same object). Recall counts objects (a box
+    group joined by `same`), precision counts boxes."""
     idx = json.load(open(os.path.join(d, 'sample.json')))
     lab = json.load(open(os.path.join(d, 'labels.json')))
     res = {k: {'tp': 0, 'fp': 0, 'fn': 0} for k in ('old_det', 'new_det', 'old_trk', 'new_trk')}
@@ -228,21 +236,28 @@ def score_dir(d):
         L = lab['frames'].get(n)
         if L is None: continue
         nfr += 1
-        boxes = fr['boxes']
-        tp = set(map(int, L.get('tp', []))); fp = set(map(int, L.get('fp', []))) | set(map(int, L.get('dup', [])))
-        missing = set(map(int, boxes)) - tp - fp
+        boxes = {int(b): v for b, v in fr['boxes'].items()}
+        tp = set(map(int, L.get('tp', []))); bad = set(map(int, L.get('fp', []))) | set(map(int, L.get('dup', [])))
+        missing = set(boxes) - tp - bad
         if missing: sys.exit(f'{d} frame {n}: boxes not labelled: {sorted(missing)}')
-        fn = int(L.get('fn', 0)); objects += len(tp) + fn
-        for bid, b in boxes.items():
-            is_tp = int(bid) in tp
-            for run, flag, conf in (('old', b['old'], b['old_confirmed']), ('new', b['new'], b['new_confirmed'])):
-                # detection level: a TP box only the other run has is an object this run missed
-                if flag: res[run + '_det']['tp' if is_tp else 'fp'] += 1
-                elif is_tp: res[run + '_det']['fn'] += 1
-                # track level: only boxes in confirmed tracks count as reported
-                if flag and conf: res[run + '_trk']['tp' if is_tp else 'fp'] += 1
-                elif is_tp: res[run + '_trk']['fn'] += 1
-        for k in res: res[k]['fn'] += fn
+        parent = {b: b for b in tp}
+        def find(x):
+            while parent[x] != x: x = parent[x]
+            return x
+        for a_, b_ in (L.get('same') or {}).items():
+            parent[find(int(a_))] = find(int(b_))
+        groups = {}
+        for b in tp: groups.setdefault(find(b), []).append(b)
+        fn = int(L.get('fn', 0)); objects += len(groups) + fn
+        for run in ('old', 'new'):
+            for level, member in (('det', lambda v: v[run]), ('trk', lambda v: v[run] and v[run + '_confirmed'])):
+                r = res[f'{run}_{level}']
+                covered = 0
+                for g in groups.values():
+                    m = [b for b in g if member(boxes[b])]
+                    if m: covered += 1; r['fp'] += len(m) - 1  # a second box on one object is a duplicate
+                r['tp'] += covered; r['fn'] += len(groups) - covered + fn
+                r['fp'] += sum(1 for b in bad if member(boxes[b]))
     out = {'dir': d, 'frames': nfr, 'objects': objects, 'auditor': lab.get('auditor'), 'frozen_at': lab.get('frozen_at'),
            'note': 'post-hoc visual audit by the developer after freezing; evaluation only, not ground truth'}
     for k, v in res.items():
