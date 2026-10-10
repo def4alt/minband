@@ -282,6 +282,7 @@ impl Edge {
         let mut records: Vec<Record> = Vec::new();
         let mut len = header;
         let mut sent_ids: Vec<u16> = Vec::new();
+        let mut sent_recs: Vec<ContactRec> = Vec::new();
         let mut sent_ego = false; let mut sent_session = false;
         for (_, _, _, k) in cands {
             match k {
@@ -291,10 +292,10 @@ impl Edge {
                     let n = Record::Contact(rec).wire_len();
                     if len + n > room && !records.is_empty() { continue; }
                     if len + n > self.cfg.max_frame { continue; }
-                    records.push(Record::Contact(rec)); len += n; sent_ids.push(id);
+                    records.push(Record::Contact(rec)); len += n; sent_ids.push(id); sent_recs.push(rec);
                 }
                 K::Ego => {
-                    let rec = self.ego_rec(ego, nav);
+                    let rec = self.ego_rec(ego, nav, now);
                     let n = Record::Ego(rec).wire_len();
                     if len + n > room && !records.is_empty() { continue; }
                     records.push(Record::Ego(rec)); len += n; sent_ego = true;
@@ -316,10 +317,12 @@ impl Edge {
             }
         }
         if records.is_empty() { return None; }
-        for id in &sent_ids {
+        for (id, rec) in sent_ids.iter().zip(&sent_recs) {
             let fast = self.cm.contacts[id].fast();
             self.entries.get_mut(id).unwrap().sent(now, &t, fast);
             self.cm.mark_sent(*id, now);
+            let observed = now.saturating_sub(rec.age as u32 * TICK_HZ);
+            if let Some(c) = self.cm.contacts.get_mut(id) { c.sent_pred = Some(crate::geo::SentPred::from_rec(rec, self.cfg.pos_res, observed)); }
             self.stats.contacts_sent += 1;
         }
         if sent_ego { self.ego_due = now + t.ego; self.stats.ego_sent += 1; }
@@ -339,13 +342,19 @@ impl Edge {
             caps: c.caps, utc_at_tick0: c.utc_at_tick0, hfov_x10: c.hfov_x10, img_w: c.img_w, img_h: c.img_h, video_frame0: c.video_frame0, fps_x100: c.fps_x100 }
     }
 
-    fn ego_rec(&mut self, ego: &EgoInput, nav: u8) -> EgoRec {
+    /// Seconds the oldest never-sent revision has waited (Ego.backlog): how late fresh news is.
+    fn backlog_s(&self, now: u32) -> u8 {
+        let w = self.entries.values().filter(|e| e.step == 0 && e.due <= now).map(|e| now - e.due).max().unwrap_or(0);
+        ((w + TICK_HZ - 1) / TICK_HZ).min(255) as u8
+    }
+
+    fn ego_rec(&mut self, ego: &EgoInput, nav: u8, now: u32) -> EgoRec {
         let (n, moving, mix) = self.cm.summary();
         let r = self.cfg.pos_res;
         let rec = EgoRec { dx: m_to_pos(ego.e, r), dy: m_to_pos(ego.n, r), alt_agl: if ego.alt_agl.is_finite() { ego.alt_agl.round().clamp(-32768.0, 32766.0) as i16 } else { 0x7FFF },
             heading: deg_to_u8(ego.heading_deg), speed: speed_to_u8(ego.speed), climb: climb_to_i8(ego.climb), nav, battery: ego.battery, pos_ce: m_to_m8(ego.pos_ce),
             fp_dx: m_to_pos(ego.fp_e, r), fp_dy: m_to_pos(ego.fp_n, r), fp_radius: m_to_m8(ego.fp_radius),
-            n_contacts: n, n_moving: moving, n_dismount: mix[0], n_vehicle: mix[1], n_armour: mix[2], n_other: mix[3] };
+            n_contacts: n, n_moving: moving, n_dismount: mix[0], n_vehicle: mix[1], n_armour: mix[2], n_other: mix[3], backlog: self.backlog_s(now) };
         self.last_ego = Some(rec);
         rec
     }
@@ -394,13 +403,19 @@ pub struct ContactView {
     pub motion: &'static str, pub confirmed: bool, pub lost: bool, pub departed: bool, pub focused: bool, pub split: bool,
     pub course: f32, pub speed: f32, pub members: Vec<u32>, pub first_seen: f32, pub since: f32, pub parent: Option<u16>,
     pub dirty: bool, pub step: u8, pub due_in: f32, pub sends: u32, pub bbox: Option<[f32; 4]>,
+    /// The edge's estimate carried to `now`: `e, n` were measured `silent_s` ago; a moving contact
+    /// has moved on at its velocity since (what the edge believes now, for evaluation).
+    pub now_e: f32, pub now_n: f32, pub silent_s: f32,
 }
 impl ContactView {
     pub fn from_contact(c: &Contact, now: u32, e: Option<&Entry>) -> Self {
         let s = |t: u32| t as f32 / TICK_HZ as f32;
         ContactView { id: c.id, rev: c.rev, e: c.e, n: c.n, ce: c.ce, radius: c.radius, count: c.count(), mix: c.mix, motion: motion_name(c.motion), confirmed: c.confirmed,
             lost: c.lost, departed: c.departed, focused: c.focused, split: c.split, course: c.course, speed: c.speed, members: c.members.clone(), first_seen: s(c.first_seen),
-            since: s(c.since), parent: c.parent, dirty: c.dirty, step: e.map_or(0, |e| e.step), due_in: e.map_or(0.0, |e| (e.due as i64 - now as i64) as f32 / TICK_HZ as f32), sends: e.map_or(0, |e| e.sends), bbox: c.bbox }
+            since: s(c.since), parent: c.parent, dirty: c.dirty, step: e.map_or(0, |e| e.step), due_in: e.map_or(0.0, |e| (e.due as i64 - now as i64) as f32 / TICK_HZ as f32), sends: e.map_or(0, |e| e.sends), bbox: c.bbox,
+            now_e: c.e + if c.motion == MOTION_MOVING { c.ve * s(now.saturating_sub(c.last_seen)) } else { 0.0 },
+            now_n: c.n + if c.motion == MOTION_MOVING { c.vn * s(now.saturating_sub(c.last_seen)) } else { 0.0 },
+            silent_s: s(now.saturating_sub(c.last_seen)) }
     }
 }
 

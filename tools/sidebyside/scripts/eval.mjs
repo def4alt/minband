@@ -214,6 +214,7 @@ function replay(clip, P, opt) {
     const rxMap = new Map(rxAll.filter((c) => !c.departed && !c.child).map((c) => [c.id, c]));
     const edgeMap = new Map(edgeAll.map((c) => [c.id, c]));
     lastEdgeAll = edgeAll; lastRxAll = rxAll;
+    if (opt.edgeSampler) opt.edgeSampler(es, t, rxAll);
     if (opt.rxSampler && step % 10 === 0) for (const c of rxAll) if (!c.departed && !c.child && c.liveness !== 'fresh') opt.rxSampler.push({ t, liveness: c.liveness, ce_shown: c.ce_shown });
     const excluded = new Set();
     if (W && t >= W.at) {
@@ -282,7 +283,8 @@ function replay(clip, P, opt) {
       if (r.lost) continue;
       const c = edgeMap.get(r.id);
       if (!c || c.departed || c.lost) continue;
-      const d = Math.hypot(c.e - r.e, c.n - r.n);
+      // Against the edge's estimate at this step (coasted from its last observation when moving).
+      const d = Math.hypot((c.now_e ?? c.e) - r.e, (c.now_n ?? c.n) - r.n);
       honest.all++; honest.errSum += d; if (d <= r.ce_shown) honest.in++;
       { const key = `${r.motion}${r.rev === c.rev ? '' : '/stale'}${c.motion !== r.motion ? '->' + c.motion : ''}`; const h = honest.by[key] || (honest.by[key] = { n: 0, in: 0, err: 0, ce: 0 }); h.n++; h.err += d; h.ce += r.ce_shown; if (d <= r.ce_shown) h.in++; }
       if (bo) { honest.allBlackout++; if (d <= r.ce_shown) honest.inBlackout++; }

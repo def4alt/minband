@@ -9,9 +9,11 @@
 //! - `contacts`: tracks -> contacts (motion machine, grouping, revisions).
 //! - `scheduler`: timing from the budget; ladder, floor, regimes.
 //! - `edge`: the edge object: tick in, frames out; uplink in.
+//! - `belief`: the receiver's error radius from the edge's guarantee, the link and measured drift.
 //! - `receiver`: frames in; world, events, digests, focus out.
 //! - `wasm` (feature `wasm`): wasm-bindgen surface for Node and the browser.
 
+pub mod belief;
 pub mod classes;
 pub mod contacts;
 pub mod edge;

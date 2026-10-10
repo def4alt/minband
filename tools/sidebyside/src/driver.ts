@@ -198,7 +198,7 @@ class Replay {
       id: c.id, rev: c.rev, e: c.e, n: c.n, ce: r1(c.ce), ceShown: r1(c.ce_shown), radius: r1(c.radius), count: c.count, mix: mixObj(c.mix), motion: c.motion,
       confirmed: c.confirmed, lost: c.lost, departed: c.departed, focused: c.focused, group: c.group, course: Math.round(c.course), speed: r1(c.speed), members: [],
       firstSeen: c.first_seen, since: c.since, ageS: r1(c.silence_s), liveness: c.liveness, parent: c.parent, child: c.child, ray: c.ray, copies: c.copies,
-      lat: c.lat, lon: c.lon }));
+      lat: c.lat, lon: c.lon, located: c.located, seenE: c.seen_e, seenN: c.seen_n, pMiss: r1(c.p_miss), unassuredS: r1(c.unassured_s) }));
     for (const [id, f] of this.focus) if (!f.acked && rxContacts.some((c: any) => c.focused && !c.departed && (c.id === id || c.parent === id))) f.acked = true;
     // A contact picked as one object that has since become a group (a neighbour joined before the
     // Focus arrived) is split, so the picked object shows up as an individual to click again.

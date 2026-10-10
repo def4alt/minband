@@ -159,6 +159,8 @@ pub struct Contact {
     pub parent: Option<u16>,
     pub bbox: Option<[f32; 4]>,
     pub sent: Option<Sent>,
+    /// The receiver's prediction from the last record sent (exactly what the receiver computes).
+    pub sent_pred: Option<crate::geo::SentPred>,
     /// Set when `rev` moved and the new revision has not been emitted yet.
     pub dirty: bool,
     pub rev_tick: u32,
@@ -167,7 +169,7 @@ impl Contact {
     fn new(id: u16, now: u32) -> Self {
         Contact { id, rev: 0, members: Vec::new(), e: 0.0, n: 0.0, ve: 0.0, vn: 0.0, course: 0.0, speed: 0.0, radius: 0.0, ce: 0.0, mix: [0; 4], conf: 0,
             first_seen: now, since: now, last_seen: now, motion: MOTION_UNKNOWN, confirmed: false, lost: false, departed: false, departed_at: None,
-            focused: false, split: false, pinned: false, out_of_view: false, parent: None, bbox: None, sent: None, dirty: true, rev_tick: now }
+            focused: false, split: false, pinned: false, out_of_view: false, parent: None, bbox: None, sent: None, sent_pred: None, dirty: true, rev_tick: now }
     }
     pub fn count(&self) -> u32 { self.mix.iter().map(|&m| m as u32).sum() }
     pub fn is_group(&self) -> bool { self.count() > 1 }
@@ -185,6 +187,7 @@ impl Contact {
     }
     /// The receiver's dead reckoning of the last sent state at `now`.
     pub fn ghost(&self, now: u32) -> Option<(f32, f32)> {
+        if let Some(p) = self.sent_pred { return Some(p.at(now)); }
         let s = self.sent?;
         let dt = now.saturating_sub(s.tick) as f32 / TICK_HZ as f32;
         if s.motion == MOTION_MOVING { Some((s.e + s.ve * dt, s.n + s.vn * dt)) } else { Some((s.e, s.n)) }
@@ -446,8 +449,14 @@ impl ContactManager {
             let s = match c.sent { Some(s) => s, None => { c.bump(now); changed.push(c.id); self.stats.rev_why[0] += 1; continue; } };
             let mut why: Option<usize> = None;
             if s.motion != c.motion || s.confirmed != c.confirmed || s.lost != c.lost || s.departed != c.departed || s.mix != c.mix { why = Some(1); }
-            if why.is_none() {
-                let (ge, gn) = c.ghost(now).unwrap();
+            // Position against the receiver's own prediction; not for a lost contact: the edge has
+            // nothing new about it, only the prediction moves.
+            // Compared at the time of the latest observation (`last_seen`, when `e, n` were measured),
+            // not at `now`: an object nobody has looked at since is not evidence against the
+            // prediction, and comparing a frozen estimate with a moving prediction would revise it
+            // every few metres until it is declared lost.
+            if why.is_none() && !c.lost {
+                let (ge, gn) = c.ghost(c.last_seen.min(now)).unwrap();
                 let dev = ((c.e - ge).powi(2) + (c.n - gn).powi(2)).sqrt();
                 let thr = c.ce.max(2.0 * pos_res) * self.cfg.dev_factor * if c.fast() { 0.5 } else { 1.0 };
                 if dev > thr { why = Some(2); }

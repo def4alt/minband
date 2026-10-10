@@ -395,19 +395,100 @@ keeps delivering frames a quiet object's circle could shrink back to `ce` instea
 | convoy (camera stopped at the end) | lost, med 738 m | out of view, med 9 m, max 14 m |
 | stopped vehicle, thermal, 9.6 kbit/s, quiet 10-30 s | 185 m | 10 m |
 
-- **Out of view** (PROTOCOL.md 3.4 ext bit4, 5.3): the edge marks a lost contact that left the
-  frame (last box within 2 % of the edge) or that it stopped seeing because the camera stopped.
-  The receiver freezes its circle at the last sighting. The harness and page feed the tracker's
-  image boxes to the edge (`scripts/boxes.mjs` reads `detlog.npy`); before, the edge had no boxes.
-- **Acked records** are not overdue before `T_floor`: the receiver had expected the ladder after
-  its own ack had moved the edge to the floor, and grew the circle at the class cap.
+- **Out of view** (PROTOCOL.md 3.4 ext bit4): the edge marks a lost contact that left the frame
+  (last box within 2 % of the edge) or that it stopped seeing because the camera stopped. The
+  harness and page feed the tracker's image boxes to the edge (`scripts/boxes.mjs` reads
+  `detlog.npy`); before, the edge had no boxes.
+- The freeze at the last sighting and the ack horizon of this round were patches; section 10
+  replaces them and the old growth rules with a calibrated model.
 - **On the video**, a ring was projected through the homography; for a point off the frame, near
   the camera's horizon, a few metres became hundreds of pixels. The overlay now draws a contact
   outside the frame as an arrow on the border and takes a ring's radius as the median of four
   directions, capped at half the frame.
 
-Still growing: contacts lost *in* view (missed or occluded mid-frame; 87 of 206 tracks end that
-way in the busy lot), median 119 m, up to the 1000 m cap. Honest in that nothing bounds where an
-unseen object went, useless on a map. The page already hides lost circles; a cap at the camera
-footprint would be the protocol-side fix.
+Lost-in-view contacts kept growing to the 1000 m cap here; section 10 handles them too.
+
+## 10. The error circle as a calibrated belief
+
+The circle used to grow by hand-set rules (a creep for static things, a class-speed term once a
+record was "overdue", a 1000 m cap), and the fixes of section 9 patched two of its failures. It is
+now one model (PROTOCOL.md 5.3, core `belief.rs`): the circle holds the edge's estimate with
+probability 0.95, and it is built from three things the receiver actually knows.
+
+1. **The edge's guarantee.** The edge revises a contact as soon as its estimate leaves the band
+   `thr` around the receiver's prediction. That prediction is now computed from the bytes of the
+   last record sent, by the same function on both ends (`geo::SentPred`): before, the edge
+   predicted from unrounded values and from the send tick, the receiver from rounded ones and the
+   observation tick, so "within the band" was not exactly true. A lost contact is no longer revised
+   for position (only its prediction moved, the edge had nothing new).
+2. **The link's evidence.** Sequence gaps, the measured loss rate, frames saying the queue was
+   empty (`cycle_end`), the last frame heard, and the edge's new `Ego.backlog` byte (how long fresh
+   news waits for the link). Without `backlog` the saturated busy lot at 600 bit/s held only 76 %
+   for contacts the link could not vouch for over 15 s: revisions there are not lost, they queue.
+3. **Measured drift.** How far the edge's estimate wanders from a stale prediction, on the footage
+   runs (`tools/sidebyside/scripts/drift.mjs`, every revision of every contact followed for 0.5-45 s while
+   ignoring later revisions), 95th percentile:
+
+| state / class | 1 s | 5 s | 20 s | fitted p95 | revisions per s |
+|---|---|---|---|---|---|
+| moving vehicle | 12 m | 40 m | 227 m | 10.8 t^0.93 | 0.85 |
+| moving dismount | 5 m | 17 m | 50 m | 5.0 t^0.78 | 0.85 |
+| static vehicle | 5.5 m | 9 m | 13 m | 4.7 t^0.40 | 0.25 |
+| static dismount | 5 m | 17 m | 25 m | 5.8 t^0.51 | 0.30 |
+| stopped / unknown | 4-8 m | 11-30 m | 7-21 m | see belief.rs | 0.2-0.55 |
+
+A tracked contact's circle is its `ce` combined with: the rounding of `pos`, the drift since its
+copy was observed capped by the band, and what a missed revision could add (the first missing
+revision starts the drift; how likely it is missing comes from the loss rate, the ladder's copies,
+the backlog and the last frame heard). A lost contact drifts from its last look. A circle wider than
+the camera footprint marks the contact unlocated; the page then shows where it was last seen, its
+heading and how long ago.
+
+**Calibration** (`tools/sidebyside/scripts/calibrate.mjs`, two seeds, while the footage runs plus
+30 s): "holds edge" is the share of steps with the edge's estimate inside the circle; "seen again
+inside" is, for lost contacts the edge later sees again, whether the reappearance was inside the
+circle shown just before.
+
+| scene   | link      | samples | holds edge | circle med/p90 m | err med/p90 m | lost circle med m | lost located | seen again inside |
+|---------|-----------|---------|------------|------------------|---------------|-------------------|--------------|-------------------|
+| busy    | hf        | 49142   | 98.1%      | 5.9/7.8          | 0.5/2.6       | 69.4              | 52.1%        | 87.5% of 16       |
+| busy    | lora      | 43524   | 98.3%      | 9.9/18.1         | 0.7/4.8       | 72.0              | 50.9%        | 83.3% of 12       |
+| busy    | telemetry | 19700   | 98.6%      | 21.6/62.2        | 1.9/9.8       | 102.0             | 35.6%        | 100.0% of 4       |
+| busy    | contested | 39517   | 97.4%      | 12.0/25.8        | 1.2/6.3       | 66.6              | 54.1%        | 87.5% of 8        |
+| thermal | hf        | 14463   | 96.6%      | 11.1/25.8        | 0.8/4.7       | 83.8              | 0.0%         | 60.0% of 10       |
+| thermal | lora      | 14129   | 96.1%      | 11.9/26.5        | 0.9/6.1       | 85.2              | 0.0%         | 55.6% of 9        |
+| thermal | telemetry | 9787    | 96.5%      | 17.1/37.0        | 2.4/14.6      | 88.0              | 0.0%         | 40.0% of 5        |
+| thermal | contested | 12798   | 95.9%      | 14.1/30.3        | 1.3/9.1       | 88.1              | 0.0%         | 50.0% of 8        |
+| best2   | hf        | 2486    | 98.0%      | 6.6/8.7          | 0.6/1.5       | 33.7              | 48.0%        | -                 |
+| best2   | lora      | 2504    | 98.4%      | 6.8/9.4          | 0.6/2.1       | 33.8              | 47.7%        | -                 |
+| best2   | telemetry | 2313    | 99.3%      | 8.3/15.4         | 0.9/4.2       | 35.5              | 46.1%        | -                 |
+| best2   | contested | 2343    | 99.1%      | 8.4/12.4         | 0.7/2.5       | 37.7              | 44.4%        | -                 |
+| convoy1 | hf        | 722     | 100.0%     | 12.3/19.6        | 1.2/2.0       | 153.6             | 0.0%         | -                 |
+| convoy1 | lora      | 730     | 99.7%      | 13.6/20.8        | 1.1/2.4       | 155.2             | 0.0%         | -                 |
+| convoy1 | telemetry | 746     | 99.6%      | 12.2/25.9        | 1.2/4.2       | 154.6             | 0.0%         | -                 |
+| convoy1 | contested | 689     | 99.7%      | 19.0/33.1        | 1.2/4.9       | 155.5             | 0.0%         | -                 |
+
+Every scene and link is at 95.9-100 %. "Holds edge" scores against the edge's estimate at that
+step, carried forward at its velocity from its last observation when the contact moves (the edge's
+own belief; `ContactView.now_e`): scoring against the last observation instead penalised the
+receiver for predicting a vehicle the edge had stopped seeing. By time the link could not vouch for
+the copy, every bucket is at 95 % or above except on the thermal road when it could not vouch for
+2-15 s (69-90 %, a few hundred of 14 000 samples per link): fast road traffic drifts faster than the
+drift pooled over all runs. Against the old rules: the busy lot at 2 kbit/s held 92 % with a 5.4 m
+median circle; now 98 % with 9.9 m, the size the evidence supports. The quiet lot holds 98-99 % at
+6.6-8.4 m, and parked cars stay at their `ce` for as long as the link vouches for them instead of
+creeping to twice it.
+
+Two edge fixes came out of this, and they also lifted the picture: revisions are checked against
+the receiver's prediction *at the time of the latest observation*, not at `now` (comparing a frozen
+estimate with a moving prediction revised every unseen vehicle several times a second until it was
+declared lost), and lost contacts are never revised for position. The busy lot at 2 kbit/s went
+from 30 % to 42 % current and 75 % to 86 % known; the convoy from 85 % to 89-91 % current.
+
+Lost contacts: a parked car out of view stays within about 25 m for a minute (a person 50 m), a moving vehicle
+reaches the footprint within seconds and is then shown unlocated at its last sighting. Few lost
+contacts are seen again in these clips (4-16 per run), and on the thermal road only about half of
+them reappeared inside the circle: reappearances there are mostly group centroids that changed
+membership while lost, which the drift of a tracked contact does not cover. Too few samples to fit
+a separate lost-contact drift; the open item for a longer clip.
 

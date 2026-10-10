@@ -59,6 +59,30 @@ pub fn enu_to_latlon(origin_lat: f64, origin_lon: f64, e: f64, n: f64) -> (f64, 
     (lat, lon)
 }
 
+
+/// The receiver's prediction of a contact from one record: its position, dead-reckoned along
+/// `course` at `speed` (capped by the class) from the observation tick when it moves with a
+/// velocity. The edge keeps the prediction of the last record it sent and revises against it
+/// (`contacts::Contact::ghost`), so both ends predict exactly the same thing from the same bytes.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub struct SentPred { pub e: f32, pub n: f32, pub course: f32, pub speed: f32, pub moving: bool, pub observed: u32 }
+
+impl SentPred {
+    pub fn from_rec(c: &crate::wire::ContactRec, pos_res: u8, observed: u32) -> Self {
+        use crate::wire::*;
+        let coarse = crate::receiver::dominant_coarse(c);
+        let moving = c.motion() == MOTION_MOVING && c.has(F_VELOCITY) && !c.has(F_DEPARTED);
+        SentPred { e: pos_to_m(c.dx, pos_res), n: pos_to_m(c.dy, pos_res), course: u8_to_deg(c.course),
+            speed: u8_to_speed(c.speed).min(crate::classes::max_speed(coarse)), moving, observed }
+    }
+    pub fn at(&self, now: u32) -> (f32, f32) {
+        if !self.moving { return (self.e, self.n); }
+        let dt = now.saturating_sub(self.observed) as f32 / crate::TICK_HZ as f32;
+        let (s, c) = sincos_deg(self.course);
+        (self.e + s * self.speed * dt, self.n + c * self.speed * dt)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -191,11 +191,16 @@ function drawOverlay() {
     for (const c of m.rx?.contacts || []) {
       if (c.departed || c.child) continue;
       const p = P(c.e, c.n); if (!p) continue;
-      if (!inFrame(p)) { offFrame(p, '#ff7eb6', `rx#${c.id} ${c.liveness === 'fresh' ? 'off frame' : c.liveness}`); continue; }
+      if (c.located !== false && !inFrame(p)) { offFrame(p, '#ff7eb6', `rx#${c.id} ${c.liveness === 'fresh' ? 'off frame' : c.liveness}`); continue; }
+      if (c.located === false) {
+        const q = P(c.seenE ?? c.e, c.seenN ?? c.n); if (!q || !inFrame(q)) continue;
+        ctx.globalAlpha = 0.6; ctx.fillStyle = '#ff7eb6'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(`rx#${c.id} last seen here ${c.ageS.toFixed(0)} s ago`, q.x, q.y + 3); continue;
+      }
       ctx.globalAlpha = LIVENESS_ALPHA[c.liveness] ?? 0.6;
       ctx.strokeStyle = '#ff7eb6'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
       ctx.beginPath(); ctx.arc(p.x, p.y, radiusPx(c.e, c.n, c.radius, p), 0, Math.PI * 2); ctx.stroke();
-      if (!c.lost) { // the error radius: only for contacts the edge still tracks
+      { // the 95 % circle (PROTOCOL.md 5.3)
         ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(p.x, p.y, radiusPx(c.e, c.n, c.radius + (c.ceShown ?? c.ce ?? 0), p), 0, Math.PI * 2); ctx.stroke();
       }
@@ -258,6 +263,15 @@ function drawTopdown() {
   ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const c of m.rx?.contacts || []) {
     if (c.departed || c.child) continue; // tombstones stay in the log, children are drawn by their parent's split
+    if (c.located === false) { // the circle would be wider than the camera footprint: show where it was last seen
+      const q = toPx(c.seenE ?? c.e, c.seenN ?? c.n), col = CLS[dominant(c.mix)];
+      ctx.globalAlpha = 0.6; ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(q.x - 5, q.y - 5); ctx.lineTo(q.x + 5, q.y + 5); ctx.moveTo(q.x + 5, q.y - 5); ctx.lineTo(q.x - 5, q.y + 5); ctx.stroke();
+      if (c.motion === 'moving' && c.speed > 0.2) { const a = (c.course * Math.PI) / 180; ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x + Math.sin(a) * 14, q.y - Math.cos(a) * 14); ctx.stroke(); }
+      ctx.fillStyle = col; ctx.font = '10px ui-monospace, Menlo, monospace';
+      ctx.fillText(`#${c.id} last seen ${c.ageS.toFixed(0)} s ago · ${c.liveness === 'fresh' ? 'unlocated' : c.liveness}`, q.x, q.y + 14);
+      ctx.globalAlpha = 1; continue;
+    }
     const p = toPx(c.e, c.n), r = Math.max(4, c.radius * view.ppm), col = CLS[dominant(c.mix)];
     const focused = c.id === state.focusedId;
     ctx.globalAlpha = LIVENESS_ALPHA[c.liveness] ?? 0.7;
@@ -266,8 +280,8 @@ function drawTopdown() {
     ctx.strokeStyle = focused ? '#ffd166' : col; ctx.lineWidth = focused ? 3 : 1.5;
     ctx.setLineDash(c.liveness === 'fresh' ? [] : c.liveness === 'unheard' ? [5, 3] : [2, 4]);
     ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
-    // ce ring: the honest error radius, only while the edge still tracks it
-    if (!c.lost) {
+    // ce ring: where it is with 95 % probability (the receiver's belief, PROTOCOL.md 5.3)
+    {
       ctx.setLineDash([2, 3]); ctx.lineWidth = 1; ctx.strokeStyle = '#ff7eb6';
       ctx.beginPath(); ctx.arc(p.x, p.y, (c.radius + (c.ceShown ?? c.ce ?? 0)) * view.ppm, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
