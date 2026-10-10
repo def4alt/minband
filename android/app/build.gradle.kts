@@ -36,8 +36,9 @@ android {
         jniLibs { useLegacyPackaging = false }
     }
 
-    // The detector model (assets/*.onnx) is a plain file; never compress it so ORT can mmap it.
-    androidResources { noCompress += listOf("onnx") }
+    // The detector model is a plain file; never compress it so the runtime can mmap it.
+    // onnx: ORT path. safetensors: ClikaRT's d-fine-nano-coco checkpoint (tools/footage/models/clika).
+    androidResources { noCompress += listOf("onnx", "safetensors") }
 }
 
 kotlin {
@@ -49,6 +50,7 @@ dependencies {
     // uniffi Kotlin bindings (app/src/main/java/dev/minband/core, generated) need JNA.
     implementation("net.java.dev.jna:jna:5.15.0@aar")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    implementation("io.clika:clika-runtime-android:0.6.4")
 
     testImplementation("junit:junit:4.13.2")
 }
