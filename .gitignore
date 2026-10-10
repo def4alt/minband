@@ -17,3 +17,6 @@ ios/MinBand/Models/*.mlmodelc
 runs/
 *.log
 .DS_Store
+# python
+__pycache__/
+.venv/
