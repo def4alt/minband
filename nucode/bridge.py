@@ -917,9 +917,11 @@ def run_loopback_gate() -> bool:
     print(f"[gate] both classes delivered traffic, no starvation, no crash: "
           f"{'PASS' if both_classes_flowed else 'FAIL'}")
 
-    for sock in (udp_a, depth_a, udp_b, data_recv, depth_recv, sender):
-        sock.close()
-
+    # Not closing these sockets explicitly: serial_reader_loop has no clean
+    # shutdown signal (by design - the real bridge runs forever until
+    # Ctrl-C), so a daemon thread can still be mid-sendto() on one of them;
+    # closing here just to "be tidy" raced and threw on teardown. Process
+    # exit after this function returns reclaims them anyway.
     return sanity_ok and both_classes_flowed
 
 
