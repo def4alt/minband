@@ -1,5 +1,11 @@
 {
   "fqbn": "nucode:nrf52:nu40dk",
-  "tx": { "usb_serial": "532DB8193C0B9652", "last_known_port": "COM7" },
-  "rx": { "usb_serial": "D53F17C9D6C2AC73", "last_known_port": "COM8" }
+  "tx": {
+    "usb_serial": "532DB8193C0B9652",
+    "last_known_port": "COM7"
+  },
+  "rx": {
+    "usb_serial": "D53F17C9D6C2AC73",
+    "last_known_port": "COM8"
+  }
 }
