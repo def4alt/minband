@@ -44,7 +44,7 @@ static void onConnect(uint16_t conn_handle) {
   digitalWrite(LED_CONN, HIGH);
 
   BLEConnection* conn = Bluefruit.Connection(conn_handle);
-  conn->requestPHY(BLE_GAP_PHY_2MBPS);
+  conn->requestPHY(BLE_GAP_PHY_CODED);
   conn->requestDataLengthUpdate();
   conn->requestMtuExchange(247);
 }
