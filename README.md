@@ -8,6 +8,17 @@ so the edge sends a packet only when the twin would otherwise be wrong.
 Target use case: drones over jammed or single-digit-kbps links. Demo: iPhone + laptop over Wi-Fi
 with emulated impairment.
 
+## Status: protocol v2
+
+`core/` and `proto/PROTOCOL.md` are now **v2**: the edge extracts contact reports (groups by
+default, individuals on operator focus) and sends them over a trickle link as self-contained,
+idempotent records (docs/DESIGN.md, proto/PROTOCOL.md). v2 has no backward compatibility with v1.
+The real-footage test page is `tools/sidebyside/` (README there); measured results are in
+docs/PROTOCOL_EVAL.md.
+
+`server/`, `viewer/`, `ios/` and `android/` still target the **v1** core and do not build against
+v2 until they are ported. The last main commit with a matching v1 core is `ecfd8fd`.
+
 ## Layout
 
 | Path | What | Language |
