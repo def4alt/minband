@@ -10,3 +10,5 @@ open3d               # dem_from_cloud.py only (reads the MASt3R .ply)
 #               "pipeline @ git+https://github.com/EasternJournalist/pipeline.git" && pip install --no-deps -e MoGe/
 #   huggingface-cli download Kuiee/AerialMetric-ECCV2026 weights/Moge2-Aerial.pt --repo-type dataset --local-dir .
 # and export AERIAL_METRIC=/path/to/AerialMetric
+# Depth Anything 3 (--model da3small/da3base/da3metric, depth_video.py): its own venv, see README "Depth Anything 3".
+# stella_vslam (stella/): stella/build_mac.sh; stella/export_map.py needs msgpack.

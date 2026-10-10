@@ -17,8 +17,13 @@ ap.add_argument("--frames", required=True); ap.add_argument("--slam", required=T
 ap.add_argument("--model", default="small"); ap.add_argument("--cells", type=int, default=600); ap.add_argument("--stride", type=int, default=2)
 ap.add_argument("--fx", type=float, default=548); ap.add_argument("--fy", type=float, default=548)
 ap.add_argument("--cx", type=float, default=480); ap.add_argument("--cy", type=float, default=270)
-ap.add_argument("--fit", default="affine", choices=["affine", "affine_uv"],
-                help="affine: 1/z = a*d + b; affine_uv: + c*u + e*v (removes image-space tilt of the relative depth)")
+ap.add_argument("--fit", default="affine", choices=["none", "scale", "affine", "affine_uv"],
+                help="affine: 1/z = a*d + b; affine_uv: + c*u + e*v (removes image-space tilt of the relative depth); "
+                     "scale: 1/z = a*d; none: use the depth as is (DA3 --window: already in SLAM units)")
+ap.add_argument("--window", type=int, default=1, help="DA3: condition on the SLAM poses of this many keyframes")
+ap.add_argument("--window-mode", default="causal", choices=["causal", "centered"],
+                help="causal: the keyframe and the ones before it (live); centered: also the ones after it")
+ap.add_argument("--process-res", type=int, default=504, help="DA3: long side of the network input")
 ap.add_argument("--max-depth-x", type=float, default=4.0, help="drop pixels farther than this x the median observed depth")
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
@@ -33,20 +38,51 @@ cams = kft[:, 1:4]
 gframe = G.fit_ground(mp, cams)
 alt = float(np.median(G.to_ground(cams, gframe)[:, 2]))
 
-from depth import load as load_depth, sync
-net = load_depth(a.model)
+from depth import load as load_depth, sync, DA3_MODELS
+K = np.array([[a.fx, 0, a.cx], [0, a.fy, a.cy], [0, 0, 1.0]])
+if a.model in DA3_MODELS:
+    net = load_depth(a.model, process_res=a.process_res, K=K)
+elif a.model == "moge2aerial":  # horizontal FoV from the intrinsics (frame width ~ 2 cx)
+    net = load_depth(a.model, fov_x=float(np.degrees(2 * np.arctan(a.cx / a.fx))))
+else:
+    net = load_depth(a.model)
+
+
+def frame_of(t):
+    fi = ftimes[np.argmin(np.abs(ftimes - t))]
+    return np.asarray(Image.open(os.path.join(a.frames, frames[fi])).convert("RGB"))
+
+
+def w2c_of(row):
+    R = Rotation.from_quat(row[4:8]).as_matrix(); c = row[1:4]
+    T = np.eye(4); T[:3, :3] = R.T; T[:3, 3] = -R.T @ c
+    return T
+
+
+# --- DA3 pose-conditioned windows: one forward per keyframe over its window, keep that keyframe's depth ---
+win_depth, t_window = {}, []
+if a.window > 1:
+    imgs = [frame_of(r[0]) for r in kft]; w2cs = [w2c_of(r) for r in kft]
+    for i in range(len(kft)):
+        lo = max(0, i - a.window + 1) if a.window_mode == "causal" else max(0, min(i - a.window // 2, len(kft) - a.window))
+        idx = list(range(lo, min(len(kft), lo + a.window)))
+        t0 = time.time(); z = net.window([imgs[j] for j in idx], [w2cs[j] for j in idx])[idx.index(i)]; sync()
+        t_window.append(time.time() - t0)
+        win_depth[i] = np.where(z > 0, 1.0 / np.maximum(z, 1e-9), 0.0).astype(np.float32)
 
 # --- per keyframe: depth, scale fit, back-projection ---
 per_frame, stats, all_xyh = [], [], []
 t_depth, t_fit = [], []
-for t, x, y, z, qx, qy, qz, qw in kft:
+for i, (t, x, y, z, qx, qy, qz, qw) in enumerate(kft):
     o = obs[np.abs(obs[:, 1] - t) < 1e-4]
     if len(o) < 30:
         continue
-    fi = ftimes[np.argmin(np.abs(ftimes - t))]
-    img = np.asarray(Image.open(os.path.join(a.frames, frames[fi])).convert("RGB"))
+    img = frame_of(t)
     H_, W_ = img.shape[:2]
-    t0 = time.time(); d = net(img); sync(); t_depth.append(time.time() - t0)
+    if a.window > 1:
+        d = win_depth[i]; t_depth.append(t_window[i])
+    else:
+        t0 = time.time(); d = net(img); sync(); t_depth.append(time.time() - t0)
     t0 = time.time()
     R = Rotation.from_quat([qx, qy, qz, qw]).as_matrix(); c = np.array([x, y, z])
     Pc = (mp[o[:, 2].astype(int)] - c) @ R  # world -> camera
@@ -55,14 +91,16 @@ for t, x, y, z, qx, qy, qz, qw in kft:
     zs, ds = Pc[k, 2], d[v[k].astype(int), u[k].astype(int)]
     # robust fit of inverse depth: 1/z = a*d + b (trim the worst 20% twice)
     un, vn = u[k] / W_ - 0.5, v[k] / H_ - 0.5
-    feats = (lambda d_, u_, v_: np.stack([d_, np.ones_like(d_)] + ([u_, v_] if a.fit == "affine_uv" else []), -1))
+    feats = (lambda d_, u_, v_: np.stack([d_] + ([np.ones_like(d_)] if a.fit in ("affine", "affine_uv") else [])
+                                         + ([u_, v_] if a.fit == "affine_uv" else []), -1))
     F = feats(ds, un, vn)
     keep = np.ones(len(zs), bool)
-    for _ in range(3):
+    coef = np.ones(1)
+    for _ in range(3 if a.fit != "none" else 0):
         coef = np.linalg.lstsq(F[keep], 1 / zs[keep], rcond=None)[0]
         res = np.abs((F @ coef) * zs - 1)  # relative inverse-depth error
         keep = res <= np.quantile(res, 0.8)
-    sa, sb = coef[0], coef[1]
+    sa, sb = coef[0], (coef[1] if len(coef) > 1 else 0.0)
     pred_z = 1 / np.maximum(F @ coef, 1e-9)
     relerr = np.median(np.abs(pred_z - zs) / zs)
     # dense back-projection
@@ -109,7 +147,7 @@ G.save(os.path.join(a.out, "oblique.png"), G.render_oblique(H, C, cell))
 mid = len(per_frame) // 2
 H1, C1, _ = G.rasterize(*per_frame[mid], bmin, cell, shape)
 G.save(os.path.join(a.out, "relief_single_kf.png"), G.relief_image(H1, cell))
-meta = dict(model=a.model, depth_params_M=net.params / 1e6, keyframes_used=len(per_frame), keyframes=len(kft),
+meta = dict(model=a.model, fit=a.fit, window=a.window, window_mode=a.window_mode, depth_params_M=net.params / 1e6, keyframes_used=len(per_frame), keyframes=len(kft),
             map_points=len(mp), cell=cell, shape=shape, camera_altitude_units=alt,
             coverage=float(np.isfinite(H).mean()),
             median_frame_spread_alt=float(np.nanmedian(spread)),

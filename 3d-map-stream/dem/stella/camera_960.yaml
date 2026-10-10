@@ -1,0 +1,37 @@
+# MEVA UAV1 clip 3840x2160 -> 960x540, same camera and ORB settings as ../orbslam3/camera_960.yaml
+# (focal from MASt3R, hfov ~82 deg, no distortion model)
+
+Camera:
+  name: "MEVA uav1 960"
+  setup: "monocular"
+  model: "perspective"
+  fx: 548.0
+  fy: 548.0
+  cx: 480.0
+  cy: 270.0
+  k1: 0.0
+  k2: 0.0
+  p1: 0.0
+  p2: 0.0
+  k3: 0.0
+  fps: 10.0
+  cols: 960
+  rows: 540
+  color_order: "RGB"
+
+Preprocessing:
+  min_size: 800  # quadtree node area: 960*540/800 * sum(1.2^-2i, 8 levels) ~ 2000 keypoints, as ORB-SLAM3's nFeatures
+
+Feature:
+  name: "ORB 2000, as ORB-SLAM3"
+  scale_factor: 1.2
+  num_levels: 8
+  ini_fast_threshold: 20
+  min_fast_threshold: 7
+
+Mapping:
+  baseline_dist_thr_ratio: 0.02
+  redundant_obs_ratio_thr: 0.9
+
+System:
+  map_format: "msgpack"

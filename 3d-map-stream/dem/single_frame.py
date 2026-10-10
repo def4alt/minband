@@ -15,7 +15,7 @@ ap.add_argument("--max-depth-m", type=float, default=250.0)
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
 img = np.asarray(Image.open(a.frame).convert("RGB"))
-net = MogeAerial()
+net = MogeAerial(fov_x=float(np.degrees(2 * np.arctan(a.cx / a.fx))))
 t0 = time.time(); net(img); sync(); t_depth = time.time() - t0
 Z = net.last_depth
 vv, uu = np.mgrid[0:Z.shape[0]:2, 0:Z.shape[1]:2]
