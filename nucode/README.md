@@ -111,3 +111,63 @@ framing): 244000 B in 3.52 s = **69.42 KB/s**. Note: the stock
 board/core combo (needed a UUID scan filter + 500 ms post-connect delay
 to reliably discover the UART service — same class of issue as the
 scanner bug fixed in `tx_central.ino`).
+
+## Coded PHY (Long Range) (2026-10-10)
+
+Both `tx_central.ino` and `rx_peripheral.ino` request
+`BLE_GAP_PHY_CODED` instead of `BLE_GAP_PHY_2MBPS` in their
+post-connect callback (`conn->requestPHY(...)`, same call site used for
+2M PHY). Advertising/scanning still happen on legacy 1M PHY — only
+`requestPHY()` is changed after a connection is already established.
+Bluefruit's `BLEConnection::requestPHY()` binding does not expose a
+coding-scheme parameter (S=2 vs S=8); the SoftDevice picks it
+internally, out of reach without bypassing the Bluefruit wrapper.
+Confirmed active indirectly, via the expected throughput/RTT hit (no
+firmware-side logging added — the production USB serial port is the
+live SLIP/CRC data pipe, see Gotchas below):
+
+| Payload | Count | Rate | Loss | Reorder | Throughput | RTT p50 | RTT p95 |
+|---|---|---|---|---|---|---|---|
+| 40 B (run 1/3) | 300 | max | 0% | 0 | 0.82 kB/s | 40.12 ms | 79.88 ms |
+| 40 B (run 2/3) | 300 | max | 0% | 0 | 0.69 kB/s | 50.47 ms | 99.96 ms |
+| 40 B (run 3/3) | 300 | max | 0% | 0 | 0.76 kB/s | 41.46 ms | 81.70 ms |
+| 200 B (run 1/3) | 300 | max | 0% | 0 | 1.79 kB/s | 105.08 ms | 147.79 ms |
+| 200 B (run 2/3) | 300 | max | 0% | 0 | 1.86 kB/s | 100.10 ms | 139.94 ms |
+| 200 B (run 3/3) | 300 | max | 0% | 0 | 1.93 kB/s | 99.65 ms | 132.96 ms |
+| 1000 B (run 1/3) | 300 | max | 78.33% | 0 | 0.44 kB/s | 498.83 ms | 818.97 ms |
+| 1000 B (run 2/3) | 300 | max | 77.00% | 0 | 0.47 kB/s | 502.21 ms | 799.30 ms |
+| 1000 B (run 3/3) | 300 | max | 87.00% | 0 | 0.26 kB/s | 512.92 ms | 819.74 ms |
+| 1200 B (run 1/3) | 300 | max | 95.67% | 0 | 0.10 kB/s | 822.76 ms | 860.11 ms |
+| 1200 B (run 2/3) | 300 | max | 97.00% | 0 | 0.07 kB/s | 774.58 ms | 861.69 ms |
+| 1200 B (run 3/3) | 300 | max | 98.00% | 0 | 0.05 kB/s | 823.38 ms | 881.44 ms |
+
+Comparison vs 2M PHY: 40 B and 200 B stay clean (0% loss) but ~5-8x
+slower throughput and ~2x higher RTT, as expected for S=8 coded
+symbols. 1000 B and 1200 B are now *consistently* bad on Coded PHY
+(1200 B was wildly variable on 2M PHY — 38%/0.33%/0% — but is
+consistently 96-98% loss here), because the much lower raw throughput
+widens the time window a multi-fragment burst spends exposed to the
+same HVN credit-starvation root cause documented above for 2M PHY.
+
+**New finding, differs from 2M PHY:** every 1000 B+ run left the BLE
+connection fully dead afterward — zero bytes in either direction,
+`crc_errors`/`seq_lost` frozen, not just elevated — confirmed via
+`bridge.py`'s own `[1Hz]` stderr rate log, not just linktest's own
+loss%. This is unlike the 2M PHY credit-starvation case, which was
+confirmed self-recoverable (a clean 40 B burst right after a lossy
+1000 B burst came back at 0% loss on the same connection). On Coded
+PHY, recovering required killing and restarting both `bridge.py`
+processes before the next run; a quick 40 B/10-count probe was used
+to confirm link health before and after every large-payload run in
+this matrix. Root cause not further isolated this session — plausibly
+a connection supervision timeout triggered by Coded PHY's much higher
+per-fragment notify latency compounding with repeated write-stall
+retries, but that's a guess, not confirmed via SDK source like the 2M
+PHY case was.
+
+MinBand's actual payloads (40-70 B deltas) are unaffected: 0% loss on
+Coded PHY same as 2M PHY, just slower. The throughput cost (roughly
+5-8x versus 2M PHY at small sizes) is the real tradeoff against
+whatever range gain Coded PHY buys — no distance test was run this
+session (see Gotchas: no RSSI telemetry, no distance-test rig exists
+yet).
