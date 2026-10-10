@@ -15,6 +15,7 @@ import pathlib
 
 import cv2
 import numpy as np
+import torch
 from ultralytics import YOLO
 
 KEEP = {0: "person", 1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
@@ -24,6 +25,8 @@ ap.add_argument("run")
 ap.add_argument("--model", default="yolo11x-seg.pt")
 ap.add_argument("--imgsz", type=int, default=1344)
 ap.add_argument("--conf", type=float, default=0.25)
+ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else None,
+                help="ultralytics device; it picks CUDA or the CPU by itself, never MPS")
 args = ap.parse_args()
 
 run = pathlib.Path(args.run)
@@ -41,7 +44,7 @@ while True:
     ok, img = cap.read()
     if not ok:
         break
-    res = model.track(img, imgsz=args.imgsz, conf=args.conf, classes=list(KEEP), persist=True, tracker="bytetrack.yaml", retina_masks=True, agnostic_nms=True, verbose=False)[0]
+    res = model.track(img, imgsz=args.imgsz, conf=args.conf, classes=list(KEEP), persist=True, tracker="bytetrack.yaml", retina_masks=True, agnostic_nms=True, device=args.device, verbose=False)[0]
     dets = []
     if res.boxes is not None and res.boxes.id is not None:
         polys = res.masks.xy if res.masks is not None else [None] * len(res.boxes)
