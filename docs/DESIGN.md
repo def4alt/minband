@@ -101,7 +101,10 @@ Single crate `minband-core`, deterministic:
   confidence-weighted mean of its sources' extrapolated positions.
 - **Acks** every 100 ms per device or immediately on a detected gap: `{last_seq, missing[]}`.
 - **Metrics**: bytes in per device (payload + 28 B UDP/IP header), msgs/s, deltas vs keyframes,
-  per-entity staleness, estimated twin error (when the edge later uploads its ground-truth log).
+  per-entity staleness, estimated twin error (when the edge later uploads its ground-truth log),
+  time on air per device under the link profile's radio model (LoRa or serial; payload plus radio
+  framing, without the UDP/IP header), and one event per datagram (up, including shaper drops,
+  and acks down) in every snapshot for the packet waterfall.
 - **WebSocket** on :8080 fans out world snapshots at 30 Hz plus metrics at 2 Hz to the viewer.
 - `npm run sim`: synthetic scene (random walkers, a bouncing object) driven through the WASM
   `Edge` so the full pipeline runs with no phone.
@@ -136,25 +139,51 @@ Single crate `minband-core`, deterministic:
   matches stay separate.
 - **Sequence numbers** per device, `u32`, one per datagram.
 - **Delta** = list of entity updates (`Spawn | Update | Despawn`). An `Update` carries the full
-  `EntityState` of that entity (not a diff of fields): idempotent, loss-tolerant, ~22 bytes with
-  `postcard` varints. Field-level diffs are a measured optimisation for later, not the baseline.
-- **Keyframe** = all live entities, sent every 2 s, after a `Nack`, and when a new device joins.
-  Also sent when the budget has been under-used for >1 s (free refresh).
-- **Pose** = camera pose at 2 Hz, only for drawing the frustum (not required for correctness).
+  `EntityState` of that entity (not a diff of fields): idempotent, loss-tolerant, 31 bytes with
+  `postcard` varints (a one-update `Delta` is 40 B, 68 B on the wire; measured, see
+  `proto/PROTOCOL.md`). Field-level diffs are a measured optimisation for later, not the baseline.
+- **Self-declared threshold** (S14): every `Delta` and `Keyframe` carries `theta_q`, the position
+  threshold in use (θ_pos x the budget controller's scale) in one byte, rounded up. Every mature
+  state broadcast carries its own error class (ADS-B NIC/NACp, MAVLink `HIGH_LATENCY2` eph); the
+  receiver keeps it per entity, so a consumer knows how far the twin may be from the edge's track.
+- **Keyframe** = all live entities, sent every keyframe period (2 s at budget 0 and >= 8 kbit/s,
+  see Cadence), after a `Nack` with more than 8 missing seqs. It is the heartbeat, so it is sent
+  even when nothing is tracked. At a budget it is paced (S16): parts of at most 2 s of link time,
+  one per link time of the previous part, each carrying the current state of its entities when it
+  goes out, like a video intra-refresh; deltas keep flowing between parts.
+- **Pose** = camera pose, only for drawing the frustum (not required for correctness): 0.5 s at
+  budget 0, 10 s below 4 kbit/s. `Edge::pose` gates it, callers call it at their own rate.
+- **Cadence from the budget** (S19, `core/src/cadence.rs`): the keyframe, Hello and pose periods
+  and the receiver's coast/stale/drop thresholds are one integer function of the budget, computed
+  by the edge from the budget it runs and by the receiver from the budget it advertises (the
+  `Ack`'s budget is authoritative, 0 included). Keyframe period = 1 s + the time the budget needs
+  for 1 kB, 2..15 s (14.3 s at 600 bit/s); Hello = 2 keyframes (5..30 s); coast = one keyframe +
+  max(25 %, 0.5 s); stale = max(6 s, 3 keyframes); drop = max(10 s, 5 keyframes). The heartbeat
+  period is a link-class parameter everywhere else too (DIS 5 s, Iridium SBD 10-15 s). Table in
+  `proto/PROTOCOL.md`.
 - **Trigger** (per entity, every tick, in `core::Edge`):
   - `|pos_real - pos_ghost| > θ_pos` (default 0.15 m)
   - `|vel_real - vel_ghost| > θ_vel` (default 0.3 m/s)
   - class or confidence bucket changed
-  - entity age since last send > `T_max` (default 3 s)
+  - entity age since last send > `T_max` (3 s at budget 0; 1.5 keyframe periods at a budget, so
+    it never pre-empts a slow keyframe)
   - spawn / despawn
-- **Budget controller**: target bits/s set by operator or link estimate. Every 500 ms compare
-  sent bytes to the budget; scale `θ_pos` and `θ_vel` by `1.25` when over, `0.9` when under,
-  clamped to `[0.05, 2.0]` m. Despawns and spawns are never suppressed. Reported in metrics so the
-  viewer can show "fidelity knob at 0.4 m".
-- **Loss handling**: receiver tracks a window of seqs; a gap older than 200 ms becomes a `Nack`.
+- **Budget controller**: target bits/s set by operator or link estimate. Compare the bits on the
+  link (payload plus the 28 B UDP/IP header per datagram) over a window with the budget; scale
+  `θ_pos` and `θ_vel` by `1.25` when over, `0.9` when under 80 %, scale clamped to `[0.33, 13]`
+  (0.05..1.95 m at the default θ_pos). The window is 0.5 s, or long enough for six one-update
+  datagrams at the budget (7.3 s at 450 bit/s, 3.3 s at 1000; at most 10 s), and a window whose
+  allowance is spent early widens at once. A fixed 0.5 s window does not work below ~2 kbit/s:
+  one 68 B datagram in it reads 1088 bit/s, so every packet widened and only empty windows
+  narrowed, settling at ~0.64 datagrams/s whatever the budget (one walker used 38 % of
+  1000 bit/s). Measured: 80-92 % of the budget at 450-8000 bit/s. Despawns and spawns are never
+  suppressed. Reported in metrics so the viewer can show "fidelity knob at 0.4 m".
+- **Loss handling**: receiver tracks a window of seqs; a gap becomes a `Nack` as soon as the
+  datagram after it arrives (the link does not reorder, and a gap's age only advances with later
+  datagrams, so a 200 ms reordering allowance cost ~0.5 s of repair latency on sparse links).
   The edge responds with the *current* state of every entity touched in the missing seqs (state
   repair), not the lost packets.
-- **Hello refresh**: after being acked, the edge re-sends `Hello` every 5 s so a restarted
+- **Hello refresh**: after being acked, the edge re-sends `Hello` every 5 s (Cadence) so a restarted
   server re-identifies the device. A receiver that adopted a device without a Hello records the
   nonce on the first one it sees; only a *different* nonce resets state.
 - **Nack pacing**: a gap is nacked at most once per 500 ms (one round trip plus margin), and the
@@ -164,10 +193,26 @@ Single crate `minband-core`, deterministic:
   Despawn is repaired by resending it. Independently, once every part of a keyframe has arrived
   the receiver removes entities the keyframe did not list (and that were not observed after it).
 - **Entity drop rule**: while the device is alive, removal happens only through Despawn and
-  keyframe reconciliation. Age-based dropping (10 s) applies once the device has been silent for
-  6 s; a hard limit of 30 s applies regardless.
-- **Staleness**: entity not refreshed for 2 x `T_max` is drawn as stale; after 10 s it is dropped.
-  If the device is silent for 5 s, all its entities are stale; after 30 s the device is removed.
+  keyframe reconciliation (which also works when paced parts arrive over time). Age-based dropping
+  (`drop`, 10 s at budget 0) applies once the device has been silent for `stale` (6 s); a hard
+  limit of max(30 s, 3 x `drop`) applies regardless. All from the cadence of the advertised budget,
+  so a static scene at 600 bit/s (keyframes every ~14 s) neither goes stale nor is dropped between
+  keyframes. When the advertised budget rises, the old limits hold for one old coast period while
+  the edge learns the new budget.
+- **Coasting and honest error radius** (S15): under a prediction-error trigger silence means
+  "within threshold" only while the heartbeat arrives. Once the device has been silent for
+  `coast` (one keyframe period plus margin, 2.5 s at budget 0) its entities are *coasting*, and
+  each entity's error radius `ce` grows from its declared θ: `ce = θ + max_speed(class) x silence`
+  (silence since the device's last datagram, so a missed keyframe is a visible jump; capped at
+  1000 m). Never extrapolate silently: coast, mark, then drop (FAA AD 2017-22-14). Trust returns
+  per entity, not with the device: after a blackout the first datagram vouches only for what it
+  carries, the rest keep coasting (`ce` still growing from the silence start) until a datagram
+  sent after the resume refreshes them, or a whole keyframe taken after it arrives (one keyframe
+  period at most while the link holds). Updates lost in the blackout would otherwise sit behind a
+  tight θ ring until the nack round trip.
+- **Staleness**: entity not refreshed for `stale` (6 s at budget 0, 3 keyframe periods) is drawn
+  as stale; after `drop` it is dropped once its device is silent. Server-side, a device silent for
+  5 s has all its entities stale and is removed after 30 s.
 
 ## 5. Predictor and why not a physics engine
 
@@ -190,7 +235,13 @@ Two mechanisms, used for different purposes:
    may leave it in debt, so admission does not depend on size (a strict "tokens >= size" rule
    starves 160 B keyframes behind small deltas on a 2 kbps link). Delay never reorders. A timed
    override (`revertAfterMs`, used by the "blackout 10 s" preset) restores the previous link on
-   the server, so it survives a viewer reload; any explicit change ends it early.
+   the server, so it survives a viewer reload; any explicit change ends it early. A queue limit
+   (like netem's `limit`, counting datagrams in the delay line) drops bursts the way the Pi link
+   box does. Named **link profiles** (`/api/link`, the same table as the Pi link box in
+   `HACKATHON_PLAN.md` 3.3) set the shaper, the edge budget and an airtime model in one step;
+   `contested` alternates `lora` with random blackouts on a server timer, and `external` leaves
+   shaping to the box and keeps only its budget and airtime model. The budget is the link's: each
+   ack carries it split over the devices heard in the last 5 s.
 2. **dummynet** (`tools/link.sh`, macOS `dnctl`/`pfctl`) shaping UDP :7777 at the OS level for
    honest measurements and for the recorded evaluation runs.
 
@@ -207,8 +258,10 @@ runs on synthetic ground truth (perfect-tracker velocities, optional gaussian no
   drones send today". Encoded from the recorded ARKit frames with `AVAssetWriter` H.264
   (VideoToolbox) at those target bitrates over the same session as the ground-truth log; the
   bitrate is measured from the encoded track, not quoted. Until then the numbers are shown as
-  "configured, to be replaced by measured VideoToolbox numbers".
-- **Baseline B**: naive metadata, full state of every entity every frame at 30 Hz:
+  "configured, to be replaced by measured VideoToolbox numbers". The server (`/api/baseline-a`,
+  `Snapshot.baselineA`) and `tools/eval` read the same `runs/baseline_a.json`.
+- **Baseline B**: naive metadata, full state of every entity every frame at 30 Hz (31 B is one
+  `Update`, 40 B a message header plus the 28 B UDP/IP header; measured, `proto/PROTOCOL.md`):
   `entities * 31 B * 30 Hz + 30 Hz * 40 B`, entities time-averaged from the log.
 - **Twin error**: at every logged frame, for each ground-truth row, the distance between the
   logged position and the receiver's extrapolation to that tick. The ground truth is the edge's
@@ -220,7 +273,7 @@ runs on synthetic ground truth (perfect-tracker velocities, optional gaussian no
   baselines as reference lines.
 - **Resilience**: twin error and availability vs packet loss rate (0, 5, 20, 50 %, Bernoulli,
   both directions, 50 ms one-way delay) at `θ_pos` 0.15, mean of 10 seeds, with state repair
-  (an ack listing the open gaps whenever a gap turns 200 ms old, checked every 100 ms) and
+  (an ack listing the open gaps whenever one is due, checked every 100 ms) and
   without (no acks; keyframes only). The live server's cadence (an ack after any datagram once
   100 ms have passed) is measured too, as a bytes comparison.
 

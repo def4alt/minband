@@ -11,6 +11,8 @@ import type { DeviceView, EntityView, GlobalEntity } from './types.js';
 export const MERGE_DIST = 0.5, MERGE_VEL = 0.5, SPLIT_DIST = 1.0, MERGE_MS = 1000, SPLIT_MS = 1000;
 
 type Key = string; // `${deviceKey}#${id}`
+/** World.snapshot adds `geo` (geo.ts) after fusion. */
+export type FusedEntity = Omit<GlobalEntity, 'geo'>;
 const devKey = (d: DeviceView): string => d.key ?? `id:${d.deviceId}`;
 
 export class Fusion {
@@ -22,7 +24,7 @@ export class Fusion {
   private farSince = new Map<string, number>();
   private nextGid = 1;
 
-  update(devices: DeviceView[], nowMs: number): GlobalEntity[] {
+  update(devices: DeviceView[], nowMs: number): FusedEntity[] {
     const all: { k: Key; dk: string; d: number; e: EntityView }[] = [];
     for (const d of devices) {
       const dk = devKey(d);
@@ -67,16 +69,20 @@ export class Fusion {
     for (const pk of [...this.farSince.keys()]) if (!touched.has(pk)) this.farSince.delete(pk);
 
     const byKey = new Map(all.map(a => [a.k, a]));
-    const out: GlobalEntity[] = [];
+    const out: FusedEntity[] = [];
     for (const [gid, members] of this.groups) {
       const ms = [...members].map(k => byKey.get(k)!).filter(Boolean);
       if (!ms.length) continue;
       let w = 0; const pos = [0, 0, 0], vel = [0, 0, 0];
       for (const m of ms) { const c = m.e.stale ? 1 : m.e.conf + 1; w += c; for (let i = 0; i < 3; i++) { pos[i] += m.e.pos[i] * c; vel[i] += m.e.vel[i] * c; } }
+      // Error radius: the best (lowest) of the fresh sources, else of all; coasting only when every
+      // source is (one device still on its heartbeat vouches for the entity).
+      const fresh = ms.filter(m => !m.e.stale);
       out.push({
         gid, class: ms[0].e.class,
         pos: [pos[0] / w, pos[1] / w, pos[2] / w], vel: [vel[0] / w, vel[1] / w, vel[2] / w],
         sources: ms.map(m => ({ deviceId: m.d, id: m.e.id })), stale: ms.every(m => m.e.stale),
+        ce: Math.min(...(fresh.length ? fresh : ms).map(m => m.e.ce)), coasting: ms.every(m => m.e.coasting),
       });
     }
     return out;

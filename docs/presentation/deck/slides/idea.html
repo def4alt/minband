@@ -1,0 +1,20 @@
+<section id="idea" data-transition="fade" style="background:#E9ECEF;color:#0B0D0F;font-family:'Inter', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:56px">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;letter-spacing:6px;text-transform:uppercase;color:#6B5A10">The idea</p>
+<h2 style="font-family:'Inter', Arial, sans-serif;font-size:72px;font-weight:300;line-height:1.15;width:1550px">The edge runs the receiver's predictor and speaks only when the receiver would be wrong.</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:16px;background:#F7F8F9;border:1px solid #C9CED4;border-radius:8px;padding:40px">
+<h3 style="font-size:32px;font-weight:600">A ghost on the edge</h3>
+<p style="font-size:24px;line-height:1.5;color:#3A4048">Both ends run the same deterministic predictor: f32 basic ops, integer ticks, bit-identical on iPhone, WASM and aarch64.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#F7F8F9;border:1px solid #C9CED4;border-radius:8px;padding:40px">
+<h3 style="font-size:32px;font-weight:600">Send the surprise</h3>
+<p style="font-size:24px;line-height:1.5;color:#3A4048">A delta goes out only when an entity leaves its threshold (θ = 15 cm). Straight lines cost nothing; turns cost a packet.</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#F7F8F9;border:1px solid #C9CED4;border-radius:8px;padding:40px">
+<h3 style="font-size:32px;font-weight:600">Repair by state</h3>
+<p style="font-size:24px;line-height:1.5;color:#3A4048">Updates are idempotent full states. Loss is repaired by resending current state; there is no retransmission queue.</p>
+</div>
+</div>
+<p style="font-size:32px;font-weight:300;line-height:1.4;color:#3A4048;width:1550px">This is DIS dead reckoning (IEEE 1278), and we say so first. What is new: the edge declares its error bar in every datagram, coasting is visible, and the heartbeat follows the link budget.</p>
+<aside>Say DIS first, before a judge does. Then: three things are ours. One byte of declared threshold per datagram, a visible coasting state, and a heartbeat that follows the budget so the floor fits a 600 bit/s link.</aside>
+</section>

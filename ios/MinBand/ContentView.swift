@@ -11,6 +11,9 @@ struct ContentView: View {
     @AppStorage("host") private var host = "192.168.1.10"
     @AppStorage("details") private var details = false
     @State private var share: ShareItem?
+    /// Record the H.264 baseline in the next run (`VideoBaseline`). Off by default and not
+    /// remembered: three encoders cost battery and thermal headroom.
+    @State private var h264 = false
     @State private var notice: String?
     @State private var noticeSerial = 0
     @State private var detectionsAt = Date.distantPast
@@ -46,6 +49,8 @@ struct ContentView: View {
                           running: pipeline.running,
                           wireframe: pipeline.wireframe,
                           manualOrigin: pipeline.originSource == "manual",
+                          h264: h264,
+                          onH264: { h264.toggle() },
                           onStartStop: startStop,
                           onOriginHere: { pipeline.setOriginHere() },
                           onWireframe: { pipeline.setWireframe(!pipeline.wireframe) },
@@ -56,7 +61,7 @@ struct ContentView: View {
         .animation(Theme.fade, value: pipeline.running)
         .animation(Theme.fade, value: pipeline.wireframe)
         .animation(Theme.fade, value: pipeline.arUnsupported)
-        .sheet(item: $share) { ActivityView(items: [$0.url]) }
+        .sheet(item: $share) { ActivityView(items: $0.urls) }
         .onReceive(pipeline.$detections) { _ in detectionsAt = .now }
     }
 
@@ -83,12 +88,16 @@ struct ContentView: View {
     // MARK: actions
 
     private func startStop() {
-        if pipeline.running { pipeline.stop() } else { pipeline.start(host: host) }
+        if pipeline.running { pipeline.stop() } else { pipeline.start(host: host, videoBaseline: h264) }
     }
 
+    /// The newest ground-truth CSV, plus the H.264 baseline JSON of the same run if one was written.
     private func shareLog() {
         if pipeline.running { pipeline.flushLog() }
-        if let url = GroundTruthLog.latest() { share = ShareItem(url: url) } else { flash("no ground-truth log yet") }
+        guard let url = GroundTruthLog.latest() else { flash("no ground-truth log yet"); return }
+        let baseline = VideoBaseline.reportURL(forLog: url)
+        let hasBaseline = FileManager.default.fileExists(atPath: baseline.path)
+        share = ShareItem(urls: hasBaseline ? [url, baseline] : [url])
     }
 
     /// Transient feedback in the notice stack (replaces a system alert).
@@ -107,6 +116,7 @@ struct ContentView: View {
             out.append(.init(id: "status", text: pipeline.status, strong: true))
         }
         if let notice { out.append(.init(id: "notice", text: notice, strong: false)) }
+        if !pipeline.baselineNote.isEmpty { out.append(.init(id: "baseline", text: pipeline.baselineNote, strong: false)) }
         if !hud.running, let e = hud.detectorError { out.append(.init(id: "detector", text: e, strong: false)) }
         return out
     }
@@ -125,11 +135,12 @@ struct ContentView: View {
 }
 
 struct ShareItem: Identifiable {
-    let url: URL
-    var id: String { url.path }
+    let urls: [URL]
+    var id: String { urls.map(\.path).joined(separator: "\n") }
 }
 
-/// UIActivityViewController for sharing the ground-truth CSV (AirDrop, Files, Mail...).
+/// UIActivityViewController for sharing the ground-truth CSV and the H.264 baseline JSON
+/// (AirDrop, Files, Mail...).
 struct ActivityView: UIViewControllerRepresentable {
     let items: [Any]
     func makeUIViewController(context: Context) -> UIActivityViewController {

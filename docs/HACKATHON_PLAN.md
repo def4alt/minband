@@ -27,6 +27,13 @@ and the picture survives the link dying.
 | 7 | Numbers are measured: fidelity-vs-bytes curve, two baselines, loss sweep. | `runs/eval/*.svg`, measured H.264 (P0) |
 | 8 | It is a link layer, not a drone: radio- and airframe-neutral, sits under or beside video. | Drones-per-link slide: ~10 one-walker feeds in 9.6 kbit/s |
 
+Demo order: straight line and a turn, then pull the cable on the clean or hf profile, plug it back,
+then step the box down through hf, lora, telemetry. After a slow profile the twin keeps the slow
+heartbeat's thresholds for one coast period (about 19 s after telemetry), so a cable pulled right
+after stepping back up shows coasting late; on telemetry itself coasting starts after ~19 s of
+silence and stale at 45 s, by design (15 s heartbeat). `cd e2e && npm run record` records this
+order as the fallback run.
+
 Do not claim: that the delta idea is new (it is DIS dead reckoning, say so first); the detector
 (edge detection is crowded; lead with the link and the twin); stealth (fewer transmissions mean
 less airtime, not undetectable); the video ratio before H.264 is measured on the phone.
@@ -37,11 +44,11 @@ less airtime, not undetectable); the video ratio before H.264 is measured on the
 |---|---|---|---|
 | P0 | Pick the track (Tactical Edge: Sensor Fusion & Edge AI, else UAS/C-UAS), quote its problem statement on slide 1, get one concrete scenario and real link rates from a military mentor | slides | Scenario written on slide 1 |
 | P0 | Measure H.264 on the phone (VideoToolbox) at 720p/480p/360p | `runs/baseline_a.json`, `tools/eval` | Viewer overlay no longer says "configured" |
-| P0 | Pi 5 link box with profiles | §3, new `tools/pi-link.sh` | Phone -> Pi -> laptop works; each profile changes the bytes graph |
+| P0 | Pi 5 link box with profiles | §3, `tools/pi-link.sh` (scripted; verify on the Pi) | Phone -> Pi -> laptop works; each profile changes the bytes graph |
 | P0 | Budget fixes needed for profiles below ~4 kbit/s, including keyframe cadence from the budget (S19) and keyframe pacing (S16) | §3.4 | Telemetry and LoRa profiles hold a static scene without saturating or dropping the keyframe burst |
 | P0 | Record a fallback run; rehearse the 3 + 2 min and 5 min versions | `runs/eval` | Video file and slides frozen |
 | P1 | Visuals V2, V1, V3 (§5): V2 fed by the threshold byte and the coasting state (S14, S15), V1 with the thumbnail competitor (S23) | core, server, viewer | Each rehearsed in the demo script |
-| P1 | CoT export to ATAK/iTAK/WinTAK: one CoT event per fused entity, affiliation unknown (`a-u-G...`), `ce`/`le` from the threshold byte (S14) grown with age, `stale` from staleness, `how` from the provenance state (S4); marker lat/lon/heading from config (S3 folds in here) | new `server/src/cot.ts` next to `world.ts`, `fusion.ts` | Entity appears on a TAK screen with a `ce` a consumer can use |
+| P1 | CoT export to ATAK/iTAK/WinTAK: one CoT event per fused entity, affiliation unknown (`a-u-G...`), `ce`/`le` from the threshold byte (S14) grown with age, `stale` from staleness, `how` from the provenance state (S4); marker lat/lon/heading from config (S3 folds in here) | new `server/src/cot.ts` next to `world.ts`, `fusion.ts` | Entity appears on a TAK screen with a `ce` a consumer can use. *Status 2026-10-09: built and tested against loopback UDP/TCP (`MINBAND_GEO`, `MINBAND_COT`, `/api/geo`, `/api/cot`, `server/README.md`); `ce` reads "unknown" until fusion fills `GlobalEntity.ce` (S14); `how` is `m-p`/`m-f` until S4; not yet seen on a real TAK screen* |
 | P1 | Drones-per-link: N sim devices from the Pi plus the phone through the HF profile, with time-on-air beside bytes (S2) | §4, `server/src/sim.ts`, server metrics | Per-device and total B/s, and the share of channel airtime, visible under 9.6 kbit/s |
 | P1 | Pi 5 as a further platform for the golden vectors | §4 | `cargo test` green on the Pi |
 | P2 | Reconcile the per-Update size (`proto/PROTOCOL.md` ~31 B vs `docs/DESIGN.md` ~22 B) and relabel person as dismount in the UI | docs, viewer | One number in every slide and doc |
@@ -61,8 +68,12 @@ iPhone ──Wi-Fi (Pi hotspot)──► Raspberry Pi 5 ──Ethernet──► 
 The laptop must be on Ethernet, not on the hotspot: traffic between two Wi-Fi clients of the same
 AP is forwarded inside the Wi-Fi stack and never passes `tc`.
 
-The commands below are an untested sketch (no Pi in the dev environment); verify each step on
-the Pi before relying on it.
+**Scripted** in [`tools/pi-link.sh`](../tools/pi-link.sh): `setup`, the profiles, `contested`,
+`status`, `clear`, `--dry-run`; usage in [tools/README.md](../tools/README.md#pi-5-link-box-pi-linksh).
+The commands below are what it runs and stay as the reference. Its tc tree and filters are tested
+on a Linux kernel with pfifo in netem's place (`tools/test/`); netem itself and `nmcli` are not
+(no Pi in the dev environment), so verify each step on the Pi before relying on it.
+`sudo tools/test/pi-link-kernel.test.sh` on the Pi also checks the real netem.
 
 ### 3.1 Hardware and OS
 
@@ -85,6 +96,9 @@ sudo nmcli con add type ethernet ifname eth0 con-name minband-eth \
   ipv4.method manual ipv4.addresses 192.168.77.1/24
 sudo nmcli con up minband-eth
 ```
+
+Scripted: `sudo tools/pi-link.sh setup --password '<8+ chars>'` (also sets autoconnect, so the
+box comes back after a reboot).
 
 Point the iOS app at `192.168.77.2:7777`. Shared mode should masquerade the phone's traffic, so
 the server sees it from `192.168.77.1`; check with `curl localhost:8080/api/metrics` on the
@@ -117,15 +131,31 @@ shape wlan0 sport rate 2kbit delay 300ms loss 10% limit 4   # downlink, acks -> 
 |---|---|---|---|---|---|---|
 | `clean` | none | none | 0 | none | 0 | Wi-Fi reference |
 | `degraded` | 64 kbit | 20 ms | 2 % | 20 | 0 | Busy mesh |
-| `hf` | 9600 bit | 500 ms | 1 % | 8 | 8000 | NATO HF ceiling (drones-per-link slide) |
+| `hf` | 9600 bit | 500 ms | 1 % | 32 | 8000 | NATO HF ceiling (drones-per-link slide) |
 | `lora` | 2 kbit | 300 ms | 10 % | 4 | 1500 | Meshtastic-class LoRa |
 | `telemetry` | 600 bit | 50 ms | 5 % | 4 | 450 | ELRS-class control-link telemetry |
 | `contested` | `lora`, alternating with 1-5 s random blackouts | | | | 1500 | Intermittent jamming |
 | `blackout` | | | 100 % | | | Link cut (or pull the Ethernet cable) |
 
-Set the budget from the laptop with `curl 'localhost:8080/api/budget?bps=...'` when switching
-profiles, until the box does it itself (stretch L2). Unplugging the cable can change the NAT source
+Scripted: `sudo tools/pi-link.sh <profile>`, which prints the budget command for the profile.
+Three details differ from the sketch above: netem's rate gets a `-14` B packet overhead, since at
+the qdisc a datagram still carries its 14 B Ethernet header and the server and `tools/eval` count
+payload + 28 B; `clean` keeps the tree with a pass-through netem so `status` still counts; and
+`hf`'s queue is 32, not 8 (below).
+
+When switching profiles on the box, tell the server which one it emulates:
+`curl 'localhost:8080/api/link?profile=external&as=lora'` sets the edge budget from this table and
+the airtime model for the time-on-air readout, with the in-process shaper off (stretch L2 is the box
+doing this itself). Without the box, `/api/link?profile=lora` applies the same row in-process,
+including `contested` as a server-side loop (`server/README.md`). The budget is the link's: the
+server splits it over the devices it hears. Unplugging the cable can change the NAT source
 port when it comes back; the server's device identity handles that (DESIGN §4).
+
+netem's `limit` counts packets still in the delay line, so it also caps the rate in datagrams:
+`limit / delay`. With the sketch's 8 that is 16 datagrams/s for `hf`; eight one-walker feeds send
+about 17/s, so a third of them were dropped at the queue (measured in-process, which models `limit`
+the same way). A real radio's buffer does not hold packets in flight, so the `hf` row uses 32
+(about 8 % drops in the same run, mean twin error 4.4 cm).
 
 Say what the box is: it reproduces a radio's rate, delay and loss, not its framing. At 600 bit/s
 the 28 B UDP/IP header is a large share of every datagram; a real telemetry radio would not carry
@@ -161,8 +191,8 @@ golden file only if the change is intentional (`UPDATE_GOLDEN=1`).
 
 | # | Idea | Size |
 |---|---|---|
-| L1 | `tools/pi-link.sh <profile>` wrapping §3.2-3.3, plus `contested` as a background loop | S |
-| L2 | The script also sets the edge budget and reports the profile name to the server so the viewer shows `LINK: lora 2 kbit/s · 68 % airtime` (needs a small `/api/link` endpoint; the keyframe period follows the budget with S19, the airtime figure comes with S2) | S |
+| L1 | `tools/pi-link.sh <profile>` wrapping §3.2-3.3, plus `contested` as a background loop (done) | S |
+| L2 | The script also sets the edge budget and reports the profile name to the server so the viewer shows `LINK: lora 2 kbit/s · 68 % airtime` (`/api/link?profile=external&as=<profile>` exists and returns the airtime figure (S2); the keyframe period follows the budget with S19) | S |
 | L3 | Physical button on the Pi GPIO (gpiozero) that cycles profiles; an LED that goes dark on blackout | S |
 | L4 | `simplex` profile: downlink 100 % loss, so the ground station never transmits (do together with S1, the first stretch item) | S |
 
@@ -174,6 +204,8 @@ No camera needed for the first two steps.
 # Golden vectors on Linux aarch64: the same predictor, bit for bit, on companion-computer-class hardware.
 curl --proto '=https' -sSf https://sh.rustup.rs | sh
 cd core && cargo test
+# Without a Pi: the same tests cross-compiled for aarch64 Linux, run under qemu-user.
+tools/golden-aarch64.sh
 
 # Sim edge(s) on the Pi -> laptop through the link box. Copy core/pkg-node from the laptop
 # (WASM is platform-independent) instead of installing wasm-pack on the Pi. Node 20+.
@@ -199,7 +231,7 @@ only when something happened.
 | V4 | **Tolerance bubble on the phone.** In the iOS `WIREFRAME` stage mode, a wire sphere of radius θ_pos x theta_scale sits on each person's ghost; walking stretches it, leaving it snaps it back and a packet goes. Needs an FFI accessor returning ghost positions predicted to `now` (ghosts are in `core/src/edge.rs`, `theta_scale` is already in stats). | The mechanism, without words | `core/src/edge.rs`, `core/src/ffi.rs`, `ios/MinBand/ARViewContainer.swift` | M |
 | V5 | **Packets in the twin.** Using V3's event, each update draws a short line from the device frustum to the entity it corrects, with the error that triggered it (`+17 cm`). | Only surprises are sent | `viewer/src/scene.ts` | M |
 | V6 | **Byte odometers.** `MINBAND 48 KB` vs `VIDEO 112 MB` since demo start, tabular digits, live ratio. | The headline number | viewer credits row | S |
-| V7 | **Eight drones, one HF link.** Eight sim devices from the Pi through `hf`, each with a moving frustum over the terrain, fused into one picture. The sim does not send `Pose` yet. On LoRa-class links the limit is airtime, so say `N feeds fit in X % of the channel` (S2). | Drones per link | `server/src/sim.ts` | S-M |
+| V7 | **Eight drones, one HF link.** Eight sim devices from the Pi through `hf`, each with a moving frustum over the terrain, fused into one picture. The sim sends `Pose` for each device (`SCENE=spread`: a drone orbit over its area). On LoRa-class links the limit is airtime, so say `N feeds fit in X % of the channel` (S2). | Drones per link | `server/src/sim.ts` | S-M |
 | V8 | **Live point on the eval curve.** The fidelity-vs-bytes chart with a dot that slides as the profile steps down. | Measured, not claimed | viewer, `runs/eval/fidelity_vs_bytes.csv` | M |
 
 Props: a 128x64 monochrome OLED on the Pi showing profile and kbit/s plus a `JAM` toggle switch
@@ -231,6 +263,7 @@ each is a vertical slice that can be demoed on its own.
 | S13 | **Utility test, shrunk.** Three conditions on the recorded run at equal bytes: twin, halftone video at link rate, AI thumbnail every N s; an operator reports count, class and location; one decoy condition. | `tools/eval`, a script for the test | M (~3-4 h) | DARPA scores reduction "with preserved mission utility"; the thumbnail is the honest competitor, and no source anywhere quantifies false identification against decoys, so a measured number is rare |
 | S6 | **Compact codec tier.** A second message kind, not just smaller numbers: bit-packed fixed point relative to a tile origin with an epoch, quantised velocity, an explicit validity rule for the reference, 8-16 B per entity; measured against postcard in `tools/eval`. | `core/src/wire.rs`, `tools/eval` | M-L (6-10 h) | AIS has a 168-bit and a 96-bit tier (0.185 m vs 185 m resolution); ADS-B CPR positions are valid only against a reference less than 10 s old; MAVLink `HIGH_LATENCY2` is 42 B. Say "8-16 B against a median 87 B Meshtastic TAK packet that also carries uid and callsign", not "4-8x denser than CoT". Needed before LoRa / ELRS-class links, where today's 60 B/s floor does not fit; if unbuilt, present it as the next step with those numbers |
 | S8 | **Image chip on demand, shrunk.** Operator clicks an entity; the edge sends one 32x32 or 64x64 JPEG in budget-sized parts, progressive (`Hello.caps` bit1 is reserved). At 60 B/s a 150 B chip fits every 2.5 s; a 2 KB JPEG takes ~30 s. | core, iOS, server, viewer | M-L | Every fielded system that reached a decision-maker pairs the cue with evidence: Saildrone sends one clearest image per 15-20 min so the satellite link and the command centre are not flooded (USCG); Delta pairs each AI cue with imagery and a human review; MeshCore ships 100-200 B thumbnails over LoRa |
+| S24 | **Video first, pin to follow.** While the link carries video, the operator watches video and clicks objects to pin them. The pin goes up in the ack (entity id, or frame time plus pixel that the edge maps to its track), and the edge holds pinned ids longer (longer coasting, re-association first). When the measured link rate (`LinkView.rateBps`) falls below what the video needs, the viewer swaps the main view from video to the twin, and the budget controller spends on pinned entities first, then the rest by priority. When video returns, pins keep their ids. | `core/src/wire.rs` (Ack: pinned ids), `core/src/edge.rs` (priority under budget), iOS (video with track boxes), `viewer/` (click to pin, automatic swap), `server/` | L | Answers "why not just video": keep video while the link allows it, keep the picture when it does not. Same click and uplink as S8; depends on the tracker keeping identities (see `docs/FOOTAGE_FINDINGS.md`). Pins are for awareness: affiliation stays unknown and nothing is aimed. Idea from the team, 2026-10-10 |
 | S4 | **Provenance state, then confirm / reject.** Each fused entity carries `unconfirmed` / `seen by 2 sensors` / `operator-seen`, shown in the twin and carried into CoT `how`; the confirm button is enabled only once S8 exists, otherwise it is a guess with a button. | `server/src/world.ts`, `server/src/cot.ts`, viewer | S | Human in the loop; decoys are common; answers the objection to confirming without imagery. The state part can go into P1 CoT |
 | S7 | **Compact authenticated encryption.** Pre-shared per-session key, 4-byte counter as implicit nonce, 64-bit tag (Ascon-AEAD128 or AES-CCM via a vetted crate, no custom crypto); the receiver persists the counter high-water mark; IDs and pose stay inside the ciphertext. If time is short, a slide with these numbers scores more than half-built code. | new `core/src/crypto.rs` | M (4-6 h) | 802.15.4 MIC-64 plus a 4 B frame counter is 12 B; NIST SP 800-232 keeps tags at 64 bits or more; MAVLink 2 signing is 13 B and its replay defence fails when the timestamp is not persisted across reboots (PX4 docs). For ROK judges: "a KCMVP-compatible boundary, key management out of scope" |
 | S18 | **Keyframe request bit.** `Ack` gains a "send keyframe now" flag for gaps older than `gap_forget_ticks` or after a blackout, replacing long `missing` lists. | `core/src/wire.rs` (`Ack`), `core/src/receiver.rs` (`make_ack`), `core/src/edge.rs` (`on_ack`) | S | RTP PLI/FIR and market-data snapshot channels (from memory, unsourced); partly present already (keyframe when more than 8 seqs are missing) |
@@ -251,8 +284,8 @@ portability; see §8) and L3 beyond a stage prop.
 | S16 | **Keyframe pacing.** Emit keyframe parts one per ack interval instead of in one tick; optionally jitter the period by 20 % (S9). | `core/src/edge.rs` keyframe block; `reconcile_keyframe` already tolerates parts arriving over time | S (~1-2 h) | §3.4 item 4: the burst, not the bytes, breaks the 2 kbit/s profiles (video codecs spread the refresh for the same reason) |
 | S19 | **Cadence from budget.** `set_budget` derives `keyframe_ticks` (2 s at 8 kbit/s and above, ~15 s at 600 bit/s), `hello_refresh_ticks` and the pose interval; L2 shows the resulting period. | `core/src/edge.rs` (`set_budget`), `ios/MinBand/Pipeline.swift` (`poseInterval`) | S (~1 h) | §3.4 item 1: the heartbeat period is a link-class parameter (DIS 5 s, Iridium SBD one message per 10-15 s) |
 | S23 | **Thumbnail baseline.** Add "AI thumbnail every N s at this rate" as a third baseline in `tools/eval`, in V1 and in V6, with N computed from the budget and a 150 B chip. | `tools/eval/src/baselines.ts`, `viewer/src/halftone.ts` | S (~1-2 h) | The honest competitor at these rates is not video but a periodic thumbnail (MeshCore 100-200 B images over LoRa; Saildrone's throttled images); show it before a judge asks |
-| S2 | **Time-on-air readout.** Datagrams/s and time on air per profile next to bytes/s, from the Semtech LoRa formula for `lora` and from the serial rate for `telemetry`/`hf`. | server metrics (`msgsPerSec` exists), viewer panel | S (~2 h) | On LoRa and mesh the budget is airtime: 16 B costs 354 ms on Meshtastic LongFast, so the 60 B/s floor is roughly 70 % of a LongFast channel (our calculation); Silvus's 559-node mesh spent under 35 % of airtime on position reports |
-| S3 | **Geodetic anchor.** Marker lat/lon/heading in config; the server converts twin positions to WGS84 and MGRS; the viewer shows the grid reference. | new `server/src/geo.ts`, viewer | S | No C2 system takes marker-frame metres; part of P1 CoT |
+| S2 | **Time-on-air readout.** Datagrams/s and time on air per profile next to bytes/s, from the Semtech LoRa formula for `lora` and from the serial rate for `telemetry`/`hf`. | server metrics (`msgsPerSec` exists), viewer panel | S (~2 h) | On LoRa and mesh the budget is airtime: 16 B costs 354 ms on Meshtastic LongFast, so the 60 B/s floor is roughly 70 % of a LongFast channel (our calculation, a LongFast figure); Silvus's 559-node mesh spent under 35 % of airtime on position reports. The `lora` profile (and `external&as=lora`) models MediumSlow (SF10, ~1.95 kbit/s raw) to match its 2 kbit/s rate, where 16 B costs 198 ms and the same traffic needs about half the airtime |
+| S3 | **Geodetic anchor.** Marker lat/lon/heading in config; the server converts twin positions to WGS84 and MGRS; the viewer shows the grid reference. | new `server/src/geo.ts`, viewer | S | No C2 system takes marker-frame metres; part of P1 CoT. *Server side done 2026-10-09: heading = true bearing of the marker's -Z (toward the image's top edge); `Snapshot.geo`, `GlobalEntity.geo` carry lat/lon/MGRS* |
 
 ## 7. Rules borrowed from other domains
 

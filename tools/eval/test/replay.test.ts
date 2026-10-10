@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { replayRows, unpack } from '../src/replay.ts';
+import { maxOf, replayRows, unpack } from '../src/replay.ts';
 import { generate } from '../src/synth.ts';
-import { baselineBbps } from '../src/baselines.ts';
+import { baselineBbps, baselineC, baselineRows, minbandBps, thumbnailIntervalS, LINK_PROFILES, THUMBNAIL_CHIP_BYTES } from '../src/baselines.ts';
+import { toFrames } from '../src/gt.ts';
 import type { GtRow } from '../src/gt.ts';
 
 function staticScene(seconds: number, hz = 30): GtRow[] {
@@ -59,8 +60,45 @@ test('unpack splits u16-LE length-prefixed datagrams', () => {
   assert.deepEqual(unpack(buf).map(d => [...d]), [[0xaa, 0xbb], [], [0xcc]]);
 });
 
+test('maxOf handles a busy 4K clip: half a million per-row errors (Math.max(...xs) overflowed the stack)', () => {
+  const xs = new Float64Array(500_000).map((_, i) => (i * 7919) % 1000 / 100);
+  xs[123_456] = 42;
+  assert.equal(maxOf(xs), 42);
+  assert.equal(maxOf([]), 0);
+  assert.equal(maxOf([-2, -1]), -1);
+});
+
 test('baseline B formula matches the server: entities * 31 B * 30 Hz * 8 + 30 Hz * 40 B * 8', () => {
   assert.equal(baselineBbps(1), 17040);
   assert.equal(baselineBbps(3), 31920);
   assert.equal(baselineBbps(0), 9600);
+});
+
+test('baseline C formula: one 150 B chip + 28 B UDP/IP every (150 + 28) * 8 / R seconds', () => {
+  assert.equal(THUMBNAIL_CHIP_BYTES, 150);
+  assert.equal(thumbnailIntervalS(1424), 1); // 178 B * 8 = 1424 bit
+  assert.equal(thumbnailIntervalS(712), 2);
+  assert.ok(Math.abs(thumbnailIntervalS(9600) - 0.148333) < 1e-6, 'hf');
+  assert.equal(thumbnailIntervalS(2000), 0.712, 'lora');
+  assert.ok(Math.abs(thumbnailIntervalS(600) - 2.373333) < 1e-6, 'telemetry');
+  assert.equal(thumbnailIntervalS(1000, 100), 1.024, 'other chip size');
+  assert.equal(thumbnailIntervalS(0), Infinity);
+  assert.deepEqual(LINK_PROFILES.map(l => [l.id, l.bps]), [['hf', 9600], ['lora', 2000], ['telemetry', 600]]);
+});
+
+test('baseline C at equal bytes uses MinBand\'s own wire rate at the default theta, plus one row per link profile', () => {
+  const rows = generate('one_walker', { durationS: 30 });
+  const { frames, step } = toFrames(rows);
+  const input = { name: 'one_walker', frames, step };
+  const r = replayRows(rows, { thetaPos: 0.15 });
+  assert.equal(minbandBps(input), r.bytesPerSec * 8, 'same replay as the sweep\'s default-theta row');
+  const c = baselineC([input]);
+  assert.deepEqual(c.map(x => [x.id, x.scenario]), [['thumb_equal_bytes', 'one_walker'], ['thumb_hf', ''], ['thumb_lora', ''], ['thumb_telemetry', '']]);
+  assert.equal(c[0].intervalS, (150 + 28) * 8 / (r.bytesPerSec * 8));
+  // Equal bytes: the thumbnail feed sends exactly MinBand's wire bytes over the log.
+  assert.ok(Math.abs((r.durationS / c[0].intervalS) * (150 + 28) - r.wireBytes) < 1e-6);
+  const csv = baselineRows([], [], c);
+  assert.deepEqual(csv.map(x => [x.kind, x.chip_bytes]), [['C', 150], ['C', 150], ['C', 150], ['C', 150]]);
+  assert.equal(csv[2].interval_s, 0.712);
+  assert.equal(csv[2].bytes_per_s, 250);
 });

@@ -1,0 +1,14 @@
+<section id="resilience" data-transition="fade" style="background:#0B0D0F;color:#E9ECEF;font-family:'Inter', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;letter-spacing:6px;text-transform:uppercase;color:#FDD663">Loss</p>
+<h2 style="font-family:'Inter', Arial, sans-serif;font-size:72px;font-weight:300;line-height:1.15">Half the packets gone, the picture still there.</h2>
+<table style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:28px;color:#E9ECEF">
+<tr><th style="width:28%;text-align:left">Mean error · availability</th><th style="width:18%;text-align:right">0 % loss</th><th style="width:18%;text-align:right">5 %</th><th style="width:18%;text-align:right">20 %</th><th style="width:18%;text-align:right">50 %</th></tr>
+<tr><td>static room</td><td style="text-align:right">0 cm · 99.9 %</td><td style="text-align:right">0 cm · 99.6 %</td><td style="text-align:right">0 cm · 99.4 %</td><td style="text-align:right">0 cm · 93.8 %</td></tr>
+<tr><td>one walker</td><td style="text-align:right">3.7 · 99.9 %</td><td style="text-align:right">4.5 · 99.9 %</td><td style="text-align:right">8.9 · 99.9 %</td><td style="text-align:right">31.6 · 99.5 %</td></tr>
+<tr><td>three walkers</td><td style="text-align:right">3.4 · 99.9 %</td><td style="text-align:right">3.7 · 99.8 %</td><td style="text-align:right">5.8 · 99.8 %</td><td style="text-align:right">23.2 · 99.3 %</td></tr>
+<tr><td>crowd</td><td style="text-align:right">3.6 · 99.8 %</td><td style="text-align:right">3.4 · 99.7 %</td><td style="text-align:right">4.4 · 99.6 %</td><td style="text-align:right">20.8 · 98.6 %</td></tr>
+</table>
+<p style="font-size:32px;font-weight:300;line-height:1.4;color:#9AA3AD;width:1600px">Nacked gaps are repaired by resending <span style="color:#E9ECEF">current</span> state, not the lost packet. Live e2e: 20 % loss through the server, twin error under 20 cm, no stale entities.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7480">tools/eval resilience sweep: 50 ms one-way delay, loss both directions, 10 seeds per point, state repair on. Error in cm of present entities.</p>
+<aside>The idempotent update is the reason: a later state supersedes a lost one, so there is nothing to retransmit. At 50 percent loss the static room loses availability only at start-up and when five keyframes in a row are lost.</aside>
+</section>

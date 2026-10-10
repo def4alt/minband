@@ -1,0 +1,19 @@
+{
+  "v": 4,
+  "createdOnFiles": { "v": 1, "at": "2026-10-09T17:30:00Z" },
+  "lists": "css",
+  "title": "MinBand — D4D x EDTH Seoul",
+  "order": ["cover", "problem", "idea", "how", "numbers", "curve", "lowrate", "blackout", "resilience", "airtime", "thumbnail", "tak", "claims", "next", "demo"],
+  "sections": {
+    "s1": { "description": "The problem and the one-line idea", "start": "cover" },
+    "s2": { "description": "How the sync works and what runs where", "start": "idea" },
+    "s3": { "description": "Measured: bytes, fidelity, low-rate links, blackouts, loss, airtime", "start": "numbers" },
+    "s4": { "description": "Fielding: TAK, the honest competitor, what we do not claim", "start": "thumbnail" },
+    "s5": { "description": "Next steps and the live demo", "start": "next" }
+  },
+  "faces": {
+    "inter": { "family": "Inter", "href": "https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;600&display=swap" },
+    "ibm-plex-mono": { "family": "IBM Plex Mono", "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&display=swap" }
+  },
+  "designSystems": []
+}

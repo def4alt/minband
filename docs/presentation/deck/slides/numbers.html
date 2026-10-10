@@ -1,0 +1,15 @@
+<section id="numbers" data-transition="fade" style="background:#0B0D0F;color:#E9ECEF;font-family:'Inter', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;letter-spacing:6px;text-transform:uppercase;color:#FDD663">Measured, not claimed</p>
+<h2 style="font-family:'Inter', Arial, sans-serif;font-size:72px;font-weight:300;line-height:1.15">A walking person costs 128 bytes a second.</h2>
+<table style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:28px;color:#E9ECEF">
+<tr><th style="width:28%;text-align:left">Scene</th><th style="width:12%;text-align:right">Entities</th><th style="width:16%;text-align:right">B/s on wire</th><th style="width:16%;text-align:right">Mean error</th><th style="width:14%;text-align:right">p95</th><th style="width:14%;text-align:right">vs 30 Hz</th></tr>
+<tr><td>static room</td><td style="text-align:right">3</td><td style="text-align:right">69</td><td style="text-align:right">0.0 cm</td><td style="text-align:right">0.0 cm</td><td style="text-align:right">58×</td></tr>
+<tr><td>one walker</td><td style="text-align:right">1</td><td style="text-align:right">128</td><td style="text-align:right">3.0 cm</td><td style="text-align:right">11.7 cm</td><td style="text-align:right">17×</td></tr>
+<tr><td>one walker, 3 cm noise</td><td style="text-align:right">1</td><td style="text-align:right">178</td><td style="text-align:right">7.3 cm</td><td style="text-align:right">13.0 cm</td><td style="text-align:right">12×</td></tr>
+<tr><td>three walkers</td><td style="text-align:right">3</td><td style="text-align:right">348</td><td style="text-align:right">2.6 cm</td><td style="text-align:right">9.3 cm</td><td style="text-align:right">11×</td></tr>
+<tr><td>crowd</td><td style="text-align:right">8</td><td style="text-align:right">790</td><td style="text-align:right">2.8 cm</td><td style="text-align:right">11.7 cm</td><td style="text-align:right">11×</td></tr>
+</table>
+<p style="font-size:32px;font-weight:300;line-height:1.4;color:#9AA3AD;width:1600px">H.264 720p from the phone's own camera: <span style="color:#E9ECEF">[__ Mbps, measured with VideoToolbox]</span>, so one walker is <span style="color:#E9ECEF">[__]× less</span> than video.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7480">tools/eval: 120 s synthetic scenes at 30 Hz, θ_pos 0.15 m, payload + 28 B UDP/IP per datagram. "vs 30 Hz" = full state of every entity every frame.</p>
+<aside>Read the one-walker row. 128 bytes a second, 3 cm mean error. The comparison that matters is naive 30 Hz metadata, 17 times more. Only say the video ratio once the phone has measured H.264; until then the slide keeps the placeholder.</aside>
+</section>

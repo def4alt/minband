@@ -17,3 +17,12 @@ ios/MinBand/Models/*.mlmodelc
 runs/
 *.log
 .DS_Store
+# python
+__pycache__/
+.venv/
+# footage: clips and model weights are never committed
+tools/footage/clips/
+tools/footage/models/
+*.onnx
+*.pt
+docs/presentation/showcase/build/

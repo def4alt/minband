@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WasmEdge } from 'minband-core';
-import { World, DEVICE_SILENT_MS, DEVICE_TIMEOUT_MS } from '../src/world.js';
+import { World, DEVICE_TIMEOUT_MS } from '../src/world.js';
 import { Shaper } from '../src/shaper.js';
 import { FakeClock, ScriptedEdge, chatty, unpack, wireAcks } from './fake.js';
 
@@ -65,7 +65,7 @@ test('provisional (keyed by address) until its Hello is seen; the 5 s Hello refr
   const e = new ScriptedEdge(world, clock, C, 9, 5);
   wireAcks(world, [e]);
   e.run(1, { deliver: false }); // Hello to the old server
-  e.edge.on_datagram(new Uint8Array([0, 4, 0, 0, 0])); // Ack { last_seq: 0 } from the old server
+  e.edge.on_datagram(new Uint8Array([1, 4, 0, 0, 0])); // Ack { last_seq: 0 } from the old server
   e.run(300);
   assert.deepEqual([...world.devices.keys()], [`addr:${C}`]);
   const v = world.snapshot().devices[0];
@@ -152,7 +152,7 @@ test('no adoption when ambiguous or when the ticks do not continue', () => {
   const x = new ScriptedEdge(w2, c2, A, 42, 1); wireAcks(w2, [x]); x.run(600);
   c2.advance(1000);
   const y = new ScriptedEdge(w2, c2, B, 77, 3);
-  y.edge.on_datagram(new Uint8Array([0, 4, 0, 0, 0]));
+  y.edge.on_datagram(new Uint8Array([1, 4, 0, 0, 0]));
   y.run(120);
   assert.equal(w2.devices.size, 2);
   assert.equal(w2.device(42)!.addr, A);
@@ -194,14 +194,22 @@ test('a new session nonce from the same device starts a fresh receiver', () => {
   e2.free();
 });
 
-test('silent device: entities stale after 5 s, device removed after 30 s', () => {
+test('silent device (budget 0): coasting after 2.5 s, entities stale after 6 s, removed after 30 s', () => {
   const { clock, world } = setup();
   const e = new ScriptedEdge(world, clock, A, 42, 1);
   wireAcks(world, [e]);
   e.run(240);
-  clock.advance(world.device(42)!.lastSeenMs + DEVICE_SILENT_MS - 100 - clock.t);
+  const last = world.device(42)!.lastSeenMs;
   let v = world.snapshot().devices[0];
-  assert.equal(v.silent, false);
+  assert.deepEqual(v.cadence, { keyframeMs: 2000, helloRefreshMs: 5000, poseMs: 500, coastMs: 2500, staleMs: 6000, dropMs: 10000 });
+  clock.advance(last + 2_400 - clock.t);
+  assert.equal(world.snapshot().devices[0].coasting, false);
+  clock.advance(200);
+  v = world.snapshot().devices[0];
+  assert.deepEqual([v.coasting, v.silent], [true, false]);
+  assert.ok(v.entities.every(x => x.coasting && !x.stale && x.ce > x.theta));
+  clock.advance(last + 6_000 - 100 - clock.t);
+  assert.equal(world.snapshot().devices[0].silent, false);
   clock.advance(200);
   v = world.snapshot().devices[0];
   assert.equal(v.silent, true);

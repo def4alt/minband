@@ -1,34 +1,40 @@
 // Synthetic edge: runs the real WASM Edge over a scripted scene and sends real UDP datagrams to
 // the server, so the full pipeline (shaper, receiver, fusion, viewer) works with no phone.
-//   npm run sim                      # one device
-//   DEVICES=2 npm run sim            # two devices observing the same walkers (fusion demo)
-//   GT_POST_MS=0 npm run sim         # do not upload ground truth (default: last 10 s every 5 s)
+//   npm run sim                           # one device
+//   DEVICES=2 npm run sim                 # two devices observing the same walkers (fusion demo)
+//   SCENE=spread DEVICES=8 npm run sim    # eight independent one-walker feeds, each in its own area (drones per link)
+//   SCENE=spread WALKERS=3 npm run sim    # three walkers per area
+//   GT_POST_MS=0 npm run sim              # do not upload ground truth (default: last 10 s every 5 s)
+//   TRACKS=runs/footage/<clip>/tracks.csv npm run sim   # replay a track log (phone, real drone footage), looping
 // Ground truth: the scene the edge saw is POSTed to /api/ground-truth so the server's twin-error
-// metric (and the viewer's readout) works without a phone.
+// metric (and the viewer's readout) works without a phone. Device ids are 100 + d.
+// Pose: each device has a moving camera (src/scenes.ts: its own orbit around the shared scene, or a
+// drone orbit over its area), offered to the edge at 2 Hz like the phone; core sends it at the
+// budget's pose interval (0.5 s unlimited, 10 s below 4 kbit/s) with originLocked true.
 import dgram from 'node:dgram';
 import { WasmEdge, describe } from 'minband-core';
 import { TICK_HZ } from './types.js';
+import { SCENES, fixedCamera, logScene, sharedCamera, sharedScene, spreadCamera, spreadScene, type SceneName } from './scenes.js';
 
 const HOST = process.env.MINBAND_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.MINBAND_UDP_PORT ?? 7777);
 const DEVICES = Number(process.env.DEVICES ?? 1);
+// TRACKS=<csv>: replay a track log (phone or tools/footage) instead of a synthetic scene; implies SCENE=log.
+const TRACKS = process.env.TRACKS;
+const SCENE = (TRACKS ? 'log' : process.env.SCENE ?? 'shared') as SceneName;
+// The camera that filmed the log, "x,y,z" in the log's frame (tools/footage summary.json: camera_m).
+const TRACKS_CAMERA = (process.env.TRACKS_CAMERA ?? '0,40,40').split(',').map(Number) as [number, number, number];
+const WALKERS = Number(process.env.WALKERS ?? 1);
 const VERBOSE = !!process.env.VERBOSE;
 const API = process.env.MINBAND_API ?? `http://${HOST}:${process.env.MINBAND_WS_PORT ?? 8080}`;
 const GT_POST_MS = Number(process.env.GT_POST_MS ?? 5000);
 const GT_WINDOW_TICKS = Number(process.env.GT_WINDOW_S ?? 10) * TICK_HZ;
+const STATS_MS = 5000;
+const UDP_IP_OVERHEAD = 28;
+const POSE_EVERY_TICKS = TICK_HZ / 2;
 
-function scene(t: number, deviceId: number) {
-  // Two walkers on loops, one static chair, one object that appears periodically. Each device
-  // sees the same world with small observation noise and a per-device id space.
-  const n = (k: number) => (Math.sin(t * 7.3 + k * 13.1 + deviceId) * 0.02);
-  const tracks = [
-    { id: 1, class: 0, pos: [3 * Math.cos(t * 0.4), 0, 3 * Math.sin(t * 0.4)], vel: [-1.2 * Math.sin(t * 0.4), 0, 1.2 * Math.cos(t * 0.4)], conf: 230 },
-    { id: 2, class: 0, pos: [((t * 0.8) % 8) - 4, 0, 2], vel: [0.8, 0, 0], conf: 200 },
-    { id: 3, class: 56, pos: [-2, 0, -2], vel: [0, 0, 0], conf: 180 },
-  ];
-  if (Math.floor(t / 5) % 2 === 0) tracks.push({ id: 4, class: 41, pos: [1, 0.8, -1 + 0.3 * Math.sin(t)], vel: [0, 0, 0.3 * Math.cos(t)], conf: 150 });
-  return tracks.map(tr => ({ ...tr, pos: tr.pos.map((v, i) => v + n(tr.id + i)) }));
-}
+if (!SCENES.includes(SCENE)) { console.error(`SCENE must be one of ${SCENES.join(', ')}`); process.exit(2); }
+if (SCENE === 'log' && !TRACKS) { console.error('SCENE=log needs TRACKS=<csv>'); process.exit(2); }
 
 function unpack(buf: Uint8Array): Uint8Array[] {
   const out: Uint8Array[] = []; let i = 0;
@@ -36,30 +42,47 @@ function unpack(buf: Uint8Array): Uint8Array[] {
   return out;
 }
 
-for (let d = 0; d < DEVICES; d++) {
+/** Bytes sent since the last stats line, incl. 28 B UDP/IP per datagram. */
+const sims: { deviceId: number; edge: WasmEdge; bytes: number }[] = [];
+// Each device starts at its own phase (golden-ratio spread over up to 10 s): real edges are not
+// phase-locked, and eight edges keyframing and posing in the same instant overrun a narrow link's
+// queue in a way real drones would not.
+const phaseMs = (d: number) => Math.round(((d * 0.6180339887) % 1) * Math.min(10_000, 1250 * DEVICES));
+
+for (let d = 0; d < DEVICES; d++) setTimeout(() => startDevice(d), DEVICES > 1 ? phaseMs(d) : 0);
+
+function startDevice(d: number) {
   const deviceId = 100 + d;
+  const scene = SCENE === 'log' ? logScene(TRACKS!).scene : SCENE === 'spread' ? spreadScene(d, DEVICES, WALKERS) : sharedScene(deviceId);
+  const camera = SCENE === 'log' ? fixedCamera(TRACKS_CAMERA) : SCENE === 'spread' ? spreadCamera(d, DEVICES) : sharedCamera(d, DEVICES);
   const edge = new WasmEdge(deviceId, Math.floor(Math.random() * 2 ** 31));
   const sock = dgram.createSocket('udp4');
   sock.on('message', m => edge.on_datagram(new Uint8Array(m)));
   const t0 = Date.now();
   let tick = 0;
+  const sim = { deviceId, edge, bytes: 0 };
+  sims.push(sim);
   const gt: { tick: number; line: string }[] = [];
   setInterval(() => {
     const now = Date.now();
     const target = Math.floor((now - t0) / 1000 * TICK_HZ);
     while (tick <= target) {
-      const t = tick / TICK_HZ;
-      const tracks = scene(t, deviceId);
+      const tracks = scene(tick);
       if (GT_POST_MS > 0) for (const tr of tracks) gt.push({ tick, line: [tick, tr.id, tr.class, ...tr.pos.map(v => v.toFixed(4)), ...tr.vel.map(v => v.toFixed(4)), tr.conf].join(',') });
-      const packed = edge.tick(JSON.stringify(tracks), tick);
-      for (const dg of unpack(packed)) {
+      const out = unpack(edge.tick(JSON.stringify(tracks), tick));
+      if (tick % POSE_EVERY_TICKS === 0) { // offered at 2 Hz like the phone; core sends it at the budget's pose interval
+        const c = camera(tick);
+        const pose = edge.pose(...c.pos, ...c.quat, true, tick);
+        if (pose.length) out.push(pose);
+      }
+      for (const dg of out) {
         sock.send(dg, PORT, HOST);
+        sim.bytes += dg.length + UDP_IP_OVERHEAD;
         if (VERBOSE) console.log(`[${deviceId}] ${describe(dg)} (${dg.length} B)`);
       }
       tick++;
     }
   }, 1000 / 30);
-  setInterval(() => console.log(`[${deviceId}] ${edge.stats_json()}`), 5000);
   if (GT_POST_MS > 0) setInterval(async () => {
     while (gt.length && gt[0].tick < tick - GT_WINDOW_TICKS) gt.shift();
     const body = 'tick,id,class,x,y,z,vx,vy,vz,conf\n' + gt.map(r => r.line).join('\n') + '\n';
@@ -70,4 +93,13 @@ for (let d = 0; d < DEVICES; d++) {
     } catch { /* server not up yet */ }
   }, GT_POST_MS);
 }
-console.log(`sim: ${DEVICES} device(s) -> ${HOST}:${PORT}`);
+
+setInterval(() => {
+  let total = 0;
+  for (const s of sims) {
+    console.log(`[${s.deviceId}] ${(s.bytes * 1000 / STATS_MS).toFixed(1)} B/s ${s.edge.stats_json()}`);
+    total += s.bytes; s.bytes = 0;
+  }
+  if (sims.length > 1) console.log(`[all] ${(total * 1000 / STATS_MS).toFixed(1)} B/s = ${(total * 8 / STATS_MS).toFixed(2)} kbit/s offered by ${sims.length} devices`);
+}, STATS_MS);
+console.log(`sim: ${DEVICES} device(s), scene ${SCENE}${SCENE === 'spread' ? ` (${WALKERS} walker(s) each)` : ''} -> ${HOST}:${PORT}`);

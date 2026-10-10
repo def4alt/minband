@@ -1,6 +1,7 @@
 // One entry point: synth -> sweep -> baselines -> charts.
 //   npm run eval                                   # synthetic scenarios (runs/synth -> runs/eval)
 //   npm run eval -- --gt runs/phone/gt-1712345.csv --gt runs/phone/gt-1712399.csv   # real logs, no synth
+//   npm run eval -- --gt runs/footage/<clip>/tracks.csv --baseline-a runs/footage/<clip>/baseline_a.json --out runs/footage/<clip>/eval
 import { parseArgs } from 'node:util';
 import { writeStandard } from './synth.ts';
 import { loadInputs, synthInputs, fidelitySweep, resilienceSweep, FIDELITY_COLUMNS, RESILIENCE_COLUMNS } from './sweep.ts';
@@ -17,6 +18,7 @@ const { values } = parseArgs({
     hz: { type: 'string', default: '30' },
     seed: { type: 'string', default: '1' },
     out: { type: 'string' },
+    'baseline-a': { type: 'string' },
   },
 });
 const out = values.out ? userPath(values.out) : EVAL_DIR;
@@ -39,6 +41,6 @@ lap(`sweep: ${fidelity.length} theta points -> fidelity_vs_bytes.csv`);
 const resilience = resilienceSweep(inputs);
 writeCsv(join(out, 'resilience.csv'), RESILIENCE_COLUMNS, resilience);
 lap(`sweep: ${resilience.length} loss points -> resilience.csv`);
-writeBaselines(inputs, out);
+writeBaselines(inputs, out, values['baseline-a'] ? userPath(values['baseline-a']) : undefined);
 lap('baselines -> baselines.csv');
 for (const f of renderAll(out)) lap(`charts -> ${f}`);

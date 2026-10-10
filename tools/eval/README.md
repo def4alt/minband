@@ -11,7 +11,7 @@ Requires Node >= 23.6 (TypeScript runs natively, no build step) and a built `cor
 ```bash
 npm install
 npm run eval                      # synth -> sweep -> baselines -> charts (~15 s)
-npm test                          # CSV round trip, replay sanity, baseline formula
+npm test                          # CSV round trip, replay sanity, baseline B and C formulas
 npm run typecheck
 ```
 
@@ -46,9 +46,10 @@ scenario, fixed by name so a scenario has the same hue in both charts:
 
 Other scenario names (e.g. phone logs) take the remaining hues (`#78d9ec`, `#fcad70`) in order.
 
-- `fidelity_vs_bytes.svg`: dots are θ sweep points, the ringed dot is the default θ_pos;
-  vertical reference lines are dashed in `--ink-2`: H.264 with long dashes, naive 30 Hz metadata
-  with short ones.
+- `fidelity_vs_bytes.svg`: dots are θ sweep points, the ringed dot is the default θ_pos (its
+  tooltip adds Baseline C at equal bytes); vertical reference lines are dashed in `--ink-2`:
+  H.264 with long dashes, naive 30 Hz metadata with short ones, and dash-dot the Pi link box
+  rates (telemetry, lora, hf), each labelled with the AI thumbnail interval it allows.
 - `resilience.svg`: state repair on = solid trace with filled dots, repair off = dashed trace
   with hollow dots, in the scenario's hue.
 
@@ -96,6 +97,16 @@ the golden test); mode `server` instead acks after each delivered datagram when 
 100 ms have passed since the last ack (what `server/src/world.ts` does); mode `none` sends no
 acks (no state repair). The edge is pre-acked with `[0,4,0,0,0]` so it skips the Hello handshake.
 
+**Header bytes.** Every datagram counts payload + 28 B (UDP 8 + IPv4 20; `HEADER_BYTES` in
+`src/replay.ts`), acks included. That matches the server (checked 2026-10-09):
+`server/src/world.ts` adds `UDP_IP_OVERHEAD` (28, `server/src/shaper.ts`) to every datagram in
+both its offered and delivered rates, the in-process shaper's token bucket charges the same, and
+Baseline B's 40 B per message includes the 28 B. The eval counts at the sender, before loss, so
+compare it with the server's `offeredBps`; its `bps` is what got delivered. The Pi link box counts
+the same bytes (`tools/pi-link.sh` gives netem's rate a -14 B overhead to drop the Ethernet
+header). The one exception is the edge's budget controller, which counts payload only
+(`core/src/edge.rs`, `emit`; HACKATHON_PLAN 3.4 item 2).
+
 The fidelity sweep uses loss 0, delay 0, θ_vel = 2·θ_pos. With that link the twin error at logged
 frames can never exceed θ_pos (the edge checks exactly that prediction), which the tests assert.
 The resilience sweep uses θ_pos 0.15, 6 ticks (50 ms) one-way delay and 10 seeds per point, for
@@ -130,3 +141,30 @@ and re-run `npm run baselines && npm run charts` (or `npm run eval`). Entries re
 configured rows with the same `id` (unknown ids are added as extra reference lines), flip
 `measured` to `true` in `baselines.csv`, and drop the "(configured)" label from the chart and
 `summary.md`. `--baseline-a <file>` reads a different file.
+
+**Baseline C** (AI thumbnail, HACKATHON_PLAN 6.1 S23) is the honest competitor at these rates:
+not video, but the edge detector sending one ~150 B chip (a 32x32-class JPEG crop; MeshCore sends
+100-200 B images over LoRa) every N seconds. At a wire rate of R bit/s,
+
+    N = (150 B chip + 28 B UDP/IP) * 8 / R
+
+computed two ways: per scenario at MinBand's own wire rate at the default θ_pos (equal bytes: "for
+the bytes MinBand uses, a thumbnail feed gets one 150 B chip every N s"; the same replay as the
+sweep's default-θ row), and at each Pi link box profile rate (`tools/pi-link.sh`: hf 9600, lora
+2000, telemetry 600 bit/s; the whole link given to thumbnails). Synthetic scenarios, 2026-10-09:
+
+| At MinBand's bytes | static | one walker | one walker noisy | three walkers | crowd |
+|---|---:|---:|---:|---:|---:|
+| MinBand B/s | 68.9 | 125.9 | 175.8 | 343.7 | 780.6 |
+| one 150 B chip every | 2.6 s | 1.4 s | 1.0 s | 0.52 s | 0.23 s |
+
+| On the link | hf 9.6 kbit/s | lora 2 kbit/s | telemetry 600 bit/s |
+|---|---:|---:|---:|
+| one 150 B chip every | 0.15 s | 0.71 s | 2.4 s |
+
+The comparison is not "MinBand wins": a chip is evidence a person can check (what the detector
+saw, mistakes and decoys included), but of one object at a time, every N s, with no 3D position,
+no identity across chips and nothing in between; if each chip shows one object, k entities are
+each revisited every k·N s. The twin carries every entity's position and velocity continuously
+and no pixels. `summary.md` states this next to the numbers; chips on demand inside the same
+budget (S8) are the combination.

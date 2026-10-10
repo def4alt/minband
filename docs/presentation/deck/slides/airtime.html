@@ -1,0 +1,25 @@
+<section id="airtime" data-transition="fade" style="background:#0B0D0F;color:#E9ECEF;font-family:'Inter', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:48px">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:24px;letter-spacing:6px;text-transform:uppercase;color:#FDD663">Drones per link</p>
+<h2 style="font-family:'Inter', Arial, sans-serif;font-size:72px;font-weight:300;line-height:1.15">Eight drones share one 9.6 kbit/s HF link.</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:32px">
+<div style="display:flex;flex-direction:column;gap:12px;border-top:1px solid #4A525B;padding:24px 0 0 0">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:72px;font-weight:300">5.7</p>
+<p style="font-size:24px;line-height:1.5;color:#9AA3AD">kbit/s delivered for all eight, each with its own walker and camera</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;border-top:1px solid #4A525B;padding:24px 0 0 0">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:72px;font-weight:300">51 %</p>
+<p style="font-size:24px;line-height:1.5;color:#9AA3AD">of the channel's airtime on the uplink</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;border-top:1px solid #4A525B;padding:24px 0 0 0">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:72px;font-weight:300">16 cm</p>
+<p style="font-size:24px;line-height:1.5;color:#9AA3AD">mean twin error against ground truth</p>
+</div>
+<div style="display:flex;flex-direction:column;gap:12px;border-top:1px solid #4A525B;padding:24px 0 0 0">
+<p style="font-family:'IBM Plex Mono', 'Courier New', monospace;font-size:72px;font-weight:300">4 / 579</p>
+<p style="font-size:24px;line-height:1.5;color:#9AA3AD">datagrams dropped on a 1 % loss link</p>
+</div>
+</div>
+<p style="font-size:32px;font-weight:300;line-height:1.4;color:#9AA3AD;width:1600px">On shared radios the budget is airtime, not bytes. One walker takes <span style="color:#E9ECEF">7.8 %</span> of HF and <span style="color:#E9ECEF">56 %</span> of a 2 kbit/s LoRa channel (Meshtastic MediumSlow); a 16 B packet costs 354 ms on LongFast.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#6B7480">e2e/test/drones.test.ts: 8 sim edges, server splits the 8 kbit/s budget, hf profile (500 ms, 1 % loss). Airtime: serial model for HF, Semtech formula for LoRa.</p>
+<aside>Say "N feeds fit in X percent of the channel", not "N feeds fit in X bytes". The acks matter too: today the ground station transmits about as often as the drones, which is why quiet simplex mode is the first next step.</aside>
+</section>

@@ -1,0 +1,439 @@
+<title>MinBand Team Showcase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Inter:wght@200;300;400;500;600&display=swap">
+<style>
+/* Layout: one reading column (about 72 characters) with a sticky section index on wide screens;
+   the project's own poster language: monochrome, hairlines, mono for every number. */
+:root {
+  --bg: #f3f4f5; --panel: #ffffff; --ink: #0b0d0f; --ink-2: #48505a; --ink-3: #8b939c; --ink-4: #d8dce0;
+  --ok: #1d7a46; --work: #8a6400; --need: #a2352a;
+  --sans: 'Inter', -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --track: 0.16em;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #070809; --panel: #0d0f12; --ink: #e9ecef; --ink-2: #9aa3ad; --ink-3: #5b636c; --ink-4: #1d2126;
+  --ok: #81c995; --work: #fdd663; --need: #f28b82; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #070809; --panel: #0d0f12; --ink: #e9ecef; --ink-2: #9aa3ad; --ink-3: #5b636c; --ink-4: #1d2126;
+  --ok: #81c995; --work: #fdd663; --need: #f28b82; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 300 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 0 80px; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 56px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; } nav.index { display: none; } }
+main { min-width: 0; max-width: 760px; }
+a { color: inherit; text-decoration-color: var(--ink-3); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 300; }
+p { margin: 0; }
+.lbl { font: 500 11px/1.4 var(--sans); letter-spacing: var(--track); text-transform: uppercase; color: var(--ink-2); }
+.mono, code, td.n, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+code { font-size: 0.86em; background: var(--ink-4); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+dfn { font-style: normal; border-bottom: 1px dotted var(--ink-3); }
+dfn a { text-decoration: none; }
+
+/* header */
+header.top { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px 32px; padding-block: 28px 22px; border-bottom: 1px solid var(--ink-3); }
+.brand { font: 200 26px/1 var(--sans); letter-spacing: 0.34em; text-transform: uppercase; margin-right: -0.34em; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 28px; }
+.meta span { white-space: nowrap; }
+.meta b { font-weight: 500; }
+
+nav.index { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; padding-block: 40px; display: flex; flex-direction: column; gap: 10px; }
+nav.index a { text-decoration: none; color: var(--ink-2); font-size: 14px; }
+nav.index a:hover { color: var(--ink); }
+
+/* sections */
+section { padding-block: 44px 8px; display: flex; flex-direction: column; gap: 18px; }
+section + section { border-top: 1px solid var(--ink-4); }
+h2 { font: 300 30px/1.2 var(--sans); }
+h3 { font: 500 16px/1.4 var(--sans); }
+.lead { font: 300 21px/1.5 var(--sans); }
+.thesis { font: 200 clamp(34px, 6vw, 56px)/1.08 var(--sans); letter-spacing: -0.01em; padding-block: 48px 8px; }
+.sub { color: var(--ink-2); }
+.small { font-size: 14px; color: var(--ink-2); }
+
+/* pipeline strip */
+.pipe { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--ink-3); }
+.pipe > div { flex: 1 1 150px; padding: 14px 16px; border-right: 1px solid var(--ink-4); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pipe > div:last-child { border-right: none; }
+.pipe .step { font: 400 11px/1.4 var(--mono); color: var(--ink-3); }
+.pipe .what { font-size: 15px; font-weight: 500; }
+.pipe .how { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+
+/* figures */
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+figure img { width: 100%; height: auto; display: block; border: 1px solid var(--ink-4); background: #070809; }
+figcaption { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 640px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+
+/* status lists */
+.status { display: flex; flex-direction: column; border-top: 1px solid var(--ink-4); }
+.row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 4px 18px; padding-block: 14px; border-bottom: 1px solid var(--ink-4); }
+@media (max-width: 520px) { .row { grid-template-columns: minmax(0, 1fr); } }
+.row h3 { grid-column: 2; }
+@media (max-width: 520px) { .row h3 { grid-column: 1; } }
+.row .body { grid-column: 2; display: flex; flex-direction: column; gap: 6px; font-size: 15px; min-width: 0; }
+@media (max-width: 520px) { .row .body { grid-column: 1; } }
+.chip { grid-row: 1 / span 2; align-self: start; font: 500 11px/1 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 7px; padding-top: 4px; white-space: nowrap; }
+@media (max-width: 520px) { .chip { grid-row: auto; } }
+.chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
+.chip.ok { color: var(--ok); } .chip.ok::before { background: currentColor; }
+.chip.work { color: var(--work); } .chip.work::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+.chip.need { color: var(--need); }
+.where { font: 400 12.5px/1.5 var(--mono); color: var(--ink-3); overflow-wrap: anywhere; }
+
+/* tables */
+.tbl { overflow-x: auto; border-top: 1px solid var(--ink-3); }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--ink-4); vertical-align: top; }
+th { font: 500 11px/1.4 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+tr.hi td { font-weight: 500; }
+
+/* bit-rate ladder */
+.ladder { display: flex; flex-direction: column; gap: 6px; }
+.ladder svg { width: 100%; height: auto; display: block; overflow: visible; }
+.ladder text { font-family: var(--mono); font-size: 12px; fill: var(--ink-2); }
+.ladder .bar { fill: var(--ink-3); }
+.ladder .bar.mb { fill: var(--ink); }
+.ladder .grid { stroke: var(--ink-4); stroke-width: 1; }
+.ladder .lab { fill: var(--ink); font-family: var(--sans); font-size: 13px; }
+
+/* steps */
+ol.steps { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 6px; }
+ol.steps li::marker { font-family: var(--mono); color: var(--ink-3); }
+.note { border-left: 2px solid var(--work); padding: 4px 0 4px 14px; font-size: 15px; }
+.caution { border-left: 2px solid var(--need); padding: 4px 0 4px 14px; font-size: 15px; }
+pre { margin: 0; padding: 12px 14px; background: var(--panel); border: 1px solid var(--ink-4); overflow-x: auto; font: 400 13px/1.6 var(--mono); }
+
+/* direction */
+.dir { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--ink-3); }
+@media (max-width: 640px) { .dir { grid-template-columns: minmax(0, 1fr); } }
+.dir > div { padding: 16px 18px 18px 0; border-bottom: 1px solid var(--ink-4); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dir .k { font: 400 12px/1 var(--mono); color: var(--ink-3); }
+
+/* idea block */
+.idea { border: 1px solid var(--ink-3); background: var(--panel); padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+.idea-h { font: 300 24px/1.25 var(--sans); }
+ol.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--ink-4); }
+@media (max-width: 700px) { ol.flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { ol.flow { grid-template-columns: minmax(0, 1fr); } }
+ol.flow li { padding: 12px 14px 4px 0; display: flex; flex-direction: column; gap: 4px; font-size: 14.5px; min-width: 0; }
+ol.flow .k { font: 400 12px/1 var(--mono); color: var(--ink-3); }
+
+/* glossary */
+.gloss-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+#q { font: 400 15px var(--sans); padding: 8px 12px; border: 1px solid var(--ink-3); background: var(--panel); color: var(--ink); width: min(320px, 100%); border-radius: 3px; }
+dl.gloss { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 0; margin: 0; border-top: 1px solid var(--ink-3); }
+@media (max-width: 600px) { dl.gloss { grid-template-columns: minmax(0, 1fr); } }
+dl.gloss dt, dl.gloss dd { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--ink-4); }
+dl.gloss dt { font-weight: 500; padding-right: 16px; scroll-margin-top: 12px; }
+@media (max-width: 600px) { dl.gloss dt { border-bottom: none; padding-bottom: 0; } }
+dl.gloss dd { font-size: 15px; color: var(--ink-2); min-width: 0; }
+dl.gloss dt:target, dl.gloss dt:target + dd { background: var(--ink-4); }
+footer { padding-block: 40px 0; font-size: 13px; color: var(--ink-2); display: flex; flex-direction: column; gap: 6px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">MinBand</div>
+    <div class="meta lbl">
+      <span>Team showcase</span>
+      <span>Status <b class="mono">10 Oct 2026</b></span>
+      <span>D4D × EDTH Seoul · judging <b class="mono">11 Oct</b></span>
+      <span>Written in ASD-STE100</span>
+    </div>
+  </header>
+
+  <nav class="index" aria-label="Sections">
+    <span class="lbl">On this page</span>
+    <a href="#idea">The idea</a>
+    <a href="#available">What is available</a>
+    <a href="#results">Measured results</a>
+    <a href="#left">What is left</a>
+    <a href="#direction">Direction</a>
+    <a href="#run">How to run it</a>
+    <a href="#terms">Terms</a>
+  </nav>
+
+  <main>
+    <section id="idea" aria-labelledby="idea-h">
+      <p class="thesis">Bandwidth proportional to surprise.</p>
+      <h2 id="idea-h" class="lbl">The idea</h2>
+      <p class="lead">A drone or a phone sees objects. It does not send video. It sends only the changes that the receiver cannot predict.</p>
+      <p>Both ends of the link use the same <dfn><a href="#t-predictor">predictor</a></dfn>. The <dfn><a href="#t-edge">edge</a></dfn> keeps a copy of the receiver's picture, the <dfn><a href="#t-ghost">ghost</a></dfn>. The edge sends a <dfn><a href="#t-delta">delta</a></dfn> only when the real object moves away from the ghost by more than the <dfn><a href="#t-threshold">threshold</a></dfn>. An object that walks in a straight line costs almost nothing. A turn costs one small message.</p>
+      <p>The laptop shows a live 3D <dfn><a href="#t-twin">twin</a></dfn> of the scene. When the link stops, the twin does not freeze. It continues to predict, and it shows clearly how uncertain each object becomes.</p>
+      <div class="pipe" role="list" aria-label="Signal path">
+        <div role="listitem"><span class="step">1 · edge</span><span class="what">See</span><span class="how">Camera, <a href="#t-detector">detector</a>, <a href="#t-tracker">tracker</a>. iPhone now, drone later.</span></div>
+        <div role="listitem"><span class="step">2 · edge core</span><span class="what">Decide</span><span class="how">Compare each track to its ghost. Send only the surprise.</span></div>
+        <div role="listitem"><span class="step">3 · link</span><span class="what">Carry</span><span class="how">Any radio. The Pi 5 <a href="#t-linkbox">link box</a> copies HF, LoRa, telemetry and jamming.</span></div>
+        <div role="listitem"><span class="step">4 · server</span><span class="what">Rebuild</span><span class="how">Twin, <a href="#t-fusion">fusion</a>, <a href="#t-repair">repair</a>, <a href="#t-cot">CoT</a> to TAK.</span></div>
+        <div role="listitem"><span class="step">5 · screen</span><span class="what">Show</span><span class="how">Viewer with <a href="#t-ce">error rings</a>, link activity and video comparison.</span></div>
+      </div>
+      <p class="small">MinBand is a link layer. It is not a drone and not a detector. The delta idea is <dfn><a href="#t-dr">dead reckoning</a></dfn> from DIS. Say this first. The new parts are the declared error bar in each message, the visible <dfn><a href="#t-coasting">coasting</a></dfn> state, and a <dfn><a href="#t-heartbeat">heartbeat</a></dfn> that follows the link <dfn><a href="#t-budget">budget</a></dfn>.</p>
+    </section>
+
+    <section id="available" aria-labelledby="av-h">
+      <h2 id="av-h">What is available now</h2>
+      <p class="sub">All code is on branch <code>claude/dazzling-carson-mlx4xb</code> of <code>def4alt/minband</code>. Each item shows its status.</p>
+      <p class="small"><span class="chip ok" style="display:inline-flex">Ready</span> tested here &nbsp; <span class="chip work" style="display:inline-flex">Partly</span> works, test on hardware or still in progress &nbsp; <span class="chip need" style="display:inline-flex">Needed</span> not done yet</p>
+      <div class="status">
+        <div class="row"><span class="chip ok">Ready</span><h3>Sync protocol (core, Rust)</h3><div class="body">
+          <p>Deltas, <a href="#t-keyframe">keyframes</a>, <a href="#t-ack">acks and nacks</a>, state repair. Protocol version 1.</p>
+          <p>Each message declares its threshold in one byte. The twin uses it to draw an honest error ring.</p>
+          <p>The keyframe <a href="#t-cadence">cadence</a> follows the budget: 2 s on fast links, up to 15 s at 600 bit/s. The budget counts the 28-byte UDP/IP header.</p>
+          <p>Classes include dismounts, vehicles and bicycles with their own motion limits.</p>
+          <p class="where">core/ · 46 tests with <a href="#t-golden">golden vectors</a> on x86-64, WASM and aarch64 (qemu)</p></div></div>
+        <div class="row"><span class="chip ok">Ready</span><h3>Server (Node)</h3><div class="body">
+          <p>Receives UDP from each edge, keeps the twin, merges devices (fusion), sends acks.</p>
+          <p>Seven <a href="#t-profile">link profiles</a> built in: clean, degraded, HF, LoRa, telemetry, contested, blackout. It shows <a href="#t-airtime">airtime</a> for each profile.</p>
+          <p>Liveness follows the cadence, so slow links do not show false "lost" states.</p>
+          <p class="where">server/ · 86 tests · HTTP API on :8080, UDP on :7777</p></div></div>
+        <div class="row"><span class="chip ok">Ready</span><h3>Viewer (browser)</h3><div class="body">
+          <p>Live 3D twin. Error rings grow during a blackout and snap back after it.</p>
+          <p>Link activity strip: one tick for each datagram. Video-on-this-link panel: shows how slowly video would arrive on the same link, next to an AI thumbnail.</p>
+          <p>Wide-area mode for drone-scale scenes up to hundreds of metres, with vehicle glyphs. <a href="#t-stage">STAGE</a> mode for the presentation.</p>
+          <p class="where">viewer/ · mock server and a screenshot smoke test</p></div></div>
+        <div class="row"><span class="chip ok">Ready</span><h3>CoT export to TAK</h3><div class="body">
+          <p>One <a href="#t-cot">CoT</a> event for each fused object. Type <code>a-u-G</code>, affiliation unknown. The error ring goes out as CoT <code>ce</code>.</p>
+          <p>Marker position to <a href="#t-wgs">WGS84 and MGRS</a>, checked against GEOTRANS, PROJ and PyGeodesy on 26,000 points.</p>
+          <p class="where">server/src/cot.ts, geo.ts · not yet seen on a real ATAK screen</p></div></div>
+        <div class="row"><span class="chip work">Partly</span><h3>Pi 5 link box</h3><div class="body">
+          <p>Script that turns a Raspberry Pi 5 into the radio between phone and laptop. It uses <a href="#t-netem">netem</a> for rate, delay and loss.</p>
+          <p>Dry-run test (80 checks) and a kernel test on loopback (23 checks) pass. Real netem and the hotspot need the Pi.</p>
+          <p class="where">tools/pi-link.sh · tools/README.md</p></div></div>
+        <div class="row"><span class="chip work">Partly</span><h3>iPhone app</h3><div class="body">
+          <p>ARKit marker origin, LiDAR depth, CoreML detector, tracker, core through uniffi. Tested on device before this weekend.</p>
+          <p>New: an opt-in H.264 measurement that writes the video baseline file. New code is not compiled yet. Build it on a Mac first.</p>
+          <p class="where">ios/ · ios/README.md "H.264 baseline"</p></div></div>
+        <div class="row"><span class="chip ok">Ready</span><h3>Evaluation tools</h3><div class="body">
+          <p>Fidelity against bytes, resilience to loss, and three <a href="#t-baseline">baselines</a>: video, naive metadata, AI thumbnail. Charts and a summary table.</p>
+          <p class="where">tools/eval/ · npm run eval</p></div></div>
+        <div class="row"><span class="chip ok">Ready</span><h3>Real drone footage pipeline</h3><div class="body">
+          <p>Downloads one clip of real DJI drone video (MEVA, CC-BY-4.0) by byte range. Detects people and vehicles, removes the drone's own motion (<a href="#t-ego">ego-motion</a>), puts each object on the ground in metres, tracks it.</p>
+          <p>Measures H.264 on the same pixels with x264. Replays the tracks live through the real server and viewer.</p>
+          <p class="where">tools/footage/ · runs/footage/ (local, not in git)</p></div></div>
+        <div class="row"><span class="chip work">Partly</span><h3>Battlefield detection</h3><div class="body">
+          <p><a href="#t-mti">Moving target indication</a> finds movers that camouflage hides. A new tracker keeps each track for longer. New classes: unclassified mover, armoured vehicle.</p>
+          <p>Test set: 8 unlabeled clips, 3 of them real military drone views. On the 5 <a href="#t-heldout">held-out</a> clips, the system finds about twice as many visible objects at the same precision. Track recall: 0.25 to 0.48. On the 2 military clips: 0.13 to 0.38.</p>
+          <p>These numbers come from a check by eye after the settings were frozen. They are not ground truth.</p>
+          <p>Weak points: thermal video, roof vents seen as vehicles, shadows and surf seen as movers. No military vehicle model was good enough, so the system does not use the class "armoured" yet.</p>
+          <p class="where">tools/footage/ · docs/FOOTAGE_FINDINGS.md</p></div></div>
+        <div class="row"><span class="chip ok">Ready</span><h3>Tests and demo material</h3><div class="body">
+          <p>28 <a href="#t-e2e">end-to-end tests</a>: pipeline, fusion, loss, blackout, CoT, link profiles, low-rate cadence, eight drones on one HF link, kernel-shaped link, viewer in Chromium.</p>
+          <p>A recorder makes the <a href="#t-fallback">fallback run</a> video. A 15-slide draft deck exists (private link, share it first).</p>
+          <p class="where">e2e/ · npm test · npm run record</p></div></div>
+      </div>
+      <div class="pair">
+        <figure><img src="{{IMG:drone-input}}" alt="Real drone video frame: a school, roads, parked cars and a group of walkers, seen from about 66 metres at an oblique angle." loading="lazy"><figcaption>Input: one frame of real drone video. MEVA dataset, Kitware/IARPA, CC-BY-4.0. 4K, about 66 m high.</figcaption></figure>
+        <figure><img src="{{IMG:twin-wide}}" alt="MinBand viewer in wide-area mode: dismounts as small capsules, vehicles as boxes with heading arrows, the drone's camera frustum above a 10 metre grid." loading="lazy"><figcaption>Output: the twin rebuilt from the tracks of that video. Dismounts are capsules, vehicles are boxes. About 20 kbit/s.</figcaption></figure>
+      </div>
+      <div class="pair">
+        <figure><img src="{{IMG:coasting}}" alt="Viewer during a 10 second blackout: the edge reads coasting and dashed error rings around each entity grow." loading="lazy"><figcaption>Blackout: the link is down. Entities coast and their error rings grow. After the link returns, one keyframe snaps them back.</figcaption></figure>
+        <figure><img src="{{IMG:stage-lora}}" alt="STAGE mode on the LoRa profile: link activity strip, video-on-this-link panel with a next frame countdown and an AI thumbnail comparison." loading="lazy"><figcaption>STAGE mode on the LoRa profile: the link activity strip, and how long one video frame takes on the same link.</figcaption></figure>
+      </div>
+    </section>
+
+    <section id="results" aria-labelledby="res-h">
+      <h2 id="res-h">Measured results</h2>
+      <p class="sub">All numbers come from runs in this repository. Synthetic means a scripted scene. Real means the MEVA drone video.</p>
+
+      <h3>Real drone footage: MinBand against video of the same scene</h3>
+      <div class="ladder">
+        <svg viewBox="0 0 720 210" role="img" aria-label="Bit rate on a log scale: MinBand 19.3 kbit/s; H.264 360p 865 kbit/s; 720p 2,944 kbit/s; 4K 16,703 kbit/s.">
+          <!-- log10 scale: 10 kbit/s at x=150, 100,000 kbit/s at x=700 (137.5 px per decade) -->
+          <line class="grid" x1="150" y1="8" x2="150" y2="178"/><line class="grid" x1="287.5" y1="8" x2="287.5" y2="178"/><line class="grid" x1="425" y1="8" x2="425" y2="178"/><line class="grid" x1="562.5" y1="8" x2="562.5" y2="178"/><line class="grid" x1="700" y1="8" x2="700" y2="178"/>
+          <text x="150" y="198" text-anchor="middle">10</text><text x="287.5" y="198" text-anchor="middle">100</text><text x="425" y="198" text-anchor="middle">1,000</text><text x="562.5" y="198" text-anchor="middle">10,000</text><text x="700" y="198" text-anchor="end">100,000 kbit/s</text>
+          <text class="lab" x="0" y="30">MinBand</text><rect class="bar mb" x="150" y="16" width="39.3" height="22"/><text x="197" y="32">19.3</text>
+          <text class="lab" x="0" y="72">H.264 360p</text><rect class="bar" x="150" y="58" width="263.5" height="22"/><text x="421" y="74">865</text>
+          <text class="lab" x="0" y="114">H.264 720p</text><rect class="bar" x="150" y="100" width="336.6" height="22"/><text x="494" y="116">2,944</text>
+          <text class="lab" x="0" y="156">H.264 4K</text><rect class="bar" x="150" y="142" width="440.2" height="22"/><text x="598" y="158">16,703</text>
+        </svg>
+        <p class="small">90 s of 4K drone video, about 27 tracked objects at a time. MinBand at threshold 0.15 m, clean link, mean sync error 3.6 cm. H.264 measured with x264 at <a href="#t-crf">CRF</a> 23, live settings. Log scale. MinBand is 153× smaller than 720p and 45× smaller than 360p. Only 4K shows the people well enough to detect them, and that is 866× more.</p>
+      </div>
+
+      <h3>Synthetic scenes (eval, 120 s each)</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Scene</th><th class="n">Objects</th><th class="n">Bytes/s</th><th class="n">Mean error</th><th class="n">vs 30 Hz metadata</th></tr></thead>
+        <tbody>
+          <tr><td>Static room</td><td class="n">3</td><td class="n">69</td><td class="n">0.0 cm</td><td class="n">58×</td></tr>
+          <tr class="hi"><td>One walker</td><td class="n">1</td><td class="n">128</td><td class="n">3.0 cm</td><td class="n">17×</td></tr>
+          <tr><td>Three walkers</td><td class="n">3</td><td class="n">348</td><td class="n">2.6 cm</td><td class="n">11×</td></tr>
+          <tr><td>Crowd</td><td class="n">8</td><td class="n">790</td><td class="n">2.8 cm</td><td class="n">11×</td></tr>
+        </tbody></table></div>
+
+      <h3>Narrow links</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Case</th><th>Link</th><th class="n">Sent</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Static room</td><td>Telemetry, 450 bit/s budget</td><td class="n">112 bit/s</td><td>Fits</td></tr>
+          <tr><td>One walker</td><td>Telemetry, 450 bit/s budget</td><td class="n">452 bit/s</td><td>Fits</td></tr>
+          <tr><td>8 drones, 1 walker each</td><td>HF, 9.6 kbit/s shared</td><td class="n">5.7 kbit/s</td><td>Fits: 51 % airtime, 16 cm error</td></tr>
+          <tr><td>Real footage, 27 objects</td><td>HF, 8 kbit/s budget</td><td class="n">9.4 kbit/s</td><td>17 % over the budget, 37 cm error</td></tr>
+          <tr><td>Real footage, 27 objects</td><td>LoRa, 1.5 kbit/s budget</td><td class="n">8.9 kbit/s</td><td>Does not fit: 6× the budget</td></tr>
+          <tr><td>Real footage, 27 objects</td><td>Telemetry, 450 bit/s budget</td><td class="n">7.4 kbit/s</td><td>Does not fit: 16× the budget</td></tr>
+        </tbody></table></div>
+      <p class="small">Real-footage rows: replay with the loss and delay of each profile. The replay measures what the edge offers. It has no radio queue. The tracker starts many short tracks, and each new track costs bytes. A better tracker and the compact codec are the next steps.</p>
+
+      <h3>Loss and blackout</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>One walker (synthetic)</th><th class="n">0 % loss</th><th class="n">20 % loss</th><th class="n">50 % loss</th></tr></thead>
+        <tbody><tr><td>Mean error · availability</td><td class="n">3.7 cm · 99.9 %</td><td class="n">8.9 cm · 99.9 %</td><td class="n">31.6 cm · 99.5 %</td></tr></tbody></table></div>
+      <p class="small">In a 10 s blackout on a fast link, objects coast after 2.5 s and go stale after 6 s. The twin re-syncs less than 4 s after the link returns.</p>
+    </section>
+
+    <section id="left" aria-labelledby="left-h">
+      <h2 id="left-h">What is left</h2>
+      <h3>Before judging (people and hardware)</h3>
+      <div class="status">
+        <div class="row"><span class="chip need">Needed</span><h3>Slide 1 content</h3><div class="body"><p>Choose the track. Quote its problem statement. Ask a military mentor for one real scenario and real link rates. Add team names.</p></div></div>
+        <div class="row"><span class="chip need">Needed</span><h3>Build the iPhone app</h3><div class="body"><p>Build the new code on a Mac. Run the H.264 measurement for 60 s or more. Copy the file to <code>runs/baseline_a.json</code>. The viewer then drops the word "configured".</p></div></div>
+        <div class="row"><span class="chip need">Needed</span><h3>Pi 5 link box on the Pi</h3><div class="body"><p>Run the kernel test with real netem. Connect phone, Pi and laptop. Step through each profile.</p></div></div>
+        <div class="row"><span class="chip need">Needed</span><h3>Record the fallback run</h3><div class="body"><p>Record it on the final build with the phone and the Pi. A sim version already exists.</p></div></div>
+        <div class="row"><span class="chip need">Needed</span><h3>Rehearse</h3><div class="body"><p>Rehearse the 3 + 2 minute and the 5 minute versions. Pull the cable on the clean or HF profile, before you step down.</p></div></div>
+      </div>
+      <h3>Engineering</h3>
+      <div class="status">
+        <div class="row"><span class="chip work">Partly</span><h3>Battlefield detection</h3><div class="body"><p>Run the 4K drone clip again with the fixed detector, then check it by eye. Improve thermal video. Remove false movers from shadows and surf.</p></div></div>
+        <div class="row"><span class="chip need">Needed</span><h3>Tracker quality on real footage</h3><div class="body"><p>This is now the largest cost. The new tracker starts 105 new tracks each minute on the 4K clip, not 182. Parked objects no longer drift. Fewer, longer tracks make the link much cheaper.</p></div></div>
+        <div class="row"><span class="chip need">Needed</span><h3>Hardware runs</h3><div class="body"><p>Phone ground-truth log, Wi-Fi loss runs, two-phone fusion, CoT on a real ATAK screen, golden vectors on the real Pi.</p></div></div>
+      </div>
+      <p class="caution">Do not put frames of the military test clips on slides. Their licence is unknown. Use numbers only.</p>
+    </section>
+
+    <section id="direction" aria-labelledby="dir-h">
+      <h2 id="dir-h">Current direction</h2>
+      <p class="lead">The protocol works on synthetic scenes and on real drone video. On real video, the edge tracker sets the cost, not the protocol.</p>
+      <div class="idea">
+        <span class="lbl">New idea from the team</span>
+        <h3 class="idea-h">Video first. MinBand when the link fails.</h3>
+        <ol class="flow">
+          <li><span class="k">1 · good link</span><p>The operator sees normal video.</p></li>
+          <li><span class="k">2 · click</span><p>The operator clicks an object in the video to <a href="#t-pin">pin</a> it. The edge keeps its track and its identity.</p></li>
+          <li><span class="k">3 · weak link</span><p>The screen changes from video to the twin. Pinned objects use the budget first. The operator continues to follow them.</p></li>
+          <li><span class="k">4 · link returns</span><p>Video returns. Pinned objects keep the same identity.</p></li>
+        </ol>
+        <p class="small">This answers the question "why not send video?". The team keeps video when the link can carry it. MinBand keeps the picture when the link cannot.</p>
+        <p class="small">It needs: a pin message from the viewer to the edge in the ack, priority for pinned objects in the budget, an automatic change on the measured link rate, and a tracker that keeps identities for a long time. Pins are for awareness only. They do not aim anything, and affiliation stays unknown.</p>
+      </div>
+      <div class="dir">
+        <div><span class="k">now</span><h3>Better edge tracking</h3><p class="small">First version done: movers from motion, longer tracks, parked objects stay still. Next: fewer false movers and better thermal detection.</p></div>
+        <div><span class="k">idea</span><h3>Video first, pin to follow</h3><p class="small">Video on a good link. Pinned objects continue as a twin on a weak link. See the block above.</p></div>
+        <div><span class="k">next</span><h3>Fit narrow links</h3><p class="small">A compact message format of 8 to 16 bytes for each object. Send the most important objects first when the budget is small.</p></div>
+        <div><span class="k">next</span><h3>Quiet ground station</h3><p class="small">Emissions show where operators are. A simplex mode lets the ground station receive without a transmission.</p></div>
+        <div><span class="k">next</span><h3>Evidence on demand</h3><p class="small">The operator selects an object. The edge sends one small image of it inside the same budget.</p></div>
+        <div><span class="k">rule</span><h3>Human in the loop</h3><p class="small">Affiliation stays unknown. MinBand gives situational awareness. It does not give targeting.</p></div>
+        <div><span class="k">later</span><h3>Field path</h3><p class="small">A real radio (Meshtastic KR920 or SiK), geodesy with real error bars, KVMF or Link-K export, a Pi camera edge.</p></div>
+      </div>
+    </section>
+
+    <section id="run" aria-labelledby="run-h">
+      <h2 id="run-h">How to run it</h2>
+      <h3>Demo without a phone</h3>
+      <ol class="steps">
+        <li>Build the core once. Use the commands in <code>core/README.md</code>.</li>
+        <li>Start the server: <code>cd server &amp;&amp; npm install &amp;&amp; npm run dev</code>.</li>
+        <li>Start a simulated edge: <code>cd server &amp;&amp; npm run sim</code>.</li>
+        <li>Start the viewer: <code>cd viewer &amp;&amp; npm install &amp;&amp; npm run dev</code>.</li>
+        <li>Open <code>http://localhost:5173</code>. Add <code>?stage=1</code> for STAGE mode.</li>
+      </ol>
+      <h3>Replay real drone footage</h3>
+      <ol class="steps">
+        <li>Follow <code>tools/footage/README.md</code> to make <code>tracks.csv</code>.</li>
+        <li>Start the server and the viewer as above.</li>
+        <li>Run <code>TRACKS=&lt;tracks.csv&gt; TRACKS_CAMERA=&lt;x,y,z&gt; npm run sim</code> in <code>server/</code>.</li>
+      </ol>
+      <h3>Pi 5 link box</h3>
+      <ol class="steps">
+        <li>Set the WLAN country to KR on the Pi.</li>
+        <li>Run <code>sudo tools/pi-link.sh setup --password '&lt;8+ chars&gt;'</code>.</li>
+        <li>Connect the laptop by Ethernet. Do not connect it to the hotspot.</li>
+        <li>Run <code>sudo tools/pi-link.sh lora</code>. Run the budget command that it shows on the laptop.</li>
+      </ol>
+      <h3>Tests and the fallback video</h3>
+      <pre>cd core &amp;&amp; cargo test
+cd server &amp;&amp; npm test
+cd e2e &amp;&amp; npm install &amp;&amp; npm test      # root is necessary for the tc tests
+cd e2e &amp;&amp; npm run record                # writes runs/fallback/*.mp4</pre>
+      <p class="note">Use binaryen 117 for <code>wasm-opt</code>. Older distribution versions break the WASM build.</p>
+    </section>
+
+    <section id="terms" aria-labelledby="terms-h">
+      <h2 id="terms-h">Terms</h2>
+      <div class="gloss-tools"><label class="lbl" for="q">Find a term</label><input id="q" type="search" placeholder="for example: keyframe" autocomplete="off"></div>
+      <dl class="gloss" id="gloss">
+        <dt id="t-edge">Edge</dt><dd>The device with the camera. It detects and tracks objects and sends messages. In the demo, it is an iPhone.</dd>
+        <dt id="t-twin">Twin</dt><dd>The live 3D picture on the laptop. It shows each object at its predicted position.</dd>
+        <dt id="t-entity">Entity</dt><dd>One tracked object in the twin, for example one person or one car.</dd>
+        <dt id="t-detector">Detector</dt><dd>Software that finds objects in one image. MinBand uses YOLO models.</dd>
+        <dt id="t-tracker">Tracker</dt><dd>Software that follows each detected object from frame to frame. It gives a position and a velocity.</dd>
+        <dt id="t-predictor">Predictor</dt><dd>The calculation that moves an entity forward in time. It uses the last position, the velocity and a motion limit for the class. Both ends use the same calculation.</dd>
+        <dt id="t-ghost">Ghost</dt><dd>The edge's copy of the twin's prediction for each entity. The edge compares each real track to its ghost.</dd>
+        <dt id="t-dr">Dead reckoning</dt><dd>Calculation of a position from a known position, a speed and the time since then. Military simulation (DIS) uses it since the 1990s.</dd>
+        <dt id="t-delta">Delta</dt><dd>A message with the new state of only the entities that moved past the threshold.</dd>
+        <dt id="t-threshold">Threshold (θ)</dt><dd>The largest position error that the edge accepts before it sends a delta. The default is 0.15 m. A larger threshold sends fewer bytes.</dd>
+        <dt id="t-keyframe">Keyframe</dt><dd>A message with the state of all entities. The edge sends it at regular intervals.</dd>
+        <dt id="t-heartbeat">Heartbeat</dt><dd>The regular keyframe. When the twin does not receive it, the twin knows that the link has a problem.</dd>
+        <dt id="t-budget">Budget</dt><dd>The maximum bit rate that the edge can use. The server tells the edge its budget in each ack.</dd>
+        <dt id="t-cadence">Cadence</dt><dd>The keyframe interval and the related periods. They become longer when the budget becomes smaller.</dd>
+        <dt id="t-coasting">Coasting</dt><dd>The state of an entity after the twin misses one heartbeat. The twin continues to predict it and shows it as uncertain.</dd>
+        <dt id="t-stale">Stale</dt><dd>The state of an entity after a longer silence. The twin shows that its position can be wrong.</dd>
+        <dt id="t-ce">Error ring (ce)</dt><dd>A circle around an entity. The entity is inside the circle. The ring starts at the threshold and grows while the entity coasts. CoT sends it as "ce".</dd>
+        <dt id="t-ack">Ack and nack</dt><dd>Messages from the server to the edge. An ack tells what arrived. A nack tells which messages are missing.</dd>
+        <dt id="t-repair">Repair</dt><dd>After a nack, the edge sends the current state of the affected entities. It does not send the old message again.</dd>
+        <dt id="t-fusion">Fusion</dt><dd>The server merges entities from different devices when they are the same object.</dd>
+        <dt id="t-profile">Link profile</dt><dd>A set of values for rate, delay, loss and queue that copies one type of radio.</dd>
+        <dt id="t-hf">HF, LoRa, telemetry</dt><dd>Radio types. HF: long range, 9.6 kbit/s. LoRa: low power, about 2 kbit/s. Telemetry: the data channel of a small drone's control link, about 600 bit/s.</dd>
+        <dt id="t-airtime">Airtime</dt><dd>The time that a radio channel is busy. On a shared radio, airtime is the real limit, not the number of bytes.</dd>
+        <dt id="t-linkbox">Link box</dt><dd>A Raspberry Pi 5 between the phone and the laptop. It acts as the radio. Its kernel adds the rate, delay and loss of a profile.</dd>
+        <dt id="t-netem">netem and tc</dt><dd>Linux tools that add delay, loss and rate limits to network traffic.</dd>
+        <dt id="t-cot">CoT</dt><dd>Cursor on Target. An XML message format for positions. TAK applications read it.</dd>
+        <dt id="t-tak">TAK</dt><dd>Team Awareness Kit: ATAK on Android, WinTAK on Windows, iTAK on iPhone. Map applications that show team positions.</dd>
+        <dt id="t-wgs">WGS84 and MGRS</dt><dd>WGS84 is the latitude and longitude system of GPS. MGRS is the military grid reference, for example 52S CG 21424 59640.</dd>
+        <dt id="t-marker">Marker</dt><dd>A printed image on the ground. It sets the zero point and the axes of the phone's coordinates.</dd>
+        <dt id="t-golden">Golden vectors</dt><dd>Fixed input and expected output files. They prove that the predictor gives the same result on each computer type.</dd>
+        <dt id="t-wasm">WASM and uniffi</dt><dd>WASM (WebAssembly) lets the Rust core run in Node.js and in a browser. uniffi connects the Rust core to Swift on the iPhone.</dd>
+        <dt id="t-h264">H.264</dt><dd>The usual video compression standard. MinBand compares its bytes to H.264 video of the same scene.</dd>
+        <dt id="t-crf">CRF</dt><dd>The quality setting of an H.264 encoder. A lower number gives better quality and more bits. CRF 23 is the default quality.</dd>
+        <dt id="t-baseline">Baselines A, B, C</dt><dd>A: H.264 video. B: naive metadata, with all entities 30 times each second. C: one 150-byte AI thumbnail image every few seconds.</dd>
+        <dt id="t-ego">Ego-motion</dt><dd>The motion of the camera itself. The footage tool removes it with a homography: a 3 × 3 matrix that maps one view of flat ground to another view.</dd>
+        <dt id="t-mti">MTI</dt><dd>Moving target indication. Detection of objects from their motion, not from their appearance. It finds movers that camouflage hides.</dd>
+        <dt id="t-pin">Pin</dt><dd>An operator selection of one object. The system keeps the identity of a pinned object and sends it first when the budget is small. A pin is for awareness only.</dd>
+        <dt id="t-dismount">Dismount</dt><dd>A person on foot. MinBand shows the class "person" as "dismount".</dd>
+        <dt id="t-affiliation">Affiliation unknown</dt><dd>MinBand does not identify friend or enemy. A human operator makes that decision.</dd>
+        <dt id="t-heldout">Held-out clip</dt><dd>A test video kept separate from development. The detector runs on it only once, after its settings are frozen.</dd>
+        <dt id="t-e2e">End-to-end test</dt><dd>A test that runs the real server, simulated edges and the viewer together.</dd>
+        <dt id="t-stage">STAGE mode</dt><dd>A presentation view of the viewer with extra panels: link activity and video on this link.</dd>
+        <dt id="t-fallback">Fallback run</dt><dd>A recorded video of the demo. Use it when the live demo fails.</dd>
+        <dt id="t-rates">bit/s, kbit/s, B/s</dt><dd>Bits each second, thousands of bits each second, bytes each second. One byte is 8 bits.</dd>
+      </dl>
+      <p class="small" id="none" hidden>No term matches. Try a shorter word.</p>
+    </section>
+
+    <footer>
+      <p>Drone video: MEVA dataset, Kitware and IARPA, CC-BY-4.0. Viewer images come from MinBand runs. No frames of the military test clips appear on this page.</p>
+      <p>Repository: <code>def4alt/minband</code>, branch <code>claude/dazzling-carson-mlx4xb</code>. Plan: <code>docs/HACKATHON_PLAN.md</code>. Findings: <code>docs/EVAL_FINDINGS.md</code>.</p>
+    </footer>
+  </main>
+</div>
+
+<script>
+(() => {
+  const q = document.getElementById('q'), dl = document.getElementById('gloss'), none = document.getElementById('none');
+  q.addEventListener('input', () => {
+    const s = q.value.trim().toLowerCase(); let shown = 0;
+    for (const dt of dl.querySelectorAll('dt')) {
+      const dd = dt.nextElementSibling, hit = !s || (dt.textContent + ' ' + dd.textContent).toLowerCase().includes(s);
+      dt.hidden = dd.hidden = !hit; if (hit) shown++;
+    }
+    none.hidden = shown > 0;
+  });
+})();
+</script>

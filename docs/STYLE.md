@@ -26,8 +26,11 @@ Light theme is not supported; the product is dark by design.
 - The ground is not a flat grid: a low-amplitude procedural contour field (displaced wireframe
   plane, like the mountain reference) at `--ink-4`, with the marker origin at the flattest point.
   Grid helper lines, if any, are `--ink-4` and sparse.
-- Class is conveyed by silhouette, not colour: person = tall capsule, carried object = small
-  sphere, static object = box. Device is conveyed by line style: solid, dashed, dotted.
+- Class is conveyed by silhouette, not colour: person (shown as "dismount") = tall capsule,
+  carried object = small sphere, static object = box, vehicle (car, bus, truck) = a low car-sized
+  box (4.4 x 1.8 x 1.5 m) turned to its heading, two-wheeler (bicycle, motorcycle) = a smaller
+  one; the tag names the class (`car`, `truck`). Device is conveyed by line style: solid,
+  dashed, dotted (frustums, trails, ghosts; never the error ring, see below).
 - **Entities are solid, not wire** (decided 2026-10-09). Tracked objects are filled, matte
   monochrome meshes: `--ink` at 85 to 100 % with soft hemispheric lighting so they read as
   volumes against the line terrain. Fresh = bright solid; stale = the same solid fading toward
@@ -91,6 +94,62 @@ The product must be usable first. Less on screen, not more.
 - **Whitespace is part of the design.** Panels have 24 px padding, rows have 12 px gaps, and the
   credits row has at most three pairs. Nothing blinks except a lost device.
 - **Motion is informative only.** No idle animation on the terrain, no pulsing, no scanlines.
+
+## Trust, link and stage visuals (added 2026-10-09)
+
+Element types for the hackathon visuals (docs/HACKATHON_PLAN.md section 5). Same tokens, same
+hairlines; each moves only when a datagram arrived, a bit was delivered or a heartbeat was missed.
+
+- **Trust states.** Live = bright solid. Coasting (the device missed its heartbeat, S15) = the
+  same solid at about `--ink-2`, velocity arrow dimmed. Stale = the fade to `--ink-3`, dotted
+  outline, gone, as above. Coasting does not blink; only a lost device does.
+- **Error ring (V2).** Every entity stands on a 1 px ground ring of radius `ce` (metres), draped on
+  the contour field. Its line style says trust, not device: live solid, coasting dashed (48 dashes
+  at any size), stale dotted. Full opacity up to 1.5 m, then falling as sqrt(1.5 / r) to 0.3, so a
+  blackout's wide rings stay quieter than the solids. A ring is drawn no larger than 12 m (the
+  basin and the first swells): a larger one stays at 12 m with four short outward ticks, and the
+  hover tag gives the real radius (`±24 m`). Shrinking snaps (a refresh resets the error); growth
+  eases over about 0.2 s.
+- **Tags** may carry a second line: the grid reference (MGRS) when the server has a geodetic anchor.
+  The anchor's own reference sits in the credits row after the entity count.
+- **Link activity strip (V3).** Vertical, newest at the top, 36 px per second, one 1 px tick per
+  datagram, width proportional to bytes (1200 B = the lane). Uplink right of a hairline spine in
+  `--ink`, downlink left in `--ink-2`, dropped datagrams dotted `--ink-3` with a small x, keyframes
+  with a 5 px end cap. Beside it H.264 on the same scale, which is a solid bar (`--ink-3` at half
+  opacity). A missed keyframe is the strip's one dashed rule (`NO KEYFRAME · DEV 101 102`), a
+  resync a solid `--ink-3` rule, a dead link a 0.05 wash. Lives in DETAILS; STAGE moves it onto
+  the stage.
+- **Video on this link (V1).** Halftone painted top-down at the link rate, a 1 px `--ink-2` rule at
+  the row being written, the previous frame below it at 12 % luminance. The countdown
+  (`NEXT FRAME 1:52`) is the panel's one large number. The AI thumbnail is a 72 px square, hairline
+  border, 6 px cells. With the link unshaped the panel is the live halftone and says so.
+- **STAGE** is the presenter toggle (in DETAILS, remembered per browser, `?stage=1`): the link
+  activity strip beside the twin and the video-on-this-link panel open. The operator view stays as
+  "Restraint" describes. The per-datagram click (`CLICK`) is off by default.
+
+## Wide area (added 2026-10-10)
+
+Real drone footage spreads entities over 50 to 200 m; the contour field is drawn for a room around
+the marker. The viewer switches to a wide mode when the 90th-percentile distance of the entities
+from their centroid stays above 15 m (back below 8 m for 2.5 s), and nothing else changes in the
+room mode.
+
+- **Ground.** A flat hairline grid at `--ink-4` replaces the contour field, 10 cells to the scale
+  radius (20, 50, 100, 200 ... m from the entities' extent), fading out radially and into the fog.
+  The key adds the spacing (`10 M GRID`). Rings lie on it.
+- **Glyphs are map symbols.** Each class keeps a minimum size on screen (a dismount about 26 px
+  tall, a vehicle about 24 px long), magnified from true size only as far as needed and never
+  shrunk; zooming in returns them to true size. Vehicles turn to their heading. Velocity arrows
+  start at the glyph's edge and show one second of travel, between 12 and 90 px. Dash patterns keep
+  their room length on screen. **Error rings stay true metres** (they are error bars, not
+  symbols), capped at half the scale radius with the same outward ticks.
+- **Devices.** The frustum keeps about 44 px of depth at its own distance, and a dotted drop to a
+  small ground cross marks the drone's nadir; the hover tag adds its height (`DEV 100 · ALT 59 M`).
+- **Framing.** When the mode starts the camera glides once (600 ms) onto the entities from where
+  the drone looks, about 55 degrees down, and follows the bounds while the feed fills in over the
+  first 2.5 s. After that it never moves on its own: `F` or the `FRAME` text control (top right
+  of the twin, wide mode only) re-frames from the operator's bearing. Touching the orbit ends any
+  glide.
 
 ## Charts: colour for series (added 2026-10-09)
 

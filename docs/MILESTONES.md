@@ -32,28 +32,45 @@ Repo layout, design, protocol, toolchain via `mise install`.
 - Done when: walking around a room produces a coherent twin on the laptop with < 1 kbps for a
   static scene and < 10 kbps with two walkers.
 
-## M5 Loss and resync hardening [Rust + TS] (done 2026-10-09; dummynet runs pending)
+## M5 Loss and resync hardening [Rust + TS] (done 2026-10-09; Wi-Fi dummynet runs pending)
 - Gap detection, state repair, keyframe splitting, device timeouts, clock offset.
-- dummynet scripts and recorded runs at 0/5/20/50% loss.
+- dummynet scripts and recorded runs at 0/5/20/50% loss. The replayed sweep (`tools/eval`) and the
+  live in-process e2e runs (`e2e/`, 20 % loss and blackouts) exist; the Wi-Fi runs with the phone
+  do not yet.
 
-## M6 Multi-phone fusion [TS + iOS] (server side done; needs two phones)
+## M6 Multi-phone fusion [TS + iOS] (server side done, e2e with two sim devices; needs two phones)
 - Second phone, shared marker origin, fusion with hysteresis, fusion toggle.
 
-## M7 Evaluation [whoever owns `tools/`] (tooling done; H.264 measurement pending)
+## M7 Evaluation [whoever owns `tools/`] (tooling done; H.264 measurement code in the app, on-device run pending)
 - Baseline A: H.264 bitrate from recorded frames (VideoToolbox).
 - Baseline B: naive 30 Hz metadata.
+- Baseline C: a 150 B AI thumbnail every N s at the same bytes or link rate (S23).
 - Fidelity-vs-bytes sweep from ground-truth logs; resilience chart.
 - Recorded fallback run.
 
-## M8 Presentation
+## M8 Presentation (draft deck and fallback recorder done 2026-10-09)
 - Live: link slider on stage, side-by-side, bytes graph.
 - Slides: problem (DARPA framing), idea (surprise-proportional bandwidth), architecture, charts,
   what's next (real drone radio, ROI thumbnails, field-level diffs).
 
-## Remaining work (as of 2026-10-09)
+## Remaining work (as of 2026-10-09, after the P0/P1 build)
+
+Done in code and covered by tests (unit, `e2e/`): cadence from budget (S19), header accounting,
+keyframe pacing (S16), threshold byte (S14), coasting and error radius (S15), link profiles and
+time on air (S2), packet waterfall (V3), video on this link with the thumbnail competitor (V1,
+S23), error rings (V2), CoT export with a geodetic anchor and MGRS (S3), Pi link box script,
+golden vectors on aarch64 (qemu), drones-per-link sim with Pose, dismount label, one Update size
+(31 B) in every doc, `peek_json`.
+
+Needs hardware or people:
 - Record a phone ground-truth log and rerun `tools/eval` on it; retune θ_vel (EVAL_FINDINGS.md #1).
-- Measure the H.264 baseline on the phone (VideoToolbox) and drop it into `runs/baseline_a.json`.
-- dummynet runs at 0/5/20/50% loss on Wi-Fi (`tools/link.sh`).
+- Build the app and run the H.264 measurement (`ios/README.md`, "H.264 baseline"); copy the json to
+  `runs/baseline_a.json` and fill the two placeholders on the numbers slide.
+- On the Pi: `sudo tools/test/pi-link-kernel.test.sh` (real netem), `cd core && cargo test`, then
+  phone -> Pi -> laptop through each profile.
+- dummynet or Pi runs at 0/5/20/50 % loss on Wi-Fi with the phone.
 - Two-phone fusion rehearsal with the printed marker.
-- Presentation: recorded fallback run, slides from `runs/eval/*.svg` and `summary.md`.
+- CoT on a real ATAK/WinTAK screen (`server/README.md`).
+- Slide 1: the track's problem statement, the mentor's scenario, team names; re-record the fallback
+  run on the final build (`cd e2e && npm run record`).
 - Weekend priorities, the Pi 5 link box and stretch ideas: [HACKATHON_PLAN.md](HACKATHON_PLAN.md).
