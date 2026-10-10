@@ -6,6 +6,10 @@
 //   npm run record                         # default script, ~2.5 min
 //   DEVICES=2 npm run record               # fusion demo
 //   STAGE=0 npm run record                 # operator view instead of stage mode
+//   TRACKS=<tracks.csv> TRACKS_CAMERA=x,y,z FAKE_CAMERA=<clip.mjpeg> npm run record
+//                                          # real drone footage (tools/footage): the sim replays the
+//                                          # track log and the viewer's video panel shows the clip
+//                                          # through Chromium's fake camera (not frame-synced)
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -32,10 +36,14 @@ const STEPS: [number, string, (api: string) => Promise<unknown>][] = [
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 mkdirSync(OUT, { recursive: true });
-const s = await startStack({ sim: { DEVICES } });
+const replay: Record<string, string> = process.env.TRACKS ? { TRACKS: process.env.TRACKS, TRACKS_CAMERA: process.env.TRACKS_CAMERA ?? '0,40,40' } : {};
+const s = await startStack({ sim: { DEVICES, ...replay } });
 const viewer = await startViewer(s.server);
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-const ctx = await browser.newContext({ viewport: SIZE, recordVideo: { dir: OUT, size: SIZE } });
+const camera = process.env.FAKE_CAMERA
+  ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-video-capture=${process.env.FAKE_CAMERA}`]
+  : [];
+const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', ...camera] });
+const ctx = await browser.newContext({ viewport: SIZE, recordVideo: { dir: OUT, size: SIZE }, ...(camera.length ? { permissions: ['camera'] } : {}) });
 const page = await ctx.newPage();
 const cues: string[] = [];
 try {
