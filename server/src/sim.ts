@@ -5,6 +5,7 @@
 //   SCENE=spread DEVICES=8 npm run sim    # eight independent one-walker feeds, each in its own area (drones per link)
 //   SCENE=spread WALKERS=3 npm run sim    # three walkers per area
 //   GT_POST_MS=0 npm run sim              # do not upload ground truth (default: last 10 s every 5 s)
+//   TRACKS=runs/footage/<clip>/tracks.csv npm run sim   # replay a track log (phone, real drone footage), looping
 // Ground truth: the scene the edge saw is POSTed to /api/ground-truth so the server's twin-error
 // metric (and the viewer's readout) works without a phone. Device ids are 100 + d.
 // Pose: each device has a moving camera (src/scenes.ts: its own orbit around the shared scene, or a
@@ -13,12 +14,16 @@
 import dgram from 'node:dgram';
 import { WasmEdge, describe } from 'minband-core';
 import { TICK_HZ } from './types.js';
-import { SCENES, sharedCamera, sharedScene, spreadCamera, spreadScene, type SceneName } from './scenes.js';
+import { SCENES, fixedCamera, logScene, sharedCamera, sharedScene, spreadCamera, spreadScene, type SceneName } from './scenes.js';
 
 const HOST = process.env.MINBAND_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.MINBAND_UDP_PORT ?? 7777);
 const DEVICES = Number(process.env.DEVICES ?? 1);
-const SCENE = (process.env.SCENE ?? 'shared') as SceneName;
+// TRACKS=<csv>: replay a track log (phone or tools/footage) instead of a synthetic scene; implies SCENE=log.
+const TRACKS = process.env.TRACKS;
+const SCENE = (TRACKS ? 'log' : process.env.SCENE ?? 'shared') as SceneName;
+// The camera that filmed the log, "x,y,z" in the log's frame (tools/footage summary.json: camera_m).
+const TRACKS_CAMERA = (process.env.TRACKS_CAMERA ?? '0,40,40').split(',').map(Number) as [number, number, number];
 const WALKERS = Number(process.env.WALKERS ?? 1);
 const VERBOSE = !!process.env.VERBOSE;
 const API = process.env.MINBAND_API ?? `http://${HOST}:${process.env.MINBAND_WS_PORT ?? 8080}`;
@@ -29,6 +34,7 @@ const UDP_IP_OVERHEAD = 28;
 const POSE_EVERY_TICKS = TICK_HZ / 2;
 
 if (!SCENES.includes(SCENE)) { console.error(`SCENE must be one of ${SCENES.join(', ')}`); process.exit(2); }
+if (SCENE === 'log' && !TRACKS) { console.error('SCENE=log needs TRACKS=<csv>'); process.exit(2); }
 
 function unpack(buf: Uint8Array): Uint8Array[] {
   const out: Uint8Array[] = []; let i = 0;
@@ -47,8 +53,8 @@ for (let d = 0; d < DEVICES; d++) setTimeout(() => startDevice(d), DEVICES > 1 ?
 
 function startDevice(d: number) {
   const deviceId = 100 + d;
-  const scene = SCENE === 'spread' ? spreadScene(d, DEVICES, WALKERS) : sharedScene(deviceId);
-  const camera = SCENE === 'spread' ? spreadCamera(d, DEVICES) : sharedCamera(d, DEVICES);
+  const scene = SCENE === 'log' ? logScene(TRACKS!).scene : SCENE === 'spread' ? spreadScene(d, DEVICES, WALKERS) : sharedScene(deviceId);
+  const camera = SCENE === 'log' ? fixedCamera(TRACKS_CAMERA) : SCENE === 'spread' ? spreadCamera(d, DEVICES) : sharedCamera(d, DEVICES);
   const edge = new WasmEdge(deviceId, Math.floor(Math.random() * 2 ** 31));
   const sock = dgram.createSocket('udp4');
   sock.on('message', m => edge.on_datagram(new Uint8Array(m)));

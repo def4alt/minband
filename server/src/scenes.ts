@@ -6,11 +6,12 @@
 //           so one walker per device costs about what the eval measured (~118 B/s on the wire).
 // Each device also has a camera path (`sharedCamera`, `spreadCamera`) for its Pose: the viewer
 // draws it as the device's frustum.
+import { readFileSync } from 'node:fs';
 import { TICK_HZ } from './types.js';
 
 export interface Track { id: number; class: number; pos: number[]; vel: number[]; conf: number }
 export type Scene = (tick: number) => Track[];
-export const SCENES = ['shared', 'spread'] as const;
+export const SCENES = ['shared', 'spread', 'log'] as const;
 export type SceneName = typeof SCENES[number];
 /** Distance between the centres of two devices' areas in `spread`, metres (the tour is ~6 x 4.5 m). */
 export const SPREAD_M = 10;
@@ -133,4 +134,38 @@ export function spreadScene(d: number, n: number, walkers = 1): Scene {
     const p = w();
     return { id: k + 1, class: 0, pos: [p.x, PERSON_Y, p.z], vel: [p.vx, 0, p.vz], conf: 230 - 10 * k };
   });
+}
+
+/** log: replay a track log (`tick,id,class,x,y,z,vx,vy,vz,conf`, the phone's GroundTruthLog CSV or
+ * tools/footage/track.py on real drone footage) as the tracker output, looping. Each loop gets a
+ * fresh id range, so the edge despawns the old entities instead of seeing them jump. */
+export function logScene(path: string): { scene: Scene; durationTicks: number } {
+  const frames = new Map<number, Track[]>();
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    if (!line || line.startsWith('tick') || line.startsWith('#')) continue;
+    const f = line.split(',').map(Number);
+    if (f.length < 10 || f.some(v => !Number.isFinite(v))) continue;
+    const t = Math.round(f[0]);
+    let list = frames.get(t); if (!list) frames.set(t, list = []);
+    list.push({ id: f[1], class: f[2], pos: [f[3], f[4], f[5]], vel: [f[6], f[7], f[8]], conf: Math.max(0, Math.min(255, Math.round(f[9]))) });
+  }
+  const ticks = [...frames.keys()].sort((a, b) => a - b);
+  if (!ticks.length) throw new Error(`${path}: no rows`);
+  const t0 = ticks[0], span = ticks[ticks.length - 1] - t0 + 1;
+  let i = 0, lastLoop = -1;
+  return {
+    durationTicks: span,
+    scene: tick => {
+      const loop = Math.floor(tick / span), rel = t0 + (tick % span);
+      if (loop !== lastLoop) { i = 0; lastLoop = loop; }
+      while (i + 1 < ticks.length && ticks[i + 1] <= rel) i++;
+      return (frames.get(ticks[i]) ?? []).map(tr => ({ ...tr, id: tr.id + loop * 100_000 }));
+    },
+  };
+}
+
+/** log: a fixed camera (the drone that filmed the log), looking at the log's origin. */
+export function fixedCamera(pos: [number, number, number]): CameraPath {
+  const quat = lookAt(pos, [0, 0, 0]);
+  return () => ({ pos, quat });
 }

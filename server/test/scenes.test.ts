@@ -107,3 +107,17 @@ test('spread: N devices are N independent one-walker feeds at about the eval one
   }
   edges.forEach(e => e.free());
 });
+
+test('log scene: replays a track log, holds the latest row per tick, loops with fresh ids', async () => {
+  const { logScene } = await import('../src/scenes.js');
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path'); const { tmpdir } = await import('node:os');
+  const p = join(mkdtempSync(join(tmpdir(), 'minband-log-')), 'tracks.csv');
+  writeFileSync(p, 'tick,id,class,x,y,z,vx,vy,vz,conf\n100,7,0,1,0,2,0.5,0,0,200\n100,8,2,10,0,-5,8,0,0,180\n104,7,0,1.02,0,2,0.5,0,0,200\n');
+  const { scene, durationTicks } = logScene(p);
+  assert.equal(durationTicks, 5);
+  assert.deepEqual(scene(0).map(t => t.id), [7, 8]);
+  assert.deepEqual(scene(3).map(t => t.id), [7, 8], 'held until the next logged tick');
+  assert.deepEqual(scene(4).map(t => [t.id, t.pos[0]]), [[7, 1.02]]);
+  assert.deepEqual(scene(5).map(t => t.id), [100_007, 100_008], 'second loop: fresh ids');
+});
