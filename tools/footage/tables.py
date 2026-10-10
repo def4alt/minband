@@ -1,6 +1,6 @@
 """Markdown tables for docs/FOOTAGE_FINDINGS.md from the run directories (numbers only, no frames).
 
-  python -I tables.py sources|label_free|audit|minband|ground      # RUNS=runs/footage by default
+  python -I tables.py sources|label_free|audit|minband|ground|movers      # RUNS=runs/footage by default
 Run directories: runs/footage/<clip> as written by run_clip.sh (dev-amad-test1 for the dev convoy clip).
 """
 import sys, os, json, csv
@@ -110,4 +110,23 @@ def ground():
               f"{'-' if not ci else f'{ci[0] * 100:.1f}-{ci[1] * 100:.1f}'} | {f(s.get('walker_median_speed_mps'))} |")
 
 
-{'label_free': label_free, 'sources': sources, 'audit': audit, 'minband': minband, 'ground': ground}[sys.argv[1]]()
+def movers():
+    print('| Clip | Split | Round 1: real | Round 1: false | Round 1: unsure | Round 2: real | Round 2: false | Round 2: unsure |')
+    print('|---|---|---|---|---|---|---|---|')
+    tot = {}
+    for lab, run, split in CLIPS:
+        p = os.path.join(R, run, 'movers', 'movers-score.json')
+        if not os.path.exists(p): continue
+        s = json.load(open(p))['runs']
+        c = lambda r, k: f"{s[r][k]['tracks']} ({s[r][k]['seconds']:.0f} s)"
+        print(f"| {lab} | {split} | {c('round1', 'real')} | {c('round1', 'false')} | {c('round1', 'unsure')} | {c('round2', 'real')} | {c('round2', 'false')} | {c('round2', 'unsure')} |")
+        if split == 'held-out':
+            for r in s:
+                for k in s[r]:
+                    t = tot.setdefault((r, k), [0, 0.0]); t[0] += s[r][k]['tracks']; t[1] += s[r][k]['seconds']
+    if tot:
+        c = lambda r, k: f"{tot[(r, k)][0]} ({tot[(r, k)][1]:.0f} s)"
+        print(f"| held-out, all | | {c('round1', 'real')} | {c('round1', 'false')} | {c('round1', 'unsure')} | {c('round2', 'real')} | {c('round2', 'false')} | {c('round2', 'unsure')} |")
+
+
+{'label_free': label_free, 'sources': sources, 'audit': audit, 'minband': minband, 'ground': ground, 'movers': movers}[sys.argv[1]]()

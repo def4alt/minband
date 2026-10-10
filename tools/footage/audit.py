@@ -6,6 +6,8 @@ be measured without labels, identically on every clip:
   python audit.py metrics RUN [RUN ...]          # per-source and track statistics -> RUN/audit-metrics.json
   python audit.py sample  RUN VIDEO --out A      # fixed-seed frame sample, raw + annotated crops -> A/
   python audit.py score   A [A ...]              # precision / recall from A/labels.json, Wilson 95 % CI
+  python audit.py movers  VIDEO RUN [RUN ...] --out M   # one crop per reported motion-only track -> M/
+  python audit.py movers-score M                 # real / false motion-only tracks from M/labels.json
 
 metrics (from track.py's detlog.npy, summary.json and tracks.csv):
 - per detector source: detections per detection frame; agreement rate with the other sources (an
@@ -279,6 +281,74 @@ def cmd_score(a):
         json.dump(r, open(os.path.join(d, 'score.json'), 'w'), indent=2)
 
 
+# ---- motion-only tracks ---------------------------------------------------------------------------
+
+def mover_tracks(run, fps):
+    """Reported tracks whose majority class is the unclassified mover: {id: (rows, seconds, first, last tick)}."""
+    tr = np.loadtxt(os.path.join(run, 'tracks.csv'), delimiter=',', skiprows=1, ndmin=2)
+    out = {}
+    for i in np.unique(tr[:, 1]) if len(tr) else []:
+        m = tr[tr[:, 1] == i]
+        if np.bincount(m[:, 2].astype(int)).argmax() == MOVER:
+            out[int(i)] = (len(m), len(m) / fps, int(m[0, 0]), int(m[-1, 0]))
+    return out
+
+
+def cmd_movers(a):
+    """One crop per reported motion-only track of each run, at the detection nearest the middle of its
+    reported span: the object (tight) and its surroundings (4x), side by side, the box drawn. The
+    developer labels each track real (a moving dismount or vehicle), false (shadow, parallax, vegetation,
+    water, an edge) or unsure in M/labels.json: {"auditor", "frozen_at", "runs": {"<label>": {"<id>": ...}}}."""
+    os.makedirs(a.out, exist_ok=True)
+    cap = cv2.VideoCapture(a.video); fps = cap.get(cv2.CAP_PROP_FPS)
+    index = {'video': os.path.basename(a.video), 'runs': {},
+             'note': 'post-hoc visual audit of motion-only tracks by the developer after freezing; not ground truth'}
+    for run in a.runs:
+        label = os.path.basename(os.path.normpath(run)); label = 'round2' if label not in ('round1', 'old', 'det-legacy', 'det-newtracker') else label
+        log = np.load(os.path.join(run, 'detlog.npy'))
+        index['runs'][label] = {'run': run, 'tracks': {}}
+        for tid, (rows, secs, t0, t1) in mover_tracks(run, fps).items():
+            m = log[(log[:, 8] == tid) & (log[:, 10] == 0)]
+            if not len(m): continue
+            mid = (t0 + t1) / 2 / 120 * fps
+            r = m[np.argmin(np.abs(m[:, 0] - mid))]; n = int(r[0])
+            cap.set(cv2.CAP_PROP_POS_FRAMES, n); ok, fr = cap.read()
+            if not ok: continue
+            x1, y1, x2, y2 = r[4:8]; cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            side = max(96.0, 3 * max(x2 - x1, y2 - y1))
+            tiles = []
+            for k in (1, 4):
+                h = side * k / 2
+                X0, Y0 = int(max(0, cx - h)), int(max(0, cy - h)); X1, Y1 = int(min(fr.shape[1], cx + h)), int(min(fr.shape[0], cy + h))
+                c = fr[Y0:Y1, X0:X1].copy()
+                s = 320 / max(c.shape[:2]); c = cv2.resize(c, None, fx=s, fy=s, interpolation=cv2.INTER_CUBIC if s > 1 else cv2.INTER_AREA)
+                cv2.rectangle(c, (int((x1 - X0) * s) - 2, int((y1 - Y0) * s) - 2), (int((x2 - X0) * s) + 2, int((y2 - Y0) * s) + 2), (255, 0, 255), 1)
+                tiles.append(cv2.copyMakeBorder(c, 0, 320 - c.shape[0], 0, 320 - c.shape[1], cv2.BORDER_CONSTANT))
+            img = np.hstack(tiles)
+            cv2.putText(img, f'{label} {tid}: {secs:.1f} s', (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.putText(img, f'{label} {tid}: {secs:.1f} s', (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+            name = f'{label}_{tid:04d}.jpg'
+            cv2.imwrite(os.path.join(a.out, name), img, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            index['runs'][label]['tracks'][str(tid)] = {'frame': n, 'seconds': round(secs, 2), 'box': [round(float(v), 1) for v in r[4:8]], 'image': name}
+    json.dump(index, open(os.path.join(a.out, 'movers.json'), 'w'), indent=1)
+    for lab, v in index['runs'].items(): print(f"{lab}: {len(v['tracks'])} motion-only tracks")
+
+
+def cmd_movers_score(a):
+    idx = json.load(open(os.path.join(a.dir, 'movers.json'))); lab = json.load(open(os.path.join(a.dir, 'labels.json')))
+    out = {'dir': a.dir, 'auditor': lab.get('auditor'), 'frozen_at': lab.get('frozen_at'), 'note': idx['note'], 'runs': {}}
+    for run, v in idx['runs'].items():
+        L = lab['runs'].get(run, {})
+        missing = [t for t in v['tracks'] if t not in L]
+        if missing: sys.exit(f'{a.dir} {run}: tracks not labelled: {missing}')
+        r = {k: {'tracks': 0, 'seconds': 0.0} for k in ('real', 'false', 'unsure')}
+        for t, x in v['tracks'].items():
+            r[L[t]]['tracks'] += 1; r[L[t]]['seconds'] += x['seconds']
+        out['runs'][run] = r
+        print(f"{run}: real {r['real']['tracks']} ({r['real']['seconds']:.0f} s), false {r['false']['tracks']} ({r['false']['seconds']:.0f} s), unsure {r['unsure']['tracks']}")
+    json.dump(out, open(os.path.join(a.dir, 'movers-score.json'), 'w'), indent=2)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     s = p.add_subparsers(dest='cmd', required=True)
@@ -289,8 +359,10 @@ def main():
     sm.add_argument('--tile-width', type=int, default=1280, help='crop width in source pixels')
     sm.add_argument('--min-scale-px', type=int, default=1100, help='upscale crops narrower than this')
     sc = s.add_parser('score'); sc.add_argument('dirs', nargs='+')
+    mv = s.add_parser('movers'); mv.add_argument('video'); mv.add_argument('runs', nargs='+'); mv.add_argument('--out', required=True)
+    ms = s.add_parser('movers-score'); ms.add_argument('dir')
     a = p.parse_args()
-    {'metrics': cmd_metrics, 'sample': cmd_sample, 'score': cmd_score}[a.cmd](a)
+    {'metrics': cmd_metrics, 'sample': cmd_sample, 'score': cmd_score, 'movers': cmd_movers, 'movers-score': cmd_movers_score}[a.cmd](a)
 
 
 if __name__ == '__main__':
