@@ -1,8 +1,15 @@
 diff --git a/main.py b/main.py
-index 20cfbbc..3ee3a58 100644
+index 20cfbbc..ab85ce2 100644
 --- a/main.py
 +++ b/main.py
-@@ -156,9 +156,24 @@ if __name__ == "__main__":
+@@ -1,4 +1,5 @@
+-import argparse
++import argparse, faulthandler, os as _os, sys as _sys
++if _os.environ.get("SLAM_TRACE"): faulthandler.dump_traceback_later(float(_os.environ["SLAM_TRACE"]), repeat=True, file=_sys.stderr)
+ import datetime
+ import pathlib
+ import sys
+@@ -156,9 +157,24 @@ if __name__ == "__main__":
      parser.add_argument("--save-as", default="default")
      parser.add_argument("--no-viz", action="store_true")
      parser.add_argument("--calib", default="")
@@ -27,7 +34,7 @@ index 20cfbbc..3ee3a58 100644
      load_config(args.config)
      print(args.dataset)
      print(config)
-@@ -268,6 +283,7 @@ if __name__ == "__main__":
+@@ -268,6 +284,7 @@ if __name__ == "__main__":
              frame.update_pointmap(X_init, C_init)
              keyframes.append(frame)
              states.queue_global_optimization(len(keyframes) - 1)
@@ -35,7 +42,7 @@ index 20cfbbc..3ee3a58 100644
              states.set_mode(Mode.TRACKING)
              states.set_frame(frame)
              i += 1
-@@ -297,6 +313,7 @@ if __name__ == "__main__":
+@@ -297,6 +314,7 @@ if __name__ == "__main__":
          if add_new_kf:
              keyframes.append(frame)
              states.queue_global_optimization(len(keyframes) - 1)
@@ -43,7 +50,7 @@ index 20cfbbc..3ee3a58 100644
              # In single threaded mode, wait for the backend to finish
              while config["single_thread"]:
                  with states.lock:
-@@ -309,6 +326,7 @@ if __name__ == "__main__":
+@@ -309,6 +327,7 @@ if __name__ == "__main__":
              print(f"FPS: {FPS}")
          i += 1
  

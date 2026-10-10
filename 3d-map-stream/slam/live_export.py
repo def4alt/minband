@@ -34,7 +34,7 @@ def export_snapshot(keyframes, timestamps, c_conf_threshold, outdir, idx):
     outdir = pathlib.Path(outdir)
     outdir.mkdir(exist_ok=True, parents=True)
 
-    pts, rgb, traj = [], [], []
+    pts, rgb, traj = [], [], []; kf_off = [0]
     K = len(keyframes)
     for i in range(K):
         kf = keyframes[i]
@@ -47,22 +47,23 @@ def export_snapshot(keyframes, timestamps, c_conf_threshold, outdir, idx):
         valid = kf.get_average_conf().reshape(-1) > c_conf_threshold
         pts.append(pW[valid].float().cpu().numpy())
         col = (kf.uimg.reshape(-1, 3) * 255).clamp(0, 255).to(torch.uint8)
-        rgb.append(col[valid.cpu()].numpy())
+        rgb.append(col[valid.cpu()].numpy()); kf_off.append(kf_off[-1] + len(pts[-1]))
         t = float(timestamps[kf.frame_id])
         x, y, z, qx, qy, qz, qw = as_SE3(kf.T_WC).data.cpu().numpy().reshape(-1)
         traj.append([t, x, y, z, qx, qy, qz, qw])
 
     pts = np.concatenate(pts, 0).astype(np.float32) if pts else np.zeros((0, 3), np.float32)
     rgb = np.concatenate(rgb, 0).astype(np.uint8) if rgb else np.zeros((0, 3), np.uint8)
-    if len(pts) > MAX_POINTS:
-        sel = _rng.choice(len(pts), MAX_POINTS, replace=False)
+    if len(pts) > MAX_POINTS:  # order-preserving subsample; keyframe offsets are remapped onto the kept points
+        sel = np.sort(_rng.choice(len(pts), MAX_POINTS, replace=False))
         pts, rgb = pts[sel], rgb[sel]
+        kf_off = np.searchsorted(sel, np.asarray(kf_off)).tolist()
     traj = np.asarray(traj, dtype=np.float64).reshape(-1, 8)
 
     final = outdir / f"snap_{idx:04d}.npz"
     tmp = outdir / f"snap_{idx:04d}.tmp.npz"
     with open(tmp, "wb") as f:
-        np.savez(f, pts=pts, rgb=rgb, traj=traj, kf=np.int64(K - 1))
+        np.savez(f, pts=pts, rgb=rgb, traj=traj, kf=np.int64(K - 1), kf_off=np.asarray(kf_off, np.int64))
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, final)

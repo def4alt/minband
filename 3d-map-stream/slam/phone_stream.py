@@ -117,6 +117,9 @@ class PhoneCameraDataset(MonocularDataset):
                 self._frame = img
                 self._frame_time = time.time()
                 self._frame_id += 1
+            if os.environ.get("PHONE_DEBUG") and self._frame_id % 50 == 0:
+                now = time.time(); t0 = getattr(self, "_dbg_t", now); self._dbg_t = now
+                print(f"[phone-dbg] grabber: frame {self._frame_id}, {50/max(now-t0,1e-6):.1f} fps", flush=True)
 
     def _wait_for_frame(self, last_id):
         t0 = time.time()
@@ -150,6 +153,7 @@ class PhoneCameraDataset(MonocularDataset):
         return self.timestamps[-1]
 
     def read_img(self, idx):
+        _w0 = time.time()
         try:
             img, t = self._wait_for_frame(self._last_read_id)
         except RuntimeError:
@@ -159,6 +163,11 @@ class PhoneCameraDataset(MonocularDataset):
             self._ended = True  # main loop stops at the next len() check
             img, t = self._frame, self._frame_time
         self.timestamps.append(t)
+        if os.environ.get("PHONE_DEBUG"):
+            n = len(self.timestamps); self._dbg_wait = getattr(self, "_dbg_wait", 0.0) + (time.time() - _w0)
+            if n % 10 == 0:
+                now = time.time(); t0 = getattr(self, "_dbg_r", now); self._dbg_r = now
+                print(f"[phone-dbg] main loop: {n} frames read, {10/max(now-t0,1e-6):.2f} fps, avg wait for frame {100*self._dbg_wait/10:.0f} ms", flush=True); self._dbg_wait = 0.0
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img.astype(self.dtype)
 

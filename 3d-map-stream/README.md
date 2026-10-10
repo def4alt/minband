@@ -50,3 +50,20 @@ python streaming/map_receiver.py --listen 0.0.0.0:5555 --out run/
 python streaming/live_eval.py streaming/stream_best.py --rate 20 --slot 1
 ```
 Limitations: encode 1–4 s per slot (pure Python), SLAM pose corrections after a chunk was sent are not handled, one receiver per stream.
+
+## Live end-to-end (2026-10-10 evening): it runs
+
+`streaming/run_live_test.sh` drives the whole chain: phone stream (real URL or `streaming/sim_phone_server.py`, which holds a frozen
+frame until SLAM prints its first `FPS:` line) -> MASt3R-SLAM with `--live-export` (`slam/live_export.py`, per-keyframe offsets) ->
+`streaming/sender/map_sender_slot.py` (append-only keyframe ingestion: waits for the 2nd keyframe because MASt3R-SLAM rescales the
+first one, then adds each new keyframe's points once and never re-sends refinements; `stream_rt.py` encoder, 1 s slots, 500 B packets,
+token-bucket rate limit) -> `ssh -R` tunnel -> `streaming/map_receiver.py` (or `map_receiver_gui.py`, Open3D at ~28 fps) with
+`stream_rt`'s decoder. Measured at 20 kbit/s: 176 packets, 18.6 kbit/s on the wire, 5.4 updates/s (gap 0.19 s mean / 0.57 s max),
+encoder 0.2-0.6 s per 1 s slot (8 s one-time setup), 393k received points with correct colours.
+
+Live-specific findings: (1) Python stdout is block-buffered when redirected - launch SLAM with `python -u` or readiness checks on its
+log hang forever; (2) numba's on-disk cache breaks when a module is loaded under different names in different processes -
+`cache=False` in the deployed copies; (3) `stream_rt` caches the transposed colour array (`CfT`) - the sender refreshes it when it
+swaps the cloud; (4) the encoder's occupancy grids must be growable (the live cloud grows); (5) between keyframes 19-32 % of the
+already-sent map moves by >0.5 m (and 88 % after keyframe 1), so a world-fixed voxel stream must send each keyframe once and ignore
+refinements - or anchor voxels to keyframes (not done); (6) `decoder_rt.py` is bit-exact offline but does not parse the live header yet.
