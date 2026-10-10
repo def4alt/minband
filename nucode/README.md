@@ -50,38 +50,50 @@ real BLE link, `rx_peripheral`/`tx_central` firmware with the BLE
 write-stall fix applied, `bridge.py` reporting per-frame `seq_lost` in
 addition to `crc_errors`:
 
-| Payload | Count | Rate | Loss | Reorder | Throughput | RTT p50 | RTT p95 | crc_errors | seq_lost |
-|---|---|---|---|---|---|---|---|---|---|
-| 40 B | 300 | max | 0% | 0 | 0.68 kB/s | 59.10 ms | 100.11 ms | 0 | 0 |
-| 200 B | 300 | max | 0% | 0 | 3.26 kB/s | 59.73 ms | 100.56 ms | 0 | 0 |
-| 1000 B | 300 | max | 93.67% | 0 | 0.13 kB/s | 242.91 ms | 392.48 ms | 280 | 280 |
-| 1200 B (MinBand keyframe size) | 300 | max | 0% | 0 | 4.76 kB/s | 239.86 ms | 355.48 ms | +1 | +1 |
+| Payload | Count | Rate | Loss | Reorder | Throughput | RTT p50 | RTT p95 |
+|---|---|---|---|---|---|---|---|
+| 40 B | 300 | max | 0% | 0 | 0.68 kB/s | 59.10 ms | 100.11 ms |
+| 200 B | 300 | max | 0% | 0 | 3.26 kB/s | 59.73 ms | 100.56 ms |
+| 1000 B (run 1/3) | 300 | max | 93.67% | 0 | 0.13 kB/s | 242.91 ms | 392.48 ms |
+| 1000 B (run 2/3) | 300 | max | 88.00% | 0 | 0.25 kB/s | 237.51 ms | 379.99 ms |
+| 1000 B (run 3/3) | 300 | max | 89.67% | 0 | 0.21 kB/s | 237.64 ms | 357.93 ms |
+| 1200 B (MinBand keyframe, run 1/3) | 300 | max | 38.00% | 0 | 1.87 kB/s | 321.47 ms | 500.93 ms |
+| 1200 B (MinBand keyframe, run 2/3) | 300 | max | 0.33% | 0 | 7.36 kB/s | 142.19 ms | 200.71 ms |
+| 1200 B (MinBand keyframe, run 3/3) | 300 | max | 0.00% | 0 | 7.56 kB/s | 142.74 ms | 200.40 ms |
+
+Across these repeats `crc_errors` tracked `seq_lost` closely (within a few
+frames per run, never a large gap) — losses are overwhelmingly
+corrupted-and-caught by CRC, not clean vanishes.
 
 **Root cause (confirmed via `BLECharacteristic::notify()` source in the
 installed SDK):** peripheral->central BLE notify draws from a small fixed
 SoftDevice credit pool (`_hvn_sem`), refilled only on
-`BLE_GATTS_EVT_HVN_TX_COMPLETE`. A 1000 B datagram fragments into ~5 BLE
-notifications; under sustained back-to-back 1000 B traffic the credit pool
-exhausts faster than it refills, `notify()` blocks past its timeout, and
-the existing write-stall-then-resync-drop path (added for an earlier bug)
-kicks in repeatedly — this is what shows up as climbing `crc_errors`.
-Confirmed self-recovering, not a stuck connection: a clean 40 B burst run
-immediately after a lossy 1000 B burst, on the same BLE connection, comes
-back at 0% loss instantly. Central->peripheral writes (ATT write command)
-never show this problem, only peripheral->central notify does.
+`BLE_GATTS_EVT_HVN_TX_COMPLETE`. Larger datagrams fragment into more BLE
+notifications (1000 B into ~5, 1200 B into ~6); under sustained
+back-to-back traffic the credit pool can exhaust faster than it refills,
+`notify()` blocks past its timeout, and the existing
+write-stall-then-resync-drop path (added for an earlier bug) kicks in —
+this is what shows up as climbing `crc_errors`. Confirmed self-recovering,
+not a stuck connection: a clean 40 B burst run immediately after a lossy
+1000 B burst, on the same BLE connection, comes back at 0% loss instantly.
+Central->peripheral writes (ATT write command) never show this problem,
+only peripheral->central notify does.
 
-By design (fire-and-forget, no ACK/retry/credit scheme — see decision
-below), `crc_errors` and `seq_lost` land on the same 280 frames in the
-1000 B run: every notify-stall drop here corrupted-and-got-caught by CRC,
-none vanished without a trace. `seq_lost` exists to also catch the other
-failure mode (a frame disappearing cleanly, with no corrupt bytes left for
-CRC to flag) if it ever shows up as a non-zero *difference* from
-`crc_errors` — it didn't in this pass, but the instrumentation is now
-always-on via `/telemetry`.
+**Important: this is not a hard byte-size cutoff.** Three repeated 1200 B
+runs gave 38%, 0.33%, and 0% loss — wildly different results for the same
+payload size on the same link. Whether the credit pool runs dry depends on
+timing against live radio conditions (ongoing low-level BLE retransmits,
+connection interval phase), not on payload size alone — size just changes
+how many fragments are in flight and therefore how likely a given burst is
+to hit a bad timing window. 1000 B was consistently bad across all three
+repeats (88-94%); 1200 B was not consistently good. Do not treat a single
+clean run at any size as proof that size is safe — always run several
+repeats before relying on a number.
 
-MinBand's actual payloads are mostly 40-70 B deltas with rare ~1200 B
-keyframes — both measured here at 0% loss. The 1000 B ceiling is a real,
-root-caused finding, not a blocker for MinBand's traffic shape.
+MinBand's actual payloads are mostly 40-70 B deltas, measured here at 0%
+loss across the board. The ~1200 B keyframe size is NOT reliably safe at
+this notify rate — expect occasional bursts of significant loss, not a
+guaranteed ceiling.
 
 **Design decision (made with Piotrek):** no ACK/retry/credit scheme for
 now — the link is a tough RF environment and the priority is throughput
