@@ -89,7 +89,10 @@ pub struct Event {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RxContact {
-    pub id: u16, pub rev: u8, pub e: f32, pub n: f32, pub ce: f32, pub ce_shown: f32, pub radius: f32, pub count: u32, pub mix: [u8; 4],
+    pub id: u16, pub rev: u8, pub e: f32, pub n: f32,
+    /// Height above the session origin (m, `dz`), when the edge sent one (ext.bit1).
+    pub u: Option<f32>,
+    pub ce: f32, pub ce_shown: f32, pub radius: f32, pub count: u32, pub mix: [u8; 4],
     pub motion: &'static str, pub confirmed: bool, pub lost: bool, pub out_of_view: bool, pub departed: bool, pub focused: bool, pub group: bool,
     pub course: f32, pub speed: f32, pub first_seen: f32, pub since: f32, pub age_s: f32, pub silence_s: f32, pub liveness: &'static str,
     pub parent: Option<u16>, pub child: bool, pub ray: Option<[f32; 2]>, pub bbox: Option<[f32; 4]>, pub copies: u32, pub conf: u8,
@@ -285,7 +288,7 @@ impl Receiver {
                 Some(s) => { let (la, lo) = crate::geo::enu_to_latlon(s.origin_lat as f64 * 1e-7, s.origin_lon as f64 * 1e-7, e as f64, n as f64); (Some(la), Some(lo)) }
                 None => (None, None),
             };
-            RxContact { id: c.id, rev: c.rev, e, n, ce, ce_shown, radius: m8_to_m(c.radius), count: c.count(), mix: [c.n_dismount, c.n_vehicle, c.n_armour, c.n_other],
+            RxContact { id: c.id, rev: c.rev, e, n, u: if c.ext_has(X_ALT) { Some(c.dz as f32) } else { None }, ce, ce_shown, radius: m8_to_m(c.radius), count: c.count(), mix: [c.n_dismount, c.n_vehicle, c.n_armour, c.n_other],
                 motion: motion_name(c.flags), confirmed: c.has(F_CONFIRMED), lost: c.has(F_LOST), out_of_view, departed: c.has(F_DEPARTED), focused: c.has(F_FOCUSED), group: c.has(F_GROUP),
                 course: u8_to_deg(c.course), speed: u8_to_speed(c.speed), first_seen: c.first_seen as f32, since: c.since as f32, age_s: c.age as f32, silence_s: silence, liveness,
                 parent: if c.ext_has(X_PARENT) { Some(c.parent) } else { None }, child: c.ext_has(X_CHILD),

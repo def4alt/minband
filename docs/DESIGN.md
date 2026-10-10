@@ -215,6 +215,14 @@ is to make the cut survivable for it:
    server keeps placing them. The viewer shows the model where it has one and the twin's ENU
    where it does not.
 
+**Edge-side variant (`tools/recon3d`, 2026-10-10).** When the edge itself runs the reconstruction
+(MASt3R-SLAM on a companion computer; the map goes out on 3d-map-stream's channel), it does step 3
+on board: a detection's mask selects its pixels in the frame's pointmap for the direction, the ray
+meets the reconstructed terrain for the range, and the contact goes out with its height (`dz`,
+ext.bit1) and a ray aimed at the object instead of the flat ground below it. The tracker's own
+error radius (in the reconstruction's frame) replaces the flat-ground `ce` model. The receiver
+places the contact on its copy of the map; the object's appearance travels once as a chip.
+
 ## 6. Bandwidth, measured against surprise
 
 Bytes are spent only when a contact's state machine moves or its centroid leaves its own error

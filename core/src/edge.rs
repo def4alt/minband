@@ -307,7 +307,9 @@ impl Edge {
         let Some(every) = self.timing.pose else { return };
         if let Some(last) = self.last_pose_tick { if tick.saturating_sub(last) < every { return; } }
         self.last_pose_tick = Some(tick);
-        let cd = |d: f32| (d * 100.0).round().clamp(-32768.0, 32767.0) as i16;
+        // cdeg in an i16 holds +-327.67 deg: angles go on the wire in -180..180 (a bearing of 350 deg is -10).
+        let wrap = |d: f32| (d + 180.0).rem_euclid(360.0) - 180.0;
+        let cd = |d: f32| (wrap(d) * 100.0).round().clamp(-18000.0, 17999.0) as i16;
         let cm = |m: f32| (m * 100.0).round().clamp(i32::MIN as f32, i32::MAX as f32) as i32;
         self.poses.push(PoseRec { tick, x: cm(e), y: cm(n), z: cm(up), yaw: cd(yaw_deg), pitch: cd(pitch_deg), roll: cd(roll_deg) });
         if self.poses.len() > 20 { self.poses.remove(0); }
@@ -364,7 +366,7 @@ impl Edge {
         // Fill in ce from the geometry for tracks that carry none.
         let filled: Vec<Track> = tracks.iter().map(|t| {
             if t.ce.is_some() { return *t; }
-            let (_, el) = ray_az_el(ego.e, ego.n, ego.alt_agl, t.e, t.n, 0.0);
+            let (_, el) = ray_az_el(ego.e, ego.n, ego.alt_agl, t.e, t.n, t.u.unwrap_or(0.0));
             let range = ((t.e - ego.e).powi(2) + (t.n - ego.n).powi(2)).sqrt();
             let mut tt = *t;
             tt.ce = Some(ce_m(range, el, ego.pos_ce.max(self.cfg.sigma_own), self.cfg.sigma_att_deg, self.cfg.sigma_h, self.cfg.sigma_px, self.cfg.f_px));
@@ -623,30 +625,34 @@ impl Edge {
         let want_bbox = !c.departed && matches!(regime, Regime::Video | Regime::Wide) && c.bbox.is_some();
         if want_ray { ext |= X_RAY; }
         if want_bbox { ext |= X_BBOX; }
-        let (az, el) = ray_az_el(ego.e, ego.n, ego.alt_agl, c.e, c.n, 0.0);
+        // A height from the tracker (a 3D reconstruction, a rangefinder) goes on the wire as `dz`, and
+        // the ray points at the object itself instead of at the flat ground below it.
+        let dz = c.u.filter(|u| u.is_finite() && !c.departed).map(|u| u.round().clamp(-32768.0, 32767.0) as i16);
+        if dz.is_some() { ext |= X_ALT; }
+        let (az, el) = ray_az_el(ego.e, ego.n, ego.alt_agl, c.e, c.n, c.u.unwrap_or(0.0));
         let bb = c.bbox.unwrap_or([0.0; 4]);
         ContactRec { id: c.id, rev: c.rev, flags, ext, dx: m_to_pos(c.e, r), dy: m_to_pos(c.n, r), ce: m_to_m8(self.cm.declared_ce(c)), radius: m_to_m8(c.radius),
             n_dismount: c.mix[0], n_vehicle: c.mix[1], n_armour: c.mix[2], n_other: c.mix[3], conf: c.conf,
             first_seen: secs_u16(c.first_seen), since: secs_u16(c.since), age: age_u8(now.saturating_sub(c.last_seen)),
-            course: deg_to_u8(c.course), speed: speed_to_u8(c.speed), parent: c.parent.unwrap_or(0), dz: 0,
+            course: deg_to_u8(c.course), speed: speed_to_u8(c.speed), parent: c.parent.unwrap_or(0), dz: dz.unwrap_or(0),
             az: deg_to_u8(az), el: el_to_u8(el), bbox: [nrm_to_u8(bb[0]), nrm_to_u8(bb[1]), nrm_to_u8(bb[2]), nrm_to_u8(bb[3])] }
     }
 
     /// The edge's own view, for the side-by-side page: contacts as it holds them.
     pub fn snapshot(&self, now: u32) -> EdgeSnapshot {
         let contacts = self.cm.contacts.values().map(|c| ContactView::from_contact(c, now, self.entries.get(&c.id))).collect();
-        EdgeSnapshot { contacts, tracks: self.cm.tracks.values().map(|t| TrackView { id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce: t.ce, lost: t.lost, contact: t.contact, motion: motion_name(t.motion) }).collect(),
+        EdgeSnapshot { contacts, tracks: self.cm.tracks.values().map(|t| TrackView { id: t.id, class: t.class, e: t.e, n: t.n, u: t.u, ve: t.ve, vn: t.vn, conf: t.conf, ce: t.ce, lost: t.lost, contact: t.contact, motion: motion_name(t.motion) }).collect(),
             timing: self.timing, tokens: self.tokens, focus: self.focus.keys().copied().collect(), stats: self.cm.stats.clone(),
             detail: DetailView { level: self.cm.level, detail: self.cm.detail(), link_m: self.cm.cfg.link_m, link_dismount_m: self.cm.cfg.link_dismount_m, dev_factor: self.cm.cfg.dev_factor, load: self.load.clone(), ladder: self.cm.cfg.ladder } }
     }
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct TrackView { pub id: u32, pub class: u8, pub e: f32, pub n: f32, pub ve: f32, pub vn: f32, pub conf: u8, pub ce: f32, pub lost: bool, pub contact: Option<u16>, pub motion: &'static str }
+pub struct TrackView { pub id: u32, pub class: u8, pub e: f32, pub n: f32, pub u: Option<f32>, pub ve: f32, pub vn: f32, pub conf: u8, pub ce: f32, pub lost: bool, pub contact: Option<u16>, pub motion: &'static str }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ContactView {
-    pub id: u16, pub rev: u8, pub e: f32, pub n: f32, pub ce: f32, pub radius: f32, pub count: u32, pub mix: [u8; 4],
+    pub id: u16, pub rev: u8, pub e: f32, pub n: f32, pub u: Option<f32>, pub ce: f32, pub radius: f32, pub count: u32, pub mix: [u8; 4],
     pub motion: &'static str, pub confirmed: bool, pub lost: bool, pub departed: bool, pub focused: bool, pub split: bool,
     pub course: f32, pub speed: f32, pub members: Vec<u32>, pub first_seen: f32, pub since: f32, pub parent: Option<u16>,
     pub dirty: bool, pub step: u8, pub due_in: f32, pub sends: u32, pub bbox: Option<[f32; 4]>,
@@ -657,7 +663,7 @@ pub struct ContactView {
 impl ContactView {
     pub fn from_contact(c: &Contact, now: u32, e: Option<&Entry>) -> Self {
         let s = |t: u32| t as f32 / TICK_HZ as f32;
-        ContactView { id: c.id, rev: c.rev, e: c.e, n: c.n, ce: c.ce, radius: c.radius, count: c.count(), mix: c.mix, motion: motion_name(c.motion), confirmed: c.confirmed,
+        ContactView { id: c.id, rev: c.rev, e: c.e, n: c.n, u: c.u, ce: c.ce, radius: c.radius, count: c.count(), mix: c.mix, motion: motion_name(c.motion), confirmed: c.confirmed,
             lost: c.lost, departed: c.departed, focused: c.focused, split: c.split, course: c.course, speed: c.speed, members: c.members.clone(), first_seen: s(c.first_seen),
             since: s(c.since), parent: c.parent, dirty: c.dirty, step: e.map_or(0, |e| e.step), due_in: e.map_or(0.0, |e| (e.due as i64 - now as i64) as f32 / TICK_HZ as f32), sends: e.map_or(0, |e| e.sends), bbox: c.bbox,
             now_e: c.e + if c.motion == MOTION_MOVING { c.ve * s(now.saturating_sub(c.last_seen)) } else { 0.0 },
@@ -682,7 +688,51 @@ pub const FOCUS_RECORD_B: f32 = 30.0;
 mod tests {
     use super::*;
 
-    fn track(id: u32, e: f32) -> Track { Track { id, class: 2, e, n: 0.0, ve: 0.0, vn: 0.0, conf: 200, ce: Some(3.0), bbox: None } }
+    fn track(id: u32, e: f32) -> Track { Track { id, class: 2, e, n: 0.0, ve: 0.0, vn: 0.0, conf: 200, ce: Some(3.0), bbox: None, u: None } }
+
+    /// A pose's yaw is a bearing (0..360) but its cdeg field is an i16: 359.3 deg must arrive as -0.7, not
+    /// saturate at 327.67.
+    #[test]
+    fn a_pose_bearing_past_327_degrees_wraps() {
+        let cfg = EdgeConfig { budget_bps: 0, carrier_overhead: 0, ..Default::default() };
+        let mut edge = Edge::new(cfg);
+        edge.pose(0, 1.0, 2.0, 30.0, 359.3, -15.0, 350.0);
+        let p = edge.poses.last().copied().expect("a pose in the video regime");
+        assert_eq!((p.yaw, p.pitch, p.roll), (-70, -1500, -1000));
+    }
+
+    /// A track placed in 3D (tools/recon3d: a reconstruction's terrain) reaches the receiver with its
+    /// height in `dz`, and its ray points at the object, not at the flat ground under it; a track
+    /// without a height sends none.
+    #[test]
+    fn a_height_from_the_tracker_goes_on_the_wire() {
+        let cfg = EdgeConfig { budget_bps: 0, carrier_overhead: 0, ..Default::default() };
+        let mut edge = Edge::new(cfg);
+        let ego = EgoInput { alt_agl: 40.0, ..Default::default() };
+        let tracks = vec![Track { u: Some(12.4), ..track(1, 30.0) }, track(2, 300.0)];
+        let mut rx = crate::receiver::Receiver::new(0);
+        let mut sent = Vec::new();
+        let mut now = 0;
+        while now <= 5 * TICK_HZ {
+            for b in edge.tick(&tracks, &ego, now) {
+                for r in Frame::decode(&b).unwrap().records { if let Record::Contact(c) = r { sent.push(c); } }
+                rx.on_frame(&b).unwrap();
+            }
+            now += 12;
+        }
+        let c1 = edge.cm.tracks[&1].contact.unwrap();
+        let c2 = edge.cm.tracks[&2].contact.unwrap();
+        let rec1 = sent.iter().rev().find(|c| c.id == c1).expect("contact 1 sent");
+        let rec2 = sent.iter().rev().find(|c| c.id == c2).expect("contact 2 sent");
+        assert!(rec1.ext_has(X_ALT) && rec1.dz == 12, "dz on the wire: {rec1:?}");
+        assert!(!rec2.ext_has(X_ALT), "no height, no dz: {rec2:?}");
+        // The ray to a point 12.4 m up from 40 m, 30 m away: depression atan(27.6 / 30), not atan(40 / 30).
+        let el = u8_to_el(rec1.el);
+        assert!((el - (27.6f32 / 30.0).atan().to_degrees()).abs() < 0.5, "ray at the object: {el}");
+        let held = rx.snapshot(now);
+        assert_eq!(held.iter().find(|c| c.id == c1).unwrap().u, Some(12.0));
+        assert_eq!(held.iter().find(|c| c.id == c2).unwrap().u, None);
+    }
     /// Under saturation a never-sent revision goes before the repeats of older ones: six static
     /// contacts are due for their second copy (overdue 100 ticks), a newborn seventh is due for its
     /// first (overdue 10). A 100 B frame takes three contacts; the newborn must be one of them.
@@ -768,7 +818,7 @@ mod tests {
         let leg = (s / 4.0) as u32; let along = s - leg as f32 * 4.0;
         let (ve, vn) = if leg % 2 == 0 { (1.2, 0.6) } else { (1.2, -0.6) };
         let (e0, n0) = (1.2 * 4.0 * leg as f32, 0.0);
-        (0..40).map(|i| Track { id: i + 1, class: 0, e: e0 + ve * along + 20.0 * (i % 8) as f32, n: n0 + vn * along + 20.0 * (i / 8) as f32, ve, vn, conf: 200, ce: Some(3.0), bbox: None }).collect()
+        (0..40).map(|i| Track { id: i + 1, class: 0, e: e0 + ve * along + 20.0 * (i % 8) as f32, n: n0 + vn * along + 20.0 * (i / 8) as f32, ve, vn, conf: 200, ce: Some(3.0), bbox: None, u: None }).collect()
     }
     fn digest(edge: &mut Edge, rx: &mut crate::receiver::Receiver, now: u32) {
         if rx.session.is_some() { let d = rx.make_digest(edge.cfg.budget_bps, 0, now); edge.on_uplink(&d, now).unwrap(); }
