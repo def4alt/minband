@@ -67,3 +67,26 @@ log hang forever; (2) numba's on-disk cache breaks when a module is loaded under
 swaps the cloud; (4) the encoder's occupancy grids must be growable (the live cloud grows); (5) between keyframes 19-32 % of the
 already-sent map moves by >0.5 m (and 88 % after keyframe 1), so a world-fixed voxel stream must send each keyframe once and ignore
 refinements - or anchor voxels to keyframes (not done); (6) `decoder_rt.py` is bit-exact offline but does not parse the live header yet.
+
+## Update 2026-10-11: real-time live pipeline (warm sender, live pose, budget-matched, viewer, replay)
+
+What changed since the 2026-10-10 live run (all in `streaming/` and `slam/`):
+
+| Part | Change |
+|---|---|
+| SLAM (`slam/main.py.patch`, `slam/live_export.py`) | Every tracked frame writes its pose to `<live-export dir>/pose_live.bin` (atomic, ~20 Hz). Keyframe export copies each keyframe under the shared lock and caps 150k points per keyframe. |
+| Sender (`streaming/sender/map_sender_slot.py`) | Encoder warm-up at start (numba compile + setup on a synthetic scene, ~11 s, overlaps SLAM model load; first keyframe then costs 0.1 s instead of 8 s). Incremental ingestion of new keyframes (byte-identical output, 65–95 ms instead of up to 1.2 s). numpy hugepage madvise off (0.2–1 s allocation stalls on the 5090 box). A new keyframe is encoded at once with a ~1 KB coarse first look (`--urgent-bytes`). Just-in-time slots (`--jit 1`): never encode more than the link can send before the next slot, so a new keyframe never waits behind queued data. Live pose feed at `--pose-hz` (5 Hz, priority slot, counted in the budget). 1 Hz `STAT` frame (keyframes, cloud size, encode time, backlog, "nothing to send" / "waiting for SLAM"). `--record FILE` writes every frame with its send time. TCP_NODELAY. |
+| Codec (`streaming/stream_rt.py`) | `ALPHA_MIN` / `--alpha-min` resolution floor so the content rate stays under the link budget (no refinement tail); first-look budget can no longer go below one packet. |
+| Receivers (`streaming/map_receiver*.py`) | Skip `STAT` frames. GUI: solid shaded voxel cubes (`--draw cubes`, default; `hybrid` = old flat tiles), chunked geometry uploads, view modes (keys `1` first person, `3` third person, `T` top, `V` cycle, `F` free mouse; `--view`), network statistics panel (link kbit/s vs budget, 60 s graph, packets/s, pose Hz and age, sender status, "why is nothing moving" line), panel composited into the recorded frames. |
+| Replay (`streaming/map_replay.py`, `streaming/replay_view.sh`) | Plays a recorded stream into the viewer with the sender's timing (no network jitter): `VIEW=first bash streaming/replay_view.sh <run dir> [speed]`. |
+| Raw baseline (`streaming/stream_raw.py`) | No voxels, no compression (float32 xyz + rgb per new keyframe) — for "is the live SLAM map itself OK?". |
+| Harness (`streaming/run_live_test.sh`) | Defaults: 30 kbit/s, 0.5 s slots, alpha floor 0.011, bucket 0.5 s, JIT on. Sender starts together with SLAM (warm-up during model load). Own ssh connection for the tunnel, PID-only cleanup, PASS/FAIL summary. Env: `RATE SLOT URGENT ALPHA_MIN BUCKET JIT POSE_HZ VIEW GUI CLIP SRC PY`. |
+
+Measured (live over the laptop↔5090 ssh tunnel; church clip 29 s, 50 kbit/s cap, alpha floor 0.011):
+keyframe written by SLAM → first packet sent **0.55 s median**, → on screen **0.78 s median**; queue ahead of a new keyframe
+0 B median; average **27.7 kbit/s** total (map 25.7, pose 1.6, status 0.5); 0 decode errors. The ssh tunnel over the
+internet adds 0.17–3 s spikes of its own (bare probe, no app traffic) — use the replay to judge the pipeline alone.
+SLAM needs ~5 s of flight before its 2nd keyframe; nothing is sent before that (the 1st keyframe is rescaled when the 2nd arrives).
+
+Known limits: the viewer falls back to software OpenGL (llvmpipe) when started from a sandboxed shell — run it from a normal
+desktop terminal for GPU rendering. Large oblique scenes (1.9M SLAM points) make one encode take 0.6–0.9 s.

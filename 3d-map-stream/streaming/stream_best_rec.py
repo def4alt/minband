@@ -37,7 +37,7 @@ def split_records(chunk_bytes, first):
     out = []
     while p < len(chunk_bytes):
         n = int.from_bytes(chunk_bytes[p + 1:p + 5], "little"); out.append(chunk_bytes[p:p + 5 + n]); p += 5 + n
-    if hdr: out[0] = hdr + out[0]
+    if hdr: out = ([hdr + out[0]] + out[1:]) if out else [hdr]  # header rides on the first record; a header-only first chunk is still sent (decoder gets R/o/palette)
     return out
 
 def code_records(bands, st, pal):

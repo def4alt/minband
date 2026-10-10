@@ -18,6 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 W, H, HFOV = 640, 360, 70.0; FX = W / 2 / np.tan(np.radians(HFOV) / 2)
 SKY = np.array([184, 209, 237], np.uint8)
 POSE_LEN = 4 + 8 * 8 + 8
+STAT_LEN = 27  # b"STAT" + <IHIIIfB> (23 B)
 
 
 def default_streamer():
@@ -40,10 +41,13 @@ def render(pts, cols, R, c, splat):  # numpy splat renderer (demo_live_render.py
     k = (u >= 0) & (u < W - 1) & (v >= 0) & (v < H - 1); u, v, z, col = u[k], v[k], q[k, 2], col[k]
     if len(z) == 0: return img
     o = np.argsort(-z); u, v, z, col = u[o], v[o], z[o], col[o]
-    size = np.clip(np.ceil(FX * splat / z), 2, 24).astype(np.int32) if splat and splat > 0 else np.full(len(z), 2, np.int32)
-    for du in range(size.max()):
-        for dv in range(size.max()):
-            kk = size > max(du, dv); img[np.minimum(v[kk] + dv, H - 1), np.minimum(u[kk] + du, W - 1)] = col[kk]
+    size = np.clip(np.ceil(FX * splat / z), 2, 8).astype(np.int32) if splat and splat > 0 else np.full(len(z), 2, np.int32)
+    smax = int(size.max()); sel = [None] + [np.nonzero(size > m)[0] for m in range(1, smax)]  # points needing each splat size (once)
+    for du in range(smax):
+        for dv in range(smax):
+            m = max(du, dv)
+            if m == 0: img[v, u] = col; continue
+            kk = sel[m]; img[np.minimum(v[kk] + dv, H - 1), np.minimum(u[kk] + du, W - 1)] = col[kk]
     return img
 
 
@@ -62,26 +66,30 @@ def write_ply(path, pts, cols):
 
 
 class FrameReader:
-    """Reads <I len><payload> frames from a socket; returns None on EOF, raises TimeoutError after idle_timeout s."""
-    def __init__(self, sock, idle_timeout, tick=None):
-        self.s, self.buf, self.idle, self.tick = sock, b"", idle_timeout, tick; sock.settimeout(0.2)
+    """Reads <I len><payload> frames from a socket; returns None on EOF, raises TimeoutError after idle_timeout s without
+    data (counted from the last byte received; before the first byte `first_timeout` applies: the sender connects long
+    before its first record)."""
+    def __init__(self, sock, idle_timeout, tick=None, first_timeout=None):
+        self.s, self.buf, self.idle, self.tick = sock, bytearray(), idle_timeout, tick; sock.settimeout(0.2)
+        self.first = first_timeout if first_timeout is not None else idle_timeout; self.last = None; self.t_open = time.time()
     def _fill(self, n):
-        last = time.time()
         while len(self.buf) < n:
             try: d = self.s.recv(65536)
             except socket.timeout:
                 if self.tick: self.tick()
-                if time.time() - last > self.idle: raise TimeoutError(f"no data for {self.idle:.0f} s")
+                if self.last is None:
+                    if time.time() - self.t_open > self.first: raise TimeoutError(f"no data for {self.first:.0f} s after connect")
+                elif time.time() - self.last > self.idle: raise TimeoutError(f"no data for {self.idle:.0f} s")
                 continue
             if not d: return False
-            self.buf += d; last = time.time()
+            self.buf += d; self.last = time.time()
         return True
     def read(self):
         if not self._fill(4): return None
-        n = struct.unpack("<I", self.buf[:4])[0]
+        n = struct.unpack("<I", bytes(self.buf[:4]))[0]
         if n > 64 << 20: raise ValueError(f"absurd frame length {n}")
         if not self._fill(4 + n): return None
-        p = self.buf[4:4 + n]; self.buf = self.buf[4 + n:]; return p
+        p = bytes(self.buf[4:4 + n]); del self.buf[:4 + n]; return p
 
 
 class Gui:  # optional Open3D non-blocking window
@@ -119,26 +127,28 @@ def main():
     srv.bind((host, int(port))); srv.listen(1); srv.settimeout(0.5); print(f"[recv] listening on {a.listen}, out={a.out}, streamer={os.path.basename(streamer)}", flush=True)
     conn, t_start = None, time.time()
     while conn is None:
-        try: conn, addr = srv.accept(); print(f"[recv] sender connected from {addr}", flush=True)
+        try: conn, addr = srv.accept(); print(f"[recv] sender connected from {addr}", flush=True); conn.sendall(b"MAPR")  # greeting: proves a receiver is behind the tunnel
         except socket.timeout:
             if gui: gui.poll()
             if time.time() - t_start > a.accept_timeout: print("[recv] no sender, giving up", flush=True); srv.close(); return 1
     srv.close()
-    rd = FrameReader(conn, a.idle_timeout, tick=gui.poll if gui else None)
+    rd = FrameReader(conn, a.idle_timeout, tick=gui.poll if gui else None, first_timeout=a.accept_timeout)
     poses, pose, dt_slot, nrec, cum, t0, nframe = [], None, None, 0, 0, None, 0
     pts, cols, splat = np.zeros((0, 3)), np.zeros((0, 3), np.uint8), 0.0
     reason = "socket closed"
     try:
         while True:
             try: pay = rd.read()
-            except TimeoutError as e: reason = str(e); break
+            except (TimeoutError, ValueError) as e: reason = str(e); break
             if pay is None: break
             now = time.time(); t0 = t0 or now; cum += len(pay) + 4; trel = now - t0
+            if len(pay) == STAT_LEN and pay[:4] == b"STAT":  # sender status (not a map record)
+                log.write(f"{trel:.3f} {now:.3f} STAT {len(pay)+4} - {cum/1e3:.3f} {len(pts)}\n"); log.flush(); continue
             if len(pay) == POSE_LEN and pay[:4] == b"POSE":
                 row = np.frombuffer(pay[4:68], np.float64).copy(); dt_slot = struct.unpack("<d", pay[68:76])[0]; poses.append(row); pose = row
                 log.write(f"{trel:.3f} {now:.3f} POSE {len(pay)+4} - {cum/1e3:.3f} {len(pts)}\n"); log.flush()
                 print(f"[recv] {trel:6.1f}s POSE kf t={row[0]:.2f} dt={dt_slot:.2f}", flush=True); continue
-            first = getattr(dec, "R", None) is None  # label only: the parser never assumes a record layout
+            first = nrec == 0  # label only: the parser never assumes a record layout
             band = "hdr" if first else (f"b{pay[0]}" if len(pay) >= 5 and struct.unpack("<I", pay[1:5])[0] == len(pay) - 5 else "chunk")
             t1 = time.time()
             try: dec.apply(pay); applied = True
@@ -163,7 +173,7 @@ def main():
         try: conn.close()
         except Exception: pass
         write_ply(os.path.join(a.out, "recv_final.ply"), pts, cols)
-        np.savetxt(os.path.join(a.out, "recv_final.txt"), np.array(poses).reshape(-1, 8), fmt="%.9g")
+        np.savetxt(os.path.join(a.out, "recv_final.txt"), np.array(poses).reshape(-1, 8), fmt="%.6f")
         with open(os.path.join(a.out, "recv_final.splat"), "w") as f: f.write(f"{splat:.6g}\n")
         log.write(f"# end: {reason}, {nrec} records, {cum/1e3:.1f} KB, {len(pts)} pts, {nframe} frames\n"); log.close()
         print(f"[recv] done ({reason}): {nrec} records, {cum/1e3:.1f} KB, {len(pts):,} pts, {nframe} frames, {len(poses)} poses -> {a.out}", flush=True)

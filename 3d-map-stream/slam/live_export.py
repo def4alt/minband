@@ -4,7 +4,7 @@ After every keyframe insert main.py (flag --live-export DIR) calls
 export_snapshot(); it writes DIR/snap_%04d.npz with
 
     pts  float32 [N,3]  world (SLAM) frame, conf > c_conf_threshold,
-                        randomly subsampled to <= MAX_POINTS
+                        at most KF_MAX_POINTS per keyframe
     rgb  uint8   [N,3]
     traj float64 [K,8]  rows (t x y z qx qy qz qw) for keyframes 0..K-1
     kf   int            = K-1
@@ -14,8 +14,10 @@ reader never sees a partial file.
 """
 import os
 import pathlib
+import struct
 import time
 
+import lietorch
 import numpy as np
 import torch
 
@@ -23,8 +25,7 @@ from mast3r_slam.config import config
 from mast3r_slam.geometry import constrain_points_to_ray
 from mast3r_slam.lietorch_utils import as_SE3
 
-MAX_POINTS = 600_000
-_rng = np.random.default_rng(0)
+KF_MAX_POINTS = int(os.environ.get("LIVE_KF_MAX_POINTS", 150_000))  # per-keyframe cap (a global cap would thin later keyframes)
 
 
 @torch.no_grad()
@@ -37,27 +38,37 @@ def export_snapshot(keyframes, timestamps, c_conf_threshold, outdir, idx):
     pts, rgb, traj = [], [], []; kf_off = [0]
     K = len(keyframes)
     for i in range(K):
-        kf = keyframes[i]
-        X_canon = kf.X_canon
+        # The keyframe's X / C / T_WC are views into shared memory that the backend overwrites during global
+        # optimisation: read everything of one keyframe under the shared lock and copy it, so pose, points and
+        # confidences of the snapshot are mutually consistent (the sender never re-sends a keyframe).
+        with keyframes.lock:
+            kf = keyframes[i]
+            X_canon = kf.X_canon.clone()
+            T_WC = lietorch.Sim3(kf.T_WC.data.clone())
+            conf = kf.get_average_conf().clone()
+            uimg = kf.uimg.clone()
+            frame_id = kf.frame_id
+            K_cal = kf.K if config["use_calib"] else None
+            img_shape = kf.img_shape.clone()
         if config["use_calib"]:
             X_canon = constrain_points_to_ray(
-                kf.img_shape.flatten()[:2], X_canon[None], kf.K
+                img_shape.flatten()[:2], X_canon[None], K_cal
             ).squeeze(0)
-        pW = kf.T_WC.act(X_canon).reshape(-1, 3)
-        valid = kf.get_average_conf().reshape(-1) > c_conf_threshold
-        pts.append(pW[valid].float().cpu().numpy())
-        col = (kf.uimg.reshape(-1, 3) * 255).clamp(0, 255).to(torch.uint8)
-        rgb.append(col[valid.cpu()].numpy()); kf_off.append(kf_off[-1] + len(pts[-1]))
-        t = float(timestamps[kf.frame_id])
-        x, y, z, qx, qy, qz, qw = as_SE3(kf.T_WC).data.cpu().numpy().reshape(-1)
+        pW = T_WC.act(X_canon).reshape(-1, 3)
+        valid = conf.reshape(-1) > c_conf_threshold
+        p_kf = pW[valid].float().cpu().numpy()
+        col = (uimg.reshape(-1, 3) * 255).clamp(0, 255).to(torch.uint8)
+        c_kf = col[valid.cpu()].numpy()
+        if len(p_kf) > KF_MAX_POINTS:  # cap per keyframe (deterministic per index): later keyframes keep full density
+            sel = np.sort(np.random.default_rng(i).choice(len(p_kf), KF_MAX_POINTS, replace=False))
+            p_kf, c_kf = p_kf[sel], c_kf[sel]
+        pts.append(p_kf); rgb.append(c_kf); kf_off.append(kf_off[-1] + len(p_kf))
+        t = float(timestamps[frame_id])
+        x, y, z, qx, qy, qz, qw = as_SE3(T_WC).data.cpu().numpy().reshape(-1)
         traj.append([t, x, y, z, qx, qy, qz, qw])
 
     pts = np.concatenate(pts, 0).astype(np.float32) if pts else np.zeros((0, 3), np.float32)
     rgb = np.concatenate(rgb, 0).astype(np.uint8) if rgb else np.zeros((0, 3), np.uint8)
-    if len(pts) > MAX_POINTS:  # order-preserving subsample; keyframe offsets are remapped onto the kept points
-        sel = np.sort(_rng.choice(len(pts), MAX_POINTS, replace=False))
-        pts, rgb = pts[sel], rgb[sel]
-        kf_off = np.searchsorted(sel, np.asarray(kf_off)).tolist()
     traj = np.asarray(traj, dtype=np.float64).reshape(-1, 8)
 
     final = outdir / f"snap_{idx:04d}.npz"
@@ -68,3 +79,16 @@ def export_snapshot(keyframes, timestamps, c_conf_threshold, outdir, idx):
         os.fsync(f.fileno())
     os.replace(tmp, final)
     return final, len(pts), time.time() - t0
+
+
+POSE_FILE = "pose_live.bin"  # <Q n><8d t x y z qx qy qz qw>: newest TRACKED frame pose (world/SLAM frame, same as traj)
+
+
+@torch.no_grad()
+def export_pose(T_WC, outdir, n):
+    """Write the current frame's pose (every tracked frame, throttled by the caller); atomic replace, ~0.1 ms."""
+    x, y, z, qx, qy, qz, qw = as_SE3(T_WC).data.cpu().numpy().reshape(-1)[:7]
+    outdir = pathlib.Path(outdir); tmp = outdir / (POSE_FILE + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(struct.pack("<Q8d", int(n), time.time(), x, y, z, qx, qy, qz, qw))
+    os.replace(tmp, outdir / POSE_FILE)

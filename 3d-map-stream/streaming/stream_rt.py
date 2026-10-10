@@ -35,6 +35,7 @@ try:  # keep freed large buffers inside the process (no mmap/munmap per temporar
 except Exception: pass
 geo = SB.geo; CHUNK = geo.CHUNK; ALPHA = float(geo.ALPHA)
 KNOWN = SB.KNOWN; PCOL = SB.PCOL
+ALPHA_MIN = float(os.environ.get("RT_ALPHA_MIN", 0))  # resolution floor (live: keep the content rate under the link budget; 0 = off)
 PKT = float(os.environ.get("PKT", 600)); MINVOX = int(os.environ.get("PKT_MINVOX", 8)); RECUT = float(os.environ.get("PKT_RECUT", 0.4))
 ORDER = os.environ.get("PKT_ORDER", "block"); NTHR = int(os.environ.get("RT_THREADS", 8))
 header_len = SR.header_len; split_records = SR.split_records
@@ -423,16 +424,25 @@ class State:
         if n > len(self.kns): n = max(n, 2 * len(self.kns)); self.kns = np.full(n, -1, np.int8); self.K = np.zeros(n, np.int8); self.OCC = np.zeros(n, np.bool_)
         return self.kns, self.K, self.OCC
     # -- journal --
-    def mark(self): return (len(self.log), self.col.copy(), list(self.known), list(self.cidx), list(self.skeys), list(self.scidx), list(self.sord), len(self.glog))
+    # m[8] = the occupancy levels existing at the mark: a level created lazily after it (filled from the then-current,
+    # possibly uncommitted known voxels, no journal) is deleted on rollback and rebuilt on demand from the restored known
+    # set, so lazy level creation mid-trial can never leave an incomplete grid (encoder/decoder known-flag desync).
+    def mark(self): return (len(self.log), self.col.copy(), list(self.known), list(self.cidx), list(self.skeys), list(self.scidx), list(self.sord), len(self.glog), [set(o) for o in self.occ])
     def rollback(self, m):
         n = m[0]
         for ctx, fctx, y in reversed(self.log[n:]): k_upd(self.tb, self.tf, ctx, fctx, y, -1)
-        for bj, l, c in reversed(self.glog[m[7]:]): self.occ[bj][l][c[:, 0], c[:, 1], c[:, 2]] = False
+        for bj, l, c in reversed(self.glog[m[7]:]):
+            G = self.occ[bj].get(l)
+            if G is not None: G[c[:, 0], c[:, 1], c[:, 2]] = False
+        for bj in range(self.nb):
+            for l in [l for l in self.occ[bj] if l not in m[8][bj]]: del self.occ[bj][l]
         del self.log[n:]; del self.glog[m[7]:]; self.col = m[1]; self.known = list(m[2]); self.cidx = list(m[3]); self.skeys = list(m[4]); self.scidx = list(m[5]); self.sord = list(m[6])
     def capture(self, m): return (list(self.log[m[0]:]), self.col.copy(), list(self.known), list(self.cidx), list(self.skeys), list(self.scidx), list(self.sord), list(self.glog[m[7]:]))
     def replay(self, d):
         for ctx, fctx, y in d[0]: k_upd(self.tb, self.tf, ctx, fctx, y, 1)
-        for bj, l, c in d[7]: self.occ[bj][l][c[:, 0], c[:, 1], c[:, 2]] = True
+        for bj, l, c in d[7]:
+            G = self.occ[bj].get(l)  # a level missing now is rebuilt lazily from the replayed known set
+            if G is not None: G[c[:, 0], c[:, 1], c[:, 2]] = True
         self.log.extend(d[0]); self.glog.extend(d[7]); self.col = d[1]; self.known = list(d[2]); self.cidx = list(d[3]); self.skeys = list(d[4]); self.scidx = list(d[5]); self.sord = list(d[6])
     def commit(self):
         """everything in known is now final: journal dropped."""
@@ -444,9 +454,8 @@ class State:
             U = self.known[bj]
             if self.dims is not None: d = ((self.dims[bj] - 1) >> l) + 1
             else: d = ((U.max(0) >> l) + 5) if len(U) else np.array([8, 8, 8], np.int64)
-            G = np.zeros(tuple(int(x) for x in d), np.bool_); self.occ[bj][l] = G; nb_ = self.base[bj]
-            if nb_: c = U[:nb_] >> l; G[c[:, 0], c[:, 1], c[:, 2]] = True
-            if len(U) > nb_: self._occ_add(bj, U[nb_:], l)
+            G = np.zeros(tuple(int(x) for x in d), np.bool_); self.occ[bj][l] = G
+            if len(U): c = U >> l; G[c[:, 0], c[:, 1], c[:, 2]] = True  # all known voxels, no journal (see mark/rollback)
         return G
     def _occ_add(self, bj, u, l):
         if len(u) == 0: return
@@ -799,7 +808,7 @@ class Encoder(SB.Encoder):
         if TIE > 0:
             d = np.linalg.norm(self.P - traj[-1, 1:4], axis=1); z = z * (1 + TIE * d / d.max())
         _toc("zeff", t)
-        bud = budget - len(hdr); a = self.alpha; best = None; lo = hi = None; tr = []
+        bud = max(budget - len(hdr), PKT); a = max(self.alpha, ALPHA_MIN); best = None; lo = hi = None; tr = []  # >= one packet of data after the header (a tiny first-look budget must not go <= 0)
         for it in range(MAXT):
             b, st, bands = self.trial(a, z, ztrue, abort=bud); n = self._est; tr.append((a, n)); self.ntrials = it + 1
             if n <= bud:
@@ -814,6 +823,9 @@ class Encoder(SB.Encoder):
             if lo is not None and hi is not None and not (lo < a_new < hi): a_new = math.sqrt(lo * hi)
             elif lo is not None and a_new <= lo: a_new = lo * 1.05
             elif hi is not None and a_new >= hi: a_new = hi / 1.05
+            if a_new < ALPHA_MIN:  # floor reached: send what is left at the floor resolution (may be < budget -> idle link)
+                if a <= ALPHA_MIN: break
+                a_new = ALPHA_MIN
             a = a_new
         if lo is not None and (best is None or len(best[0]) < 0.9 * bud) and tr[[x[0] for x in tr].index(lo)][1] < 2.5 * bud:
             b, st, bands = self.trial(lo, z, ztrue, limit=bud); self.ntrials += 1

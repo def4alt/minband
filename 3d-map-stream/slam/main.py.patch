@@ -1,5 +1,5 @@
 diff --git a/main.py b/main.py
-index 20cfbbc..ab85ce2 100644
+index 20cfbbc..ebb5e18 100644
 --- a/main.py
 +++ b/main.py
 @@ -1,4 +1,5 @@
@@ -9,7 +9,7 @@ index 20cfbbc..ab85ce2 100644
  import datetime
  import pathlib
  import sys
-@@ -156,9 +157,24 @@ if __name__ == "__main__":
+@@ -156,9 +157,40 @@ if __name__ == "__main__":
      parser.add_argument("--save-as", default="default")
      parser.add_argument("--no-viz", action="store_true")
      parser.add_argument("--calib", default="")
@@ -31,10 +31,26 @@ index 20cfbbc..ab85ce2 100644
 +        except Exception as e:  # never let the export kill SLAM
 +            print(f"[live-export] FAILED: {e!r}", flush=True)
 +
++    _lp = {"t": 0.0, "n": 0}
++
++    def live_pose(frame):  # newest tracked pose for the live camera feed (sender polls pose_live.bin)
++        if not args.live_export:
++            return
++        now = time.time()
++        if now - _lp["t"] < 0.05:
++            return
++        _lp["t"] = now; _lp["n"] += 1
++        try:
++            from mast3r_slam.live_export import export_pose
++            export_pose(frame.T_WC, args.live_export, _lp["n"])
++        except Exception as e:  # never let the export kill SLAM
++            if _lp["n"] < 4:
++                print(f"[live-pose] FAILED: {e!r}", flush=True)
++
      load_config(args.config)
      print(args.dataset)
      print(config)
-@@ -268,6 +284,7 @@ if __name__ == "__main__":
+@@ -268,6 +300,7 @@ if __name__ == "__main__":
              frame.update_pointmap(X_init, C_init)
              keyframes.append(frame)
              states.queue_global_optimization(len(keyframes) - 1)
@@ -42,7 +58,16 @@ index 20cfbbc..ab85ce2 100644
              states.set_mode(Mode.TRACKING)
              states.set_frame(frame)
              i += 1
-@@ -297,6 +314,7 @@ if __name__ == "__main__":
+@@ -278,6 +311,8 @@ if __name__ == "__main__":
+             if try_reloc:
+                 states.set_mode(Mode.RELOC)
+             states.set_frame(frame)
++            if not try_reloc:
++                live_pose(frame)
+ 
+         elif mode == Mode.RELOC:
+             X, C = mast3r_inference_mono(model, frame)
+@@ -297,6 +332,7 @@ if __name__ == "__main__":
          if add_new_kf:
              keyframes.append(frame)
              states.queue_global_optimization(len(keyframes) - 1)
@@ -50,7 +75,7 @@ index 20cfbbc..ab85ce2 100644
              # In single threaded mode, wait for the backend to finish
              while config["single_thread"]:
                  with states.lock:
-@@ -309,6 +327,7 @@ if __name__ == "__main__":
+@@ -309,6 +345,7 @@ if __name__ == "__main__":
              print(f"FPS: {FPS}")
          i += 1
  

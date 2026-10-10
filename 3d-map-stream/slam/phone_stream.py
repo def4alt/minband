@@ -175,5 +175,7 @@ class PhoneCameraDataset(MonocularDataset):
         if not self._running:
             return
         self._running = False
-        self._thread.join(timeout=1)
+        self._thread.join(timeout=3)
+        if self._thread.is_alive():  # grabber still inside cap.read(): releasing under it can crash at exit
+            return
         self.cap.release()
