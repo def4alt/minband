@@ -1,0 +1,6 @@
+# uniffi bindings configuration. Swift (iOS) uses the defaults; Kotlin (android/) is below.
+[bindings.kotlin]
+package_name = "dev.minband.core"
+cdylib_name = "minband_core"
+android = true
+android_cleaner = true

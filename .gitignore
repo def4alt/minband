@@ -26,3 +26,13 @@ tools/footage/models/
 *.onnx
 *.pt
 docs/presentation/showcase/build/
+# android (tools/build-android.sh outputs, Gradle state, IDE)
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/jniLibs/
+android/app/src/main/java/dev/minband/core/
+android/.idea/
+android/*.iml
