@@ -84,14 +84,20 @@ void setup() {
   Bluefruit.Scanner.start(0);
 }
 
+// If a BLE write stalls (e.g. notify queue wedged), drop the pending buffer
+// after this long instead of blocking new serial data forever.
+#define BLE_WRITE_STALL_TIMEOUT_MS 500
+
 static void pumpUsbToBle() {
   static uint8_t buf[1536];
   static size_t len = 0;
   static size_t sent = 0;
+  static uint32_t stallStart = 0;
 
   if (len == 0) {
     while (Serial.available() && len < sizeof(buf)) buf[len++] = Serial.read();
     sent = 0;
+    stallStart = millis();
   }
   if (len == 0 || connHandle == BLE_CONN_HANDLE_INVALID) {
     len = 0;
@@ -105,7 +111,14 @@ static void pumpUsbToBle() {
   while (sent < len) {
     size_t want = (len - sent) < chunk ? (len - sent) : chunk;
     size_t wrote = clientUart.write(buf + sent, want);
-    if (wrote == 0) break; // BLE link busy; keep remainder, retry next loop
+    if (wrote == 0) {
+      if (millis() - stallStart > BLE_WRITE_STALL_TIMEOUT_MS) {
+        len = 0;
+        sent = 0;
+      }
+      break; // BLE link busy; keep remainder, retry next loop
+    }
+    stallStart = millis();
     sent += wrote;
   }
   if (sent >= len) {
