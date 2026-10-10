@@ -40,7 +40,7 @@ for crf in "${crfs[@]}"; do
     ffmpeg -nostdin -loglevel error -y -ss "$start" -t "$dur" -i "$video" -an \
       -vf "scale=$w:$h:flags=area" -c:v libx264 -preset veryfast -tune zerolatency \
       -crf "$crf" -g "$gop" -keyint_min "$gop" -bf 0 -pix_fmt yuv420p -f h264 "$bs"
-    bytes=$(stat -c %s "$bs")
+    bytes=$(wc -c < "$bs" | tr -d " ")
     bps=$(awk -v b="$bytes" -v d="$dur" 'BEGIN { printf "%d", b * 8 / d }')
     echo "$res,$w,$h,$crf,$bytes,$dur,$bps" >> "$out/h264.csv"
     echo "$res ${w}x$h crf $crf: $(awk -v b="$bps" 'BEGIN { printf "%.0f kbit/s", b / 1000 }')"
