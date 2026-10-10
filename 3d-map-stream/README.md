@@ -24,6 +24,19 @@ sub-second packets over a rate-limited socket → receiver renders the map from 
 
 Reference: 0.7 m voxels of the whole map = 91 KB, PSNR 16.6. Keep 16 colours (8 loses the red roofs); no colour blending (looks mushy).
 
+
+## Update: 20 kbit/s, 1 s planning slots, 500 B packets (`streaming/stream_best_pkt.py`)
+
+`PKT=500 python streaming/live_eval_pkt.py streaming/stream_best_pkt.py --rate 20 --slot 1`: 72.4 KB for the flight, 174 packets
+= 6 updates/s, first image after 0.31 s, +5.3 % packet overhead, operator view PSNR 18.2, final map 19.2. Record-by-record decode
+verified identical to whole-chunk decode (`streaming/test_records_pkt.py`). Packet sizes measured: 1000 B 3.7/s (+1.3 %),
+500 B 6.0/s (+5.3 %), 250 B 10.9/s (+11.5 %) — 500 B is the sweet spot.
+
+## SLAM input frame rate
+
+MASt3R-SLAM on the same flight at 7 / 2 / 1 fps input: 5 / 5 / 4 keyframes, 523k / 511k / 418k points, no tracking loss.
+2 fps gives the same map as 7 fps on a smooth drone flight (GPU mostly idle); use 4–5 fps for hand-held video with quick turns.
+
 ## Run
 
 ```
