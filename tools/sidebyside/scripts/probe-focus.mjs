@@ -3,10 +3,10 @@
 // focused individual's sends and information age.  node scripts/probe-focus.mjs [track] [profile]
 import WebSocket from 'ws';
 const TRACK = Number(process.argv[2] || 21), PROFILE = process.argv[3] || 'lora';
-const ws = new WebSocket('ws://localhost:8090');
+const ws = new WebSocket(`ws://localhost:${process.env.PORT || 8090}`);
 let n = 0, stage = 'wait', group = null, child = null, sends = 0, ages = [], t0 = null;
 setTimeout(() => { console.log('timeout', stage); process.exit(1); }, 90000);
-ws.on('open', () => { ws.send(JSON.stringify({ cmd: 'link', profile: PROFILE })); ws.send(JSON.stringify({ cmd: 'seek', t: 13 })); ws.send(JSON.stringify({ cmd: 'play' })); ws.send(JSON.stringify({ cmd: 'rate', x: 1 })); });
+ws.on('open', () => { ws.send(JSON.stringify({ cmd: 'link', profile: PROFILE })); ws.send(JSON.stringify({ cmd: 'seek', t: Number(process.env.SEEK || 13) })); ws.send(JSON.stringify({ cmd: 'play' })); ws.send(JSON.stringify({ cmd: 'rate', x: 1 })); });
 ws.on('message', (d) => {
   const m = JSON.parse(d); n++;
   if (n < 10) return;
@@ -24,6 +24,6 @@ ws.on('message', (d) => {
     if (rc) ages.push(rc.ageS);
     const siblings = m.rx.contacts.filter((c) => c.child && c.parent === group && c.id !== child && !c.departed).length;
     if (n % 20 === 0) console.log(`t=${m.t} #${child} focused=${rc?.focused} age=${rc?.ageS}s err-circle=${rc?.ceShown} m | group #${group} focused=${g?.focused} | live siblings ${siblings} | edge focus ${JSON.stringify(m.edge.focus ?? null)}`);
-    if (ages.length >= 150) { ages.sort((a, b) => a - b); console.log(`15 s after drilling: ${sends} sends of #${child} (${(sends / 15).toFixed(2)}/s), info age median ${ages[75]} s, p90 ${ages[135]} s`); process.exit(0); }
+    if (ages.length >= Number(process.env.N || 150)) { ages.sort((a, b) => a - b); console.log(`${ages.length / 10} s after drilling: ${sends} sends of #${child} (${(sends / (ages.length / 10)).toFixed(2)}/s), info age median ${ages[ages.length >> 1]} s, p90 ${ages[Math.floor(ages.length * 0.9)]} s`); process.exit(0); }
   }
 });

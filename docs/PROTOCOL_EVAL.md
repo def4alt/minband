@@ -287,3 +287,54 @@ Still open:
 - **The standing person's footage track becomes a coasting ghost after 28 s** (a straight line
   at 6.6 m/s with no detections behind it). The measurement stops at 28 s; the tracker should
   not emit coasted rows as observations.
+
+## 8. Military footage
+
+The same pipeline, protocol and operator click on drone footage of military vehicles: two convoy
+clips (`amad-test1`, `amad-test2`, watermarked stock previews) and an amphibious column on a beach
+(`mvt-test10`, unknown licence). Numbers only; no frames of these clips go in the repo. None of
+them shows people on foot.
+
+**Detection.** The MEVA recipe (`best2`, two VisDrone models agreeing at >= 0.75) keeps 2, 2 and 1
+tracks: VisDrone never saw armour, and both models sit at 0.4-0.7 on an IFV or a military truck.
+The `mil` recipe lowers the vehicle agreement floor to 0.5, tuned on `amad-test1` only and run
+once on the two held-out clips (tools/footage/README.md). Eye audit with `tools/footage/tiles.py`:
+
+| clip | split | tracks | real | vehicles in view | note |
+|---|---|---:|---:|---:|---|
+| amad-test1 forest road, steep | dev | 4 | 4 | about 6 | the trailing launcher truck is never boxed |
+| amad-test2 dirt road, oblique | held-out | 3 | 3 | about 8 | the far vehicles are 10-15 px long |
+| mvt-test10 beach, low and close | held-out | 4 | 4 on 1 vehicle | 4 | one amphibious vehicle filling the frame breaks into four short tracks as the camera swings |
+
+Precision holds (every track is a real vehicle); recall is a half or less, set by the detector's
+training data, not the protocol. A military-trained detector is the next step (section
+"Military appearance models" in tools/footage/README.md lists what was tried).
+
+**Operator focus** on a moving IFV and the lead truck of a column (`focus.mjs --target IFV`,
+`--target truck`; five seeds; "selected" is the drilled run):
+
+| object | link | run | priority after | info age med / p90 | error med / p90 | others up to date | total |
+|---|---|---|---:|---:|---:|---:|---:|
+| IFV in convoy | lora 2k | not selected | - | 2.4 / 7.0 s | 9.5 / 11.0 m | 86 % | 66.8 B/s |
+| IFV in convoy | lora 2k | selected | 0.7 s | 0.8 / 1.5 s | 0.5 / 1.2 m | 86 % | 115.7 B/s |
+| IFV in convoy | telemetry 0.6k | not selected | - | 2.0 / 5.7 s | 9.8 / 12.3 m | 87 % | 40.7 B/s |
+| IFV in convoy | telemetry 0.6k | selected | 0.7 s | 1.1 / 2.4 s | 0.5 / 1.3 m | 58 % | 48.2 B/s |
+| truck in column | lora 2k | not selected | - | 1.8 / 4.6 s | 10.4 / 11.2 m | 80 % | 57.7 B/s |
+| truck in column | lora 2k | selected | 0.7 s | 0.7 / 1.2 s | 0.5 / 9.3 m | 70 % | 111.0 B/s |
+| truck in column | telemetry 0.6k | not selected | - | 2.5 / 5.3 s | 10.1 / 10.9 m | 96 % | 33.8 B/s |
+| truck in column | telemetry 0.6k | selected | 0.3 s | 0.8 / 1.6 s | 0.6 / 1.5 m | 84 % | 46.9 B/s |
+
+The selected vehicle is reported to half a metre instead of the group centroid 10 m away, with
+information under a second old. Two fixes came from this footage:
+
+- **A focused lone contact was absorbed by the next vehicle in the column.** The truck was alone
+  when clicked and grouped with the truck behind it before the Focus arrived. Grouping now never
+  links the only track of a focused contact to another.
+- **A pick that has become a group is split.** If the contact the operator clicked is a group by
+  the time it comes back focused, the receiver (page and harness) re-sends it as split, so the
+  operator can click the vehicle again. The p90 error of 9.3 m on lora is the time before that.
+
+Caveat: the ground scale comes from box sizes (no camera metadata in these clips) and assumes
+civilian vehicle sizes, so metres here are low by an unknown factor (heights fit at 9-20 m where
+the drone is clearly higher). Ratios between runs hold; absolute metres do not.
+
