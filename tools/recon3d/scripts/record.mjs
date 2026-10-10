@@ -1,7 +1,7 @@
 // Records the operator simulation to a video, frame-exact, with the system Chrome and ffmpeg:
 //   node scripts/record.mjs --out sim.mp4 [--from 0] [--to 40] [--view drone] [--profile clean] [--fps 30]
 //        [--width 1920 --height 1080] [--sbs clip.mp4 --sbs-out sbs.mp4]
-//   more: --scene vd076  --run-dir runs/recon3d/vd076  --pos-res 1  --seed 1  --warm 2  --keep-frames  --url http://localhost:PORT
+//   more: --scene vd076  --run-dir runs/recon3d/vd076  --pos-res 1  --seed 1  --warm 2  --rings 0  --keep-frames  --url http://localhost:PORT
 //
 // It spawns the driver itself with CLOCK=manual on a free port (npx tsx src/driver.ts; RUN_DIR / SCENE / PROFILE /
 // POS_RES / SEED pass through the environment or the flags), so the replay is stepped by the recorder, not by a timer, and
@@ -74,7 +74,7 @@ try {
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error' && !/404/.test(m.text())) errors.push(m.text()); });   // a 404 is reported with its url below (favicon excepted)
   page.on('response', (r) => { if (r.status() >= 400 && !r.url().endsWith('/favicon.ico')) errors.push(`${r.status()} ${r.url()}`); });
-  await page.goto(`${base}/?rec=1&view=${encodeURIComponent(view)}`);
+  await page.goto(`${base}/?rec=1&view=${encodeURIComponent(view)}${opt('rings') === '0' ? '&rings=0' : ''}`);
   await page.waitForFunction(() => window.minband);
   const m = (fn, a) => page.evaluate(fn, a);
   const fail = () => { if (errors.length) throw new Error(`page errors:\n${errors.join('\n')}`); };

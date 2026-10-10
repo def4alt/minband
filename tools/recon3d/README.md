@@ -192,6 +192,12 @@ lost contacts).
 - Stale contacts: a track that fragments leaves its old contact "lost" at the receiver for `t_depart` (60 s); the
   final run still shows ~80 unmatched contacts per frame (half lost, half fresh: duplicates, false boxes at the
   0.1 floor, misplaced far cars).
+- False dismounts: at the 0.1 floor the VisDrone model calls roof vents, chimneys and poles "pedestrian"; the receiver
+  holds ~37 dismount contacts per frame against ~1.5 people in the inventory (164 of the 656 unmatched). Nothing
+  filters person tracks by confidence or 3D size yet.
+- Error rings of far objects (ce several metres along a grazing ray) span the drone view; `?rings=0` /
+  `record.mjs --rings 0` hides them. Their 3 s trails show the same range jitter as thin lines towards the horizon,
+  and a group of two merged duplicates can carry a ghost speed (one showed 21 m/s in the recording).
 
 - One terrain surface per 0.5 m cell: an object on a bridge deck is placed on the road below. Columns
   of occupied voxels (any surface below the ray) were tried and were worse on streets (walls and

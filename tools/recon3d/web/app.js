@@ -182,7 +182,8 @@ const ringLost = new THREE.LineDashedMaterial({ color: INK2, dashSize: 0.8, gapS
 const unitCircle = (() => { const p = []; for (let k = 0; k <= 64; k++) { const a = (k / 64) * Math.PI * 2; p.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a))); } return new THREE.BufferGeometry().setFromPoints(p); })();
 new THREE.LineLoop(unitCircle).computeLineDistances();  // the dashed ring's line distances, once (the geometry is shared)
 const objects = new Map();
-let showRings = true, showTruth = false;
+// ?rings=0 starts with the error rings hidden (far objects' honest rings span the drone view).
+let showRings = params.get('rings') !== '0', showTruth = false;
 
 function shapeFor(c) {
   if (c.group) return null;
