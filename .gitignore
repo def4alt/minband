@@ -20,3 +20,8 @@ runs/
 # python
 __pycache__/
 .venv/
+# footage: clips and model weights are never committed
+tools/footage/clips/
+tools/footage/models/
+*.onnx
+*.pt

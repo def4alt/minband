@@ -304,7 +304,7 @@ mkdir -p models clips/battlefield
 # MEVA (CC-BY-4.0): the tuning clip, and the held-out clip by byte range from the public drop:
 .venv/bin/python meva.py fetch 2018-03-13.16-00-14 clips/
 curl -sS -r 11876031488-11928476543 -o clips/battlefield/meva-uav-0307-1720.mp4 \
-    https://s3.amazonaws.com/mevadata-public-01/uav-drop-01/meva-uav-drop-01.tar   # tar member 2018-03-07.17-20-30.17-21-05.uav1.mp4 (strip the 512 B tar header; the held-out run used it downscaled to 1920x1080)
+    https://s3.amazonaws.com/mevadata-public-01/uav-drop-01/meva-uav-drop-01.tar   # range of tar member 2018-03-07.17-20-30.17-21-05.uav1.mp4 as recorded in the clip manifest; the held-out run used it downscaled to 1920x1080
 # HIT-UAV thermal samples (CC-BY-4.0):
 for c in 60m-30_1 120m-30_3 70m-90_1; do curl -sSL -o clips/battlefield/hituav-$c.mov \
     https://raw.githubusercontent.com/suojiashun/HIT-UAV-Infrared-Thermal-Dataset/main/video_sample/$c.mov; done
