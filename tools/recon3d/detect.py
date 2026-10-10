@@ -58,6 +58,7 @@ import time
 
 import cv2
 import numpy as np
+import torch
 from ultralytics import YOLO
 from ultralytics.trackers.byte_tracker import BYTETracker
 from ultralytics.utils import YAML, IterableSimpleNamespace
@@ -98,6 +99,8 @@ ap.add_argument("--frames", default=None, help="only these frames: comma list an
 ap.add_argument("--out", default=None, help="output path (default <run>/detections.json)")
 ap.add_argument("--max-det", type=int, default=300, help="per forward pass and image")
 ap.add_argument("--half", action="store_true", help="fp16 inference")
+ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else None,
+                help="ultralytics device; it picks CUDA or the CPU by itself, never MPS")
 ap.add_argument("--e2e", action="store_true", help="use the NMS-free head of end-to-end models (YOLO26) instead of NMS")
 ap.add_argument("--retrack", default=None, help="skip the detector: track the boxes of this --no-track detections.json (tracker tuning)")
 args = ap.parse_args()
@@ -138,7 +141,7 @@ class Detector:
 
     def __call__(self, imgs, imgsz, conf):
         kw = dict(imgsz=imgsz, conf=conf, iou=args.iou, classes=self.ids, agnostic_nms=True, max_det=args.max_det,
-                  retina_masks=self.seg, verbose=False)
+                  retina_masks=self.seg, device=args.device, verbose=False)
         if args.half:
             kw["quantize"] = 16
         if args.e2e:

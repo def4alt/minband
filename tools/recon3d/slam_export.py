@@ -71,7 +71,14 @@ if __name__ == "__main__":
     mp.set_start_method("spawn")
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.set_grad_enabled(False)
-    device = "cuda:0"
+    # SLAM state on CUDA, else the CPU. The network runs where model_device() says (MPS on a Mac, in the
+    # pure-torch port of MASt3R-SLAM); a checkout without that helper is CUDA-only.
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    try:
+        from mast3r_slam.mast3r_utils import model_device
+    except ImportError:
+        def model_device():
+            return device
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", required=True)
@@ -106,10 +113,14 @@ if __name__ == "__main__":
         K = torch.from_numpy(dataset.camera_intrinsics.K_frame).to(device, dtype=torch.float32)
         keyframes.set_intrinsics(K)
 
-    model = load_mast3r(device=device)
-    model.share_memory()
+    model = load_mast3r(device=model_device())
+    shared_model = model
+    if model_device() == "mps":
+        shared_model = None  # MPS tensors cannot cross processes: the backend loads its own copy
+    else:
+        model.share_memory()
     tracker = FrameTracker(model, keyframes, device)
-    backend = mp.Process(target=run_backend, args=(config, model, states, keyframes, K))
+    backend = mp.Process(target=run_backend, args=(config, shared_model, states, keyframes, K))
     backend.start()
 
     records = []      # per frame: dict, with the tracking-time poses as lietorch objects
