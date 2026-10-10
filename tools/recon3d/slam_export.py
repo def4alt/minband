@@ -33,8 +33,9 @@ import torch.multiprocessing as mp
 
 sys.path.insert(0, str(pathlib.Path.cwd()))
 from mast3r_slam.config import config, load_config, set_global_config  # noqa: E402
-from mast3r_slam.dataloader import load_dataset  # noqa: E402
+from mast3r_slam.dataloader import Intrinsics, load_dataset  # noqa: E402
 from mast3r_slam.frame import Mode, SharedKeyframes, SharedStates, create_frame  # noqa: E402
+from mast3r_slam.geometry import constrain_points_to_ray  # noqa: E402
 from mast3r_slam.mast3r_utils import load_mast3r, mast3r_inference_mono, resize_img  # noqa: E402
 from mast3r_slam.tracker import FrameTracker  # noqa: E402
 
@@ -55,8 +56,13 @@ def run_backend(cfg, model, states, keyframes, K):
     slam_main.run_backend(cfg, model, states, keyframes, K)
 
 
-def save_pointmap(path, frame, h, w):
-    X = frame.X_canon.reshape(h, w, 3).to(torch.float16).cpu().numpy()
+def on_rays(X, h, w, K):
+    """Calibrated: a pointmap keeps its depths on the camera's own rays (what MASt3R-SLAM's exporters do)."""
+    return X if K is None else constrain_points_to_ray((h, w), X.reshape(1, h * w, 3), K).reshape(X.shape)
+
+
+def save_pointmap(path, frame, h, w, K=None):
+    X = on_rays(frame.X_canon, h, w, K).reshape(h, w, 3).to(torch.float16).cpu().numpy()
     C = frame.get_average_conf().reshape(h, w).to(torch.float16).cpu().numpy()
     np.savez(path, X=X, C=C)
 
@@ -72,6 +78,8 @@ if __name__ == "__main__":
     ap.add_argument("--config", default="config/base.yaml")
     ap.add_argument("--out", required=True)
     ap.add_argument("--subsample", type=int, default=0, help="override config dataset.subsample")
+    ap.add_argument("--focal", type=float, default=0, help="calibrated run: one focal length (source px) for every frame, "
+                    "principal point at the centre; 0 = uncalibrated (MASt3R's focal floats per frame)")
     args = ap.parse_args()
 
     out = pathlib.Path(args.out)
@@ -83,14 +91,25 @@ if __name__ == "__main__":
     manager = mp.Manager()
     dataset = load_dataset(args.dataset)
     dataset.subsample(config["dataset"]["subsample"])
-    h, w = dataset.get_img_shape()[0]
+    (h, w), (src_h0, src_w0) = dataset.get_img_shape()
     keyframes = SharedKeyframes(manager, h, w)
     states = SharedStates(manager, h, w)
+    # A drone camera has one lens: uncalibrated, MASt3R's implied focal wanders by ~10 % frame to frame
+    # (1351..1504 px on the Labrador clip), which shifts every object radially when it is re-projected
+    # with one camera (the operator's drone view). Calibrated, tracking, the backend and the exported
+    # pointmaps all use the same K.
+    K = None
+    if args.focal:
+        config["use_calib"] = True
+        dataset.use_calibration = True
+        dataset.camera_intrinsics = Intrinsics.from_calib(dataset.img_size, src_w0, src_h0, [args.focal, args.focal, src_w0 / 2, src_h0 / 2])
+        K = torch.from_numpy(dataset.camera_intrinsics.K_frame).to(device, dtype=torch.float32)
+        keyframes.set_intrinsics(K)
 
     model = load_mast3r(device=device)
     model.share_memory()
     tracker = FrameTracker(model, keyframes, device)
-    backend = mp.Process(target=run_backend, args=(config, model, states, keyframes, None))
+    backend = mp.Process(target=run_backend, args=(config, model, states, keyframes, K))
     backend.start()
 
     records = []      # per frame: dict, with the tracking-time poses as lietorch objects
@@ -115,7 +134,7 @@ if __name__ == "__main__":
             states.set_mode(Mode.TRACKING)
             states.set_frame(frame)
             rec.update(ok=True, kf=0, is_kf=True, T_f=copy_pose(frame.T_WC), T_k=copy_pose(frame.T_WC))
-            save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w)
+            save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w, K)
             records.append(rec)
             i += 1
             continue
@@ -138,10 +157,10 @@ if __name__ == "__main__":
                 restarts += 1
                 print(f"frame {i}: tracking lost, new keyframe {len(keyframes) - 1} at the last good pose", flush=True)
                 rec.update(ok=True, kf=len(keyframes) - 1, is_kf=True, T_f=copy_pose(frame.T_WC), T_k=copy_pose(frame.T_WC))
-                save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w)
+                save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w, K)
             else:
                 rec.update(ok=True, kf=k, T_f=copy_pose(frame.T_WC), T_k=T_k)
-                save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w)
+                save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w, K)
                 last_ok = copy_pose(frame.T_WC)
             states.set_frame(frame)
         elif mode == Mode.RELOC:
@@ -158,7 +177,7 @@ if __name__ == "__main__":
                 # Relocalised: the frame was appended as a keyframe with a pose.
                 k = len(keyframes) - 1
                 rec.update(ok=True, kf=k, is_kf=True, T_f=copy_pose(keyframes[k].T_WC), T_k=copy_pose(keyframes[k].T_WC))
-                save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w)
+                save_pointmap(out / "frames" / f"f_{i:05d}.npz", frame, h, w, K)
 
         if add_new_kf:
             keyframes.append(frame)
@@ -195,7 +214,7 @@ if __name__ == "__main__":
     for k in range(n_kf):
         f = keyframes[k]
         kf["frame_id"].append(int(f.frame_id))
-        kf["X"].append(f.X_canon.reshape(h, w, 3).to(torch.float16).cpu().numpy())
+        kf["X"].append(on_rays(f.X_canon, h, w, K).reshape(h, w, 3).to(torch.float16).cpu().numpy())
         kf["C"].append(f.get_average_conf().reshape(h, w).to(torch.float16).cpu().numpy())
         kf["rgb"].append((f.uimg.reshape(h, w, 3) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy())
     np.savez(out / "keyframes.npz", frame_id=np.array(kf["frame_id"]), X=np.stack(kf["X"]), C=np.stack(kf["C"]), rgb=np.stack(kf["rgb"]))
@@ -205,6 +224,7 @@ if __name__ == "__main__":
             # original pixel (u, v) -> pointmap pixel ((u / sw) - cw, (v / sh) - ch)
             "scale_w": float(sw), "scale_h": float(sh), "crop_w": float(cw), "crop_h": float(ch),
             "subsample": int(config["dataset"]["subsample"]), "frames": len(records), "keyframes": n_kf,
-            "tracked": sum(r["ok"] for r in records), "tracking_restarts": restarts, "seconds": round(time.time() - t0, 1)}
+            "tracked": sum(r["ok"] for r in records), "tracking_restarts": restarts, "seconds": round(time.time() - t0, 1),
+            "focal_src": args.focal or None}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     print(json.dumps(meta), flush=True)

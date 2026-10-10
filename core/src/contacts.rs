@@ -32,14 +32,26 @@ pub struct Track {
     /// object on its terrain, or a rangefinder measured it. None = on the flat ground at height 0.
     #[serde(default)]
     pub u: Option<f32>,
+    /// The object's own heading (degrees true, any range: normalised to 0..360), its long axis or
+    /// front as the tracker measures it, when it knows one (a 3D reconstruction's oriented box).
+    /// None, null, absent or NaN = unknown. Not a course: a mover's direction comes from `ve, vn`.
+    #[serde(default)]
+    pub yaw: Option<f32>,
 }
 fn default_conf() -> u8 { 128 }
+/// A track's yaw as a heading in 0..360; a missing or non-finite one is unknown.
+fn yaw_of(t: &Track) -> Option<f32> { t.yaw.filter(|y| y.is_finite()).map(|y| y.rem_euclid(360.0)) }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ContactConfig {
-    /// Minimum link distance for grouping (m); the actual link is max(link_m, 2 ce).
+    /// Minimum link distance for grouping (m); the actual link is max(link_m, ce_link x ce).
     pub link_m: f32,
+    /// Two tracks within `ce_link` error radii of each other may be one object seen twice, so they
+    /// group (2.0). A tracker that merges its own duplicates (tools/recon3d: in 3D, by size) can set
+    /// it lower: a parked row 2.7 m apart with ce 1.5 m at 300 m range is then still single cars on a
+    /// fat link, and the detail ladder's link distances still group them when the link is thin.
+    pub ce_link: f32,
     /// Link distance between dismounts (m): people 15 m apart are not a group, vehicles may be.
     pub link_dismount_m: f32,
     /// Hysteresis: members stay linked up to this multiple of the link distance.
@@ -60,14 +72,20 @@ pub struct ContactConfig {
     pub t_split: u32,
     /// Fallback ce (m) when a track carries none and the edge gives none.
     pub default_ce: f32,
+    /// A new single track inside this many error radii of a lost single contact of its coarse class
+    /// takes that contact over (re-acquisition across a tracker's id switch); 0 = off.
+    pub reacquire_ce: f32,
+    /// A height (`u`) that moved more than this (m, at least 2 pos_res) from the one last sent is a
+    /// revision; 0 = off (the height then rides on revisions made for other reasons).
+    pub u_tol_m: f32,
     /// The detail ladder (`DETAIL`); the fields above are level 1, and `ContactManager::set_level`
     /// scales them by the ladder's ratios.
     pub ladder: [Detail; 5],
 }
 impl Default for ContactConfig {
     fn default() -> Self {
-        ContactConfig { link_m: 15.0, link_dismount_m: 8.0, stay_factor: 1.5, speed_tol: 1.5, course_tol_deg: 30.0, confirm_looks: 3, confirm_ticks: 2 * TICK_HZ,
-            t_moving: 2 * TICK_HZ, t_stopping: 5 * TICK_HZ, t_lost: 5 * TICK_HZ, t_depart: 60 * TICK_HZ, t_stopped: 30 * TICK_HZ, t_split: 3 * TICK_HZ, default_ce: 5.0, dev_factor: 1.0, ladder: DETAIL }
+        ContactConfig { link_m: 15.0, link_dismount_m: 8.0, ce_link: 2.0, stay_factor: 1.5, speed_tol: 1.5, course_tol_deg: 30.0, confirm_looks: 3, confirm_ticks: 2 * TICK_HZ,
+            t_moving: 2 * TICK_HZ, t_stopping: 5 * TICK_HZ, t_lost: 5 * TICK_HZ, t_depart: 60 * TICK_HZ, t_stopped: 30 * TICK_HZ, t_split: 3 * TICK_HZ, default_ce: 5.0, reacquire_ce: 0.0, u_tol_m: 0.0, dev_factor: 1.0, ladder: DETAIL }
     }
 }
 
@@ -119,6 +137,8 @@ pub struct TrackState {
     pub bbox: Option<[f32; 4]>,
     /// Height above the origin (m), when the tracker gave one (`Track::u`).
     pub u: Option<f32>,
+    /// The object's heading, 0..360 (`Track::yaw`).
+    pub yaw: Option<f32>,
     pub first_seen: u32,
     pub last_seen: u32,
     pub looks: u32,
@@ -174,6 +194,7 @@ pub struct Sent {
     pub e: f32, pub n: f32, pub ve: f32, pub vn: f32,
     pub motion: u8, pub confirmed: bool, pub lost: bool, pub departed: bool,
     pub mix: [u8; 4], pub ce: f32, pub course: f32, pub speed: f32,
+    pub u: Option<f32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -186,6 +207,11 @@ pub struct Contact {
     pub u: Option<f32>,
     pub ve: f32, pub vn: f32,
     pub course: f32, pub speed: f32,
+    /// The object's own heading (0..360), for a single contact that is not moving whose tracker
+    /// knows it; None for a group and for a mover (its `course` is the direction). It rides on
+    /// records but never makes a revision (`Sent` does not hold it): tracker noise on a yaw would
+    /// otherwise revise every parked car.
+    pub heading: Option<f32>,
     pub radius: f32,
     pub ce: f32,
     pub mix: [u8; 4],
@@ -218,7 +244,7 @@ pub struct Contact {
 }
 impl Contact {
     fn new(id: u16, now: u32) -> Self {
-        Contact { id, rev: 0, members: Vec::new(), e: 0.0, n: 0.0, u: None, ve: 0.0, vn: 0.0, course: 0.0, speed: 0.0, radius: 0.0, ce: 0.0, mix: [0; 4], conf: 0,
+        Contact { id, rev: 0, members: Vec::new(), e: 0.0, n: 0.0, u: None, ve: 0.0, vn: 0.0, course: 0.0, speed: 0.0, heading: None, radius: 0.0, ce: 0.0, mix: [0; 4], conf: 0,
             first_seen: now, since: now, last_seen: now, motion: MOTION_UNKNOWN, confirmed: false, lost: false, departed: false, departed_at: None,
             focused: false, split: false, pinned: false, out_of_view: false, parent: None, bbox: None, absorbed: false, sent: None, sent_pred: None, dirty: true, rev_tick: now }
     }
@@ -245,12 +271,14 @@ impl Contact {
     }
     pub fn snapshot(&self, now: u32) -> Sent {
         Sent { tick: now, e: self.e, n: self.n, ve: self.ve, vn: self.vn, motion: self.motion, confirmed: self.confirmed, lost: self.lost,
-            departed: self.departed, mix: self.mix, ce: self.ce, course: self.course, speed: self.speed }
+            departed: self.departed, mix: self.mix, ce: self.ce, course: self.course, speed: self.speed, u: self.u }
     }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ContactStats { pub tracks: u32, pub contacts: u32, pub groups: u32, pub revisions: u64, pub births: u32, pub departures: u32,
+    /// New tracks that took over a lost contact (`ContactConfig::reacquire_ce`).
+    pub reacquired: u32,
     /// Why revisions moved: [first send, state machine or mix, position deviation, ce, course, speed].
     pub rev_why: [u64; 6] }
 
@@ -315,10 +343,10 @@ impl ContactManager {
         for t in tracks {
             let ce = t.ce.unwrap_or(self.cfg.default_ce);
             let st = self.tracks.entry(t.id).or_insert_with(|| TrackState {
-                id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce, bbox: t.bbox, u: t.u, first_seen: now, last_seen: now, looks: 0,
+                id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce, bbox: t.bbox, u: t.u, yaw: yaw_of(t), first_seen: now, last_seen: now, looks: 0,
                 motion: MOTION_UNKNOWN, since: now, above_since: None, below_since: None, calm_since: None, outside_since: None, lost: false, exited: false, contact: None,
             });
-            st.exited = false; st.class = t.class; st.e = t.e; st.n = t.n; st.ve = t.ve; st.vn = t.vn; st.conf = t.conf; st.ce = ce; st.bbox = t.bbox; st.u = t.u;
+            st.exited = false; st.class = t.class; st.e = t.e; st.n = t.n; st.ve = t.ve; st.vn = t.vn; st.conf = t.conf; st.ce = ce; st.bbox = t.bbox; st.u = t.u; st.yaw = yaw_of(t);
             st.looks += 1;
             if st.lost { st.lost = false; st.since = now; st.above_since = None; st.below_since = None; st.calm_since = None; }
             st.last_seen = now;
@@ -410,7 +438,28 @@ impl ContactManager {
         };
         for (cid, members) in &claimed { let mut nb = Vec::new(); for &m in members { place(&mut self.tracks, &self.contacts, m, Some(*cid), &mut nb); } debug_assert!(nb.is_empty()); }
         for cl in &unclaimed { let mut nb = Vec::new(); for &m in cl { place(&mut self.tracks, &self.contacts, m, None, &mut nb); } if !nb.is_empty() { births.push(nb); } }
-        for nb in births {
+        // Re-acquisition: a new single track of the same coarse class inside a lost single contact's
+        // error radius (`reacquire_ce` of the larger ce) is that object seen again under a new tracker
+        // id (the tracker fragmented it): it takes the lost contact over, and the lost track goes,
+        // instead of a fresh contact beside a stale one that would linger for `t_depart`.
+        let mut taken: Vec<u16> = Vec::new();
+        for nb in births.iter_mut().filter(|nb| nb.len() == 1 && cfg.reacquire_ce > 0.0) {
+            let t = &self.tracks[&nb[0]];
+            let best = self.contacts.values()
+                .filter(|c| c.lost && !c.departed && !c.is_child() && c.members.len() == 1 && !taken.contains(&c.id) && !claimed.contains_key(&c.id))
+                .filter_map(|c| { let o = self.tracks.get(&c.members[0])?; (o.lost && coarse(o.class) == coarse(t.class)).then_some((c.id, o)) })
+                .map(|(cid, o)| (cid, ((o.e - t.e).powi(2) + (o.n - t.n).powi(2)).sqrt(), cfg.reacquire_ce * o.ce.max(t.ce)))
+                .filter(|&(_, d, r)| d <= r)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((cid, _, _)) = best {
+                let old = self.contacts[&cid].members[0];
+                self.tracks.remove(&old);
+                taken.push(cid);
+                assign.push((nb.pop().unwrap(), cid));
+                self.stats.reacquired += 1;
+            }
+        }
+        for nb in births.into_iter().filter(|nb| !nb.is_empty()) {
             let id = self.alloc_id();
             let mut c = Contact::new(id, now);
             c.first_seen = nb.iter().map(|t| self.tracks[t].first_seen).min().unwrap_or(now);
@@ -536,6 +585,9 @@ impl ContactManager {
             } else { c.ve = 0.0; c.vn = 0.0; }
             let (crs, spd) = course_speed(c.ve, c.vn);
             c.course = crs; c.speed = spd;
+            // A parked car's orientation is what the operator needs and its velocity pair is free:
+            // the heading of a single object that is not moving (static, stopped, or not yet told).
+            c.heading = if members.len() == 1 && c.motion != MOTION_MOVING { members[0].yaw } else { None };
         }
         self.stats.departures += departed_now.len() as u32;
         self.stats.contacts = self.contacts.values().filter(|c| !c.departed && !c.is_child()).count() as u32;
@@ -566,6 +618,10 @@ impl ContactManager {
                 let dev = ((c.e - ge).powi(2) + (c.n - gn).powi(2)).sqrt();
                 let thr = pos_threshold(c, &d, &base, pos_res);
                 if dev > thr { why = Some(2); }
+                // The height is position too: seen from an oblique camera a metre of height moves the object on
+                // the image several times as far as a metre along the ground does.
+                let tol = self.cfg.u_tol_m;
+                if why.is_none() && tol > 0.0 && match (c.u, s.u) { (Some(a), Some(b)) => (a - b).abs() > tol.max(2.0 * pos_res), (a, b) => a.is_some() != b.is_some() } { why = Some(2); }
             }
             if why.is_none() && (c.ce > s.ce * 1.5 || c.ce < s.ce / 1.5) && (c.ce - s.ce).abs() > 2.0 * pos_res { why = Some(3); }
             if why.is_none() && c.motion == MOTION_MOVING {
@@ -638,7 +694,7 @@ fn mix_changed(sent: &[u8; 4], now: &[u8; 4], tol: f32) -> bool {
 /// same contact), both moving or both not, and when moving on a similar course and speed.
 fn linked(cfg: &ContactConfig, a: &TrackState, b: &TrackState, link_m: f32, link_dismount_m: f32, stay: f32) -> bool {
     let base = if coarse(a.class) == COARSE_DISMOUNT && coarse(b.class) == COARSE_DISMOUNT { link_dismount_m } else { link_m };
-    let link = base.max(2.0 * a.ce.max(b.ce)) * stay;
+    let link = base.max(cfg.ce_link * a.ce.max(b.ce)) * stay;
     let d = ((a.e - b.e).powi(2) + (a.n - b.n).powi(2)).sqrt();
     if d > link { return false; }
     let am = a.motion == MOTION_MOVING; let bm = b.motion == MOTION_MOVING;
@@ -674,7 +730,7 @@ mod tests {
     use super::*;
     use crate::classes::{CAR, PERSON};
 
-    fn tr(id: u32, class: u8, e: f32, n: f32, ve: f32, vn: f32) -> Track { Track { id, class, e, n, ve, vn, conf: 200, ce: Some(5.0), bbox: None, u: None } }
+    fn tr(id: u32, class: u8, e: f32, n: f32, ve: f32, vn: f32) -> Track { Track { id, class, e, n, ve, vn, conf: 200, ce: Some(5.0), bbox: None, u: None, yaw: None } }
 
     fn run(cm: &mut ContactManager, scene: impl Fn(u32) -> Vec<Track>, from: u32, to: u32, step: u32) -> Vec<(u32, Vec<u16>)> {
         let mut out = Vec::new();
@@ -699,6 +755,53 @@ mod tests {
         cm.mark_sent(id, 20 * TICK_HZ);
         let later = run(&mut cm, |_| vec![tr(1, CAR, 10.3, 19.8, 0.0, 0.0)], 20 * TICK_HZ + 12, 60 * TICK_HZ, 12);
         assert!(later.is_empty(), "a static car within ce is never revised: {later:?}");
+    }
+
+    /// A track's yaw is a heading in 0..360 (JSON null, absent or NaN = unknown); the contact takes it
+    /// only for one object that is not moving, and never revises for it.
+    #[test]
+    fn a_yaw_becomes_the_heading_of_a_single_object_at_rest() {
+        let json = |j: &str| serde_json::from_str::<Track>(&format!(r#"{{"id":1,"class":2,"e":0,"n":0{j}}}"#)).unwrap().yaw;
+        assert_eq!((json(""), json(r#","yaw":null"#), json(r#","yaw":-10.5"#)), (None, None, Some(-10.5)));
+        let heading = |scene: &dyn Fn(u32) -> Vec<Track>| {
+            let mut cm = ContactManager::new(ContactConfig::default(), 1.0);
+            run(&mut cm, scene, 0, 20 * TICK_HZ, 12);
+            cm.contacts.values().filter(|c| !c.departed).map(|c| c.heading).collect::<Vec<_>>()
+        };
+        for (yaw, want) in [(Some(-10.0), Some(350.0)), (Some(400.0), Some(40.0)), (Some(37.0), Some(37.0)), (Some(f32::NAN), None), (Some(f32::INFINITY), None), (None, None)] {
+            assert_eq!(heading(&|_| vec![Track { yaw, ..tr(1, CAR, 10.0, 20.0, 0.0, 0.0) }]), vec![want], "yaw {yaw:?}");
+        }
+        assert_eq!(heading(&|t| vec![Track { yaw: Some(90.0), ..tr(1, CAR, 5.0 * t as f32 / TICK_HZ as f32, 0.0, 5.0, 0.0) }]), vec![None], "a mover has its course");
+        assert_eq!(heading(&|_| vec![Track { yaw: Some(90.0), ..tr(1, PERSON, 0.0, 0.0, 0.0, 0.0) }, Track { yaw: Some(90.0), ..tr(2, PERSON, 3.0, 0.0, 0.0, 0.0) }]), vec![None], "a group has none");
+        // Not a revision: the same parked car with a different yaw on every look revises only as a car without one does.
+        let revs = |yaw: &dyn Fn(u32) -> Option<f32>| {
+            let mut cm = ContactManager::new(ContactConfig::default(), 1.0);
+            let ch = run(&mut cm, |t| vec![Track { yaw: yaw(t), ..tr(1, CAR, 10.0, 20.0, 0.0, 0.0) }], 0, 20 * TICK_HZ, 12);
+            let id = cm.contacts.keys().next().copied().unwrap();
+            cm.mark_sent(id, 20 * TICK_HZ);
+            let later = run(&mut cm, |t| vec![Track { yaw: yaw(t), ..tr(1, CAR, 10.0, 20.0, 0.0, 0.0) }], 20 * TICK_HZ + 12, 60 * TICK_HZ, 12);
+            (ch, later)
+        };
+        let (a, b) = (revs(&|_| None), revs(&|t| Some((t / 12 % 7) as f32 * 50.0)));
+        assert_eq!(a, b, "a yaw that spins on every look revises nothing");
+        assert!(b.1.is_empty());
+    }
+
+    /// A parked row 2.7 m apart whose tracks are uncertain by 1.5 m: two error radii link them into one
+    /// group (the default: they may be one car seen twice); a tracker that merges its own duplicates
+    /// sets `ce_link` lower and the row stays five cars.
+    #[test]
+    fn ce_link_decides_whether_an_uncertain_parked_row_is_one_group() {
+        let row = |_t: u32| (0..5).map(|i| Track { ce: Some(1.5), ..tr(i, CAR, 2.7 * i as f32, 0.0, 0.0, 0.0) }).collect::<Vec<_>>();
+        let live = |ce_link: f32| {
+            let mut cm = ContactManager::new(ContactConfig { link_m: 1.5, ce_link, ..Default::default() }, 0.1);
+            run(&mut cm, row, 0, 10 * TICK_HZ, 12);
+            let mut n: Vec<u32> = cm.contacts.values().filter(|c| !c.departed && !c.is_child()).map(|c| c.count()).collect();
+            n.sort();
+            n
+        };
+        assert_eq!(live(2.0), vec![5], "two error radii: one group of five");
+        assert_eq!(live(0.0), vec![1, 1, 1, 1, 1], "the tracker's own merging: five cars");
     }
 
     #[test]
@@ -748,6 +851,49 @@ mod tests {
         assert!(c.departed && c.departed_at.is_some());
         assert!(cm.tracks.is_empty());
         assert_eq!(cm.summary().0, 0, "tombstones are not counted");
+    }
+
+    #[test]
+    fn a_new_track_inside_a_lost_contacts_ce_takes_it_over() {
+        let cfg = ContactConfig { link_m: 1.5, ce_link: 0.0, reacquire_ce: 1.0, ..Default::default() };
+        let mut cm = ContactManager::new(cfg, 0.1);
+        // Car 1 parked, then its tracker loses it (id switch); 8 s later it is track 2, 1 m away (ce 5 m).
+        // Car 3 is lost too, and track 4 appears 20 m from it: a different object.
+        run(&mut cm, |_| vec![tr(1, CAR, 0.0, 0.0, 0.0, 0.0), tr(3, CAR, 100.0, 0.0, 0.0, 0.0)], 0, 5 * TICK_HZ, 12);
+        let (c1, c3) = (cm.tracks[&1].contact.unwrap(), cm.tracks[&3].contact.unwrap());
+        cm.mark_sent(c1, 5 * TICK_HZ); cm.mark_sent(c3, 5 * TICK_HZ);
+        run(&mut cm, |_| vec![], 5 * TICK_HZ + 12, 12 * TICK_HZ, 12);
+        assert!(cm.contacts[&c1].lost && cm.contacts[&c3].lost);
+        cm.mark_sent(c1, 12 * TICK_HZ); cm.mark_sent(c3, 12 * TICK_HZ);
+        let ch = run(&mut cm, |_| vec![tr(2, CAR, 1.0, 0.0, 0.0, 0.0), tr(4, CAR, 120.0, 0.0, 0.0, 0.0)], 12 * TICK_HZ + 12, 16 * TICK_HZ, 12);
+        let c = &cm.contacts[&c1];
+        assert_eq!(c.members, vec![2], "the new track carries the lost contact's id");
+        assert!(!c.lost && !c.departed && c.count() == 1);
+        assert!(!cm.tracks.contains_key(&1), "the lost track is gone, not a second member");
+        assert!(ch.iter().any(|(_, ids)| ids.contains(&c1)), "found again is a revision");
+        assert_ne!(cm.tracks[&4].contact, Some(c3), "20 m off a 5 m ce is another object");
+        assert!(cm.contacts[&c3].lost);
+        assert_eq!(cm.stats.reacquired, 1);
+        // Off by default: the same scene mints a new contact.
+        let mut cm = ContactManager::new(ContactConfig { reacquire_ce: 0.0, ..cfg }, 0.1);
+        run(&mut cm, |_| vec![tr(1, CAR, 0.0, 0.0, 0.0, 0.0)], 0, 5 * TICK_HZ, 12);
+        run(&mut cm, |_| vec![], 5 * TICK_HZ + 12, 12 * TICK_HZ, 12);
+        run(&mut cm, |_| vec![tr(2, CAR, 1.0, 0.0, 0.0, 0.0)], 12 * TICK_HZ + 12, 16 * TICK_HZ, 12);
+        assert_ne!(cm.tracks[&2].contact, cm.tracks[&1].contact);
+    }
+
+    #[test]
+    fn a_height_that_moved_is_a_revision_when_asked() {
+        // A parked car whose height estimate settles 2 m higher; nothing else changes.
+        let at = |u: f32| move |_t: u32| vec![Track { u: Some(u), ..tr(1, CAR, 0.0, 0.0, 0.0, 0.0) }];
+        for (tol, expect) in [(0.0, false), (1.0, true), (3.0, false)] {
+            let mut cm = ContactManager::new(ContactConfig { u_tol_m: tol, ..Default::default() }, 0.1);
+            run(&mut cm, at(10.0), 0, 5 * TICK_HZ, 12);
+            let id = cm.tracks[&1].contact.unwrap();
+            cm.mark_sent(id, 5 * TICK_HZ);
+            let ch = run(&mut cm, at(12.0), 5 * TICK_HZ + 12, 8 * TICK_HZ, 12);
+            assert_eq!(ch.iter().any(|(_, ids)| ids.contains(&id)), expect, "u_tol_m {tol}");
+        }
     }
 
     #[test]

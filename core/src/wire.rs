@@ -153,6 +153,8 @@ impl EgoRec {
 pub struct PoseRec { pub tick: u32, pub x: i32, pub y: i32, pub z: i32, pub yaw: i16, pub pitch: i16, pub roll: i16 }
 pub const POSE_LEN: usize = 22;
 
+/// `dz` is in `pos_res` units like `dx, dy`. With `F_VELOCITY`, `course, speed` are the course over
+/// ground of a mover and, at speed 0, the heading of a static single contact (PROTOCOL.md 3.4).
 #[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct ContactRec {
     pub id: u16, pub rev: u8, pub flags: u8, pub ext: u8, pub dx: i16, pub dy: i16, pub ce: u8, pub radius: u8,

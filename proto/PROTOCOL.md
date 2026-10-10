@@ -63,7 +63,7 @@ Header: 10 B (12 with CRC). Record overhead: 2 B.
 
 | name | encoding | range, step |
 |---|---|---|
-| `pos` (dx, dy) | i16 LE each, east and north from the session origin, in `pos_res` units | ±32 km at 1 m, ±3.2 km at 10 cm, ±327 m at 1 cm |
+| `pos` (dx, dy, dz) | i16 LE each, east and north (and, when sent, height) from the session origin, in `pos_res` units | ±32 km at 1 m, ±3.2 km at 10 cm, ±327 m at 1 cm |
 | `m8` (metres minifloat) | u8: e = q>>5, m = q&31; `m/4` m for e = 0, else `(32+m)/4 * 2^(e-1)` m | 0..7.75 by 0.25; 8..15.75 by 0.25; 16..31.5 by 0.5; 32..63 by 1; 64..126 by 2; 128..252 by 4; 256..504 by 8; 512..1008 by 16. Round up: the declared radius is never below the true one |
 | `course`, `heading`, `az` | u8, true bearing × 256/360 | 1.4° |
 | `el` | u8, depression below the horizon × 256/90 | 0.35° |
@@ -172,7 +172,7 @@ u8   flags          bits 0-1 motion: 0 unknown, 1 static, 2 moving, 3 stopped (w
                     bit5 focused
                     bit6 group (count > 1 ; children available on focus)
                     bit7 has velocity (course, speed follow)
-u8   ext            bit0 has parent (u16) ; bit1 has altitude (i16, metres above origin) ;
+u8   ext            bit0 has parent (u16) ; bit1 has altitude (i16 `dz`, `pos_res` units above origin) ;
                     bit2 thermal-only sighting ; bit3 motion-only (no appearance class) ;
                     bit4 out of view (with lost: it left the camera's view, see 5.3) ; bit5 child record (individual within a group) ;
                     bit6 has ray (az, el) ; bit7 has bbox (u, v, w, h)
@@ -188,9 +188,16 @@ u8   conf           0..255, detector/tracker confidence of the contact as a whol
 u16  first_seen     secs ; when the first member was first detected
 u16  since          secs ; when the current motion state began
 u8   age            seconds since the last look at it, before the frame tick
-[u8  course, u8 speed]   flags.bit7 ; course over ground and speed of the centroid
+[u8  course, u8 speed]   flags.bit7 ; course over ground and speed of the centroid. For a static
+                         single contact with speed 0, course is the object's own heading when the
+                         edge knows it (degrees true, its long axis or front as the tracker measures
+                         it). Single = not a group; static here also covers a stopped contact or one
+                         not yet classified. A group has no heading, nor does a tombstone. The pair is
+                         then not a velocity (5.3) and its changes are never a reason to revise (6.3)
 [u16 parent]             ext.bit0
-[i16 dz]                 ext.bit1 ; set when the edge knows the height (a reconstruction's terrain, a rangefinder)
+[i16 dz]                 ext.bit1 ; height above the session origin in `pos_res` units, exactly as dx and
+                         dy (whole metres at 1 m, 10 cm steps at pos_res 1) ; set when the edge knows the
+                         height (a reconstruction's terrain, a rangefinder)
 [u8  az, u8 el]          ext.bit6 ; the observation ray from the camera at (tick - age) to the
                          contact's ground point, true bearing and depression. With the camera
                          position from `Pose`/`Ego` at that time a server can intersect this ray
@@ -314,6 +321,8 @@ moves with a velocity (`motion = 2`, `flags.bit7`, not departed) dead-reckoned a
 the deterministic sin/cos (core `geo::SentPred`). The edge keeps the same prediction of the last
 record it sent, from the same bytes, and revises against it (6.3). A lost mover is predicted along
 its course too; a lost contact is never revised for position (the edge has nothing new about it).
+A static contact's `course, speed` pair is its heading with speed 0 (3.4): only `motion = 2` moves a
+prediction, so it stays where `pos` says. The receiver reports the pair's course as `heading`.
 
 **The radius.** `ce_shown` holds the edge's estimate with probability `COVERAGE` = 0.95. It is
 
@@ -422,6 +431,10 @@ A contact's `rev` increments (and its ladder restarts) when any of these happens
   edge then spreads the revisions over one `T_ego` instead of bursting);
 - course changes by more than 30° or speed by more than 25 % while moving (both times the
   level's `dev_factor` ratio at a coarse level, course at most 90°).
+
+A static contact's heading (3.4) is not on this list: a tracker's yaw jitters, and a parked car
+would be revised on every look. It rides on every record sent for other reasons, the first report
+and the repeats included, as whatever the tracker says at that moment.
 
 Nothing else moves `rev`: a static contact in a stable scene is sent at `T_floor` only. In the
 video regime the ray and bbox of an *unchanged* contact are refreshed with its floor repeat, not
@@ -561,7 +574,7 @@ and are exported to WASM and Swift.
 | `ce` (grown per 5.3) | `point.ce`; `le` = ce when alt known else 9999999 | slant/cross range uncertainty | ring |
 | `az`, `el` + camera position | - | - | ray ∩ reconstructed terrain (preferred over `pos`) |
 | `u v w h` | - | - | attach the detection to the model's texture / mesh |
-| `course`, `speed` | `detail/track course speed` | velocity line of sight | motion vector |
+| `course`, `speed` | `detail/track course speed` | velocity line of sight | motion vector ; for speed 0, the object's yaw |
 | class mix | callsign and remarks ("3 vehicles, 1 armoured"), type stays `a-u-G` | classification + class probability | label |
 | `conf` | remarks | SNR / class probability | - |
 | `first_seen`, `since` | `time` = first_seen, `start` = since | dwell time | timeline |

@@ -1,0 +1,4882 @@
+{
+ "clip": "/home/sheyteo/Documents/edtm-d4d-seoul-hackathon/minband/runs/recon3d/labrador/clip.mp4",
+ "fps": 30,
+ "movers": [
+  {
+   "id": "m1",
+   "cls": "car",
+   "cls_alt": null,
+   "note": "black sedan; starts nearly stopped at the intersection at the right-center, then turns and drives left (west) along the road below the mall (red long building) accelerating; reaches the left side of the road and goes behind a tree near t=14.5 s",
+   "sightings": [
+    {
+     "frame": 15,
+     "t": 0.5,
+     "box": [
+      1334.1,
+      420.5,
+      1379.6,
+      438.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.8,
+     "speed_est_mps": 0.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 30,
+     "t": 1.0,
+     "box": [
+      1342.3,
+      426.0,
+      1388.6,
+      444.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.6,
+     "speed_est_mps": 0.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 45,
+     "t": 1.5,
+     "box": [
+      1352.4,
+      432.0,
+      1399.4,
+      451.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 1.8,
+     "speed_est_mps": 0.3,
+     "speed": "slow"
+    },
+    {
+     "frame": 60,
+     "t": 2.0,
+     "box": [
+      1361.8,
+      440.0,
+      1410.8,
+      457.3
+     ],
+     "hard": false,
+     "px_per_0p5s": 3.0,
+     "speed_est_mps": 0.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 75,
+     "t": 2.5,
+     "box": [
+      1371.0,
+      443.2,
+      1419.1,
+      463.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.1,
+     "speed_est_mps": 0.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 90,
+     "t": 3.0,
+     "box": [
+      1377.0,
+      449.0,
+      1426.6,
+      470.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.1,
+     "speed_est_mps": 1.3,
+     "speed": "slow"
+    },
+    {
+     "frame": 105,
+     "t": 3.5,
+     "box": [
+      1380.5,
+      454.1,
+      1432.2,
+      475.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 11.7,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 120,
+     "t": 4.0,
+     "box": [
+      1380.0,
+      460.2,
+      1433.0,
+      480.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.2,
+     "speed_est_mps": 2.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 135,
+     "t": 4.5,
+     "box": [
+      1376.0,
+      465.5,
+      1431.0,
+      486.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 19.4,
+     "speed_est_mps": 3.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 150,
+     "t": 5.0,
+     "box": [
+      1367.1,
+      470.5,
+      1424.5,
+      490.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 24.4,
+     "speed_est_mps": 4.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 165,
+     "t": 5.5,
+     "box": [
+      1353.9,
+      472.3,
+      1414.8,
+      496.3
+     ],
+     "hard": false,
+     "px_per_0p5s": 26.5,
+     "speed_est_mps": 4.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 180,
+     "t": 6.0,
+     "box": [
+      1341.5,
+      476.5,
+      1401.0,
+      499.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 28.7,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 195,
+     "t": 6.5,
+     "box": [
+      1329.5,
+      477.2,
+      1387.0,
+      499.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.0,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 210,
+     "t": 7.0,
+     "box": [
+      1319.5,
+      475.0,
+      1371.5,
+      498.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.0,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 225,
+     "t": 7.5,
+     "box": [
+      1307.0,
+      472.0,
+      1355.0,
+      494.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.9,
+     "speed_est_mps": 5.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 240,
+     "t": 8.0,
+     "box": [
+      1290.8,
+      468.0,
+      1338.1,
+      489.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.6,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 255,
+     "t": 8.5,
+     "box": [
+      1280.0,
+      463.8,
+      1318.2,
+      484.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 32.0,
+     "speed_est_mps": 5.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 270,
+     "t": 9.0,
+     "box": [
+      1253.5,
+      459.5,
+      1297.5,
+      480.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 33.8,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 285,
+     "t": 9.5,
+     "box": [
+      1233.0,
+      455.0,
+      1277.0,
+      475.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 30.3,
+     "speed_est_mps": 5.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 300,
+     "t": 10.0,
+     "box": [
+      1215.5,
+      451.5,
+      1259.0,
+      471.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.4,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 315,
+     "t": 10.5,
+     "box": [
+      1196.0,
+      449.5,
+      1240.5,
+      468.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.3,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      1173.2,
+      447.8,
+      1219.8,
+      466.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 31.9,
+     "speed_est_mps": 5.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 345,
+     "t": 11.5,
+     "box": [
+      1146.2,
+      446.0,
+      1196.2,
+      465.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 34.0,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 360,
+     "t": 12.0,
+     "box": [
+      1117.5,
+      446.7,
+      1168.8,
+      466.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.1,
+     "speed_est_mps": 6.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 375,
+     "t": 12.5,
+     "box": [
+      1085.1,
+      447.4,
+      1139.5,
+      467.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 38.8,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 390,
+     "t": 13.0,
+     "box": [
+      1051.0,
+      450.5,
+      1105.0,
+      470.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 42.2,
+     "speed_est_mps": 7.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 405,
+     "t": 13.5,
+     "box": [
+      995.5,
+      455.0,
+      1046.5,
+      477.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 44.9,
+     "speed_est_mps": 8.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 420,
+     "t": 14.0,
+     "box": [
+      927.0,
+      463.0,
+      978.0,
+      483.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 47.2,
+     "speed_est_mps": 8.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 435,
+     "t": 14.5,
+     "box": [
+      860.5,
+      466.5,
+      912.5,
+      490.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 48.3,
+     "speed_est_mps": 8.7,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O1",
+   "n_sightings": 29,
+   "first_t": 0.5,
+   "last_t": 14.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": true,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m2",
+   "cls": "truck",
+   "cls_alt": "car",
+   "note": "dark-blue pickup truck at the right: already moving at t=0, passes behind the foreground white/red roof canopy at t=0.5-1.0 s (only the top of the cab is visible there, boxes cover the visible part), then drives left along the road, turns at the junction (decelerating around t=6.5 s) and drives back right, exiting at the right frame edge at t~11 s",
+   "sightings": [
+    {
+     "frame": 15,
+     "t": 0.5,
+     "box": [
+      1738.0,
+      578.0,
+      1778.0,
+      594.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 71.1,
+     "speed_est_mps": 8.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 30,
+     "t": 1.0,
+     "box": [
+      1697.0,
+      567.0,
+      1735.0,
+      585.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 75.0,
+     "speed_est_mps": 9.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 45,
+     "t": 1.5,
+     "box": [
+      1642.0,
+      557.1,
+      1695.0,
+      582.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 71.1,
+     "speed_est_mps": 8.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 60,
+     "t": 2.0,
+     "box": [
+      1593.0,
+      548.1,
+      1660.0,
+      577.4
+     ],
+     "hard": false,
+     "px_per_0p5s": 55.8,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 75,
+     "t": 2.5,
+     "box": [
+      1561.5,
+      540.8,
+      1650.5,
+      578.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 47.5,
+     "speed_est_mps": 5.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 90,
+     "t": 3.0,
+     "box": [
+      1534.9,
+      534.0,
+      1622.0,
+      574.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 47.8,
+     "speed_est_mps": 6.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 105,
+     "t": 3.5,
+     "box": [
+      1512.6,
+      527.6,
+      1598.5,
+      568.6
+     ],
+     "hard": false,
+     "px_per_0p5s": 43.2,
+     "speed_est_mps": 5.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 120,
+     "t": 4.0,
+     "box": [
+      1498.0,
+      522.0,
+      1580.0,
+      562.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 34.6,
+     "speed_est_mps": 4.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 135,
+     "t": 4.5,
+     "box": [
+      1490.0,
+      519.0,
+      1569.0,
+      557.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 27.0,
+     "speed_est_mps": 3.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 150,
+     "t": 5.0,
+     "box": [
+      1491.0,
+      516.0,
+      1563.0,
+      554.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 21.7,
+     "speed_est_mps": 2.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 165,
+     "t": 5.5,
+     "box": [
+      1498.5,
+      513.6,
+      1561.0,
+      552.9
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.6,
+     "speed_est_mps": 2.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 180,
+     "t": 6.0,
+     "box": [
+      1516.5,
+      511.8,
+      1564.5,
+      550.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 11.0,
+     "speed_est_mps": 1.4,
+     "speed": "slow"
+    },
+    {
+     "frame": 195,
+     "t": 6.5,
+     "box": [
+      1539.5,
+      511.2,
+      1578.5,
+      549.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.1,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 210,
+     "t": 7.0,
+     "box": [
+      1562.0,
+      511.9,
+      1600.0,
+      548.6
+     ],
+     "hard": false,
+     "px_per_0p5s": 13.1,
+     "speed_est_mps": 1.6,
+     "speed": "slow"
+    },
+    {
+     "frame": 225,
+     "t": 7.5,
+     "box": [
+      1588.0,
+      511.6,
+      1648.0,
+      547.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 19.2,
+     "speed_est_mps": 2.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 240,
+     "t": 8.0,
+     "box": [
+      1620.0,
+      513.0,
+      1689.0,
+      547.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 22.0,
+     "speed_est_mps": 2.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 255,
+     "t": 8.5,
+     "box": [
+      1659.5,
+      512.5,
+      1733.5,
+      547.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 25.9,
+     "speed_est_mps": 3.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 270,
+     "t": 9.0,
+     "box": [
+      1702.5,
+      518.0,
+      1778.5,
+      549.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 27.6,
+     "speed_est_mps": 3.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 285,
+     "t": 9.5,
+     "box": [
+      1748.0,
+      516.0,
+      1825.5,
+      550.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 30.2,
+     "speed_est_mps": 3.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 300,
+     "t": 10.0,
+     "box": [
+      1797.0,
+      517.0,
+      1875.0,
+      550.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 28.8,
+     "speed_est_mps": 3.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 315,
+     "t": 10.5,
+     "box": [
+      1847.0,
+      515.0,
+      1919.0,
+      549.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 16.6,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      1865.7,
+      517.8,
+      1919.0,
+      552.7
+     ],
+     "hard": true,
+     "px_per_0p5s": 3.0,
+     "speed_est_mps": 0.4,
+     "speed": "slow"
+    }
+   ],
+   "source_track": "O3",
+   "n_sightings": 22,
+   "first_t": 0.5,
+   "last_t": 11.0,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": true,
+   "visible_at_clip_start": true,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m3",
+   "cls": "truck",
+   "cls_alt": "car",
+   "note": "dark/black pickup truck driving right (east) along the lower edge of the mall lot, behind the hedge, accelerating from a near standstill to ~35 px/0.5 s; leaves the frame at the right edge at t~16.5 s. Partly hidden behind hedge/poles t=5.5-9 s (boxes there are approximate)",
+   "sightings": [
+    {
+     "frame": 15,
+     "t": 0.5,
+     "box": [
+      948.0,
+      255.0,
+      988.0,
+      269.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 5.3,
+     "speed_est_mps": 1.1,
+     "speed": "slow"
+    },
+    {
+     "frame": 30,
+     "t": 1.0,
+     "box": [
+      958.0,
+      257.0,
+      998.0,
+      271.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 8.8,
+     "speed_est_mps": 1.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 45,
+     "t": 1.5,
+     "box": [
+      970.0,
+      260.0,
+      1008.0,
+      274.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 9.2,
+     "speed_est_mps": 1.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 60,
+     "t": 2.0,
+     "box": [
+      983.5,
+      263.5,
+      1017.5,
+      276.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 11.7,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 75,
+     "t": 2.5,
+     "box": [
+      998.0,
+      268.0,
+      1036.0,
+      281.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.3,
+     "speed_est_mps": 3.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 90,
+     "t": 3.0,
+     "box": [
+      1017.0,
+      270.0,
+      1055.0,
+      282.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 16.5,
+     "speed_est_mps": 3.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 105,
+     "t": 3.5,
+     "box": [
+      1036.5,
+      271.0,
+      1075.5,
+      284.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 16.8,
+     "speed_est_mps": 3.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 120,
+     "t": 4.0,
+     "box": [
+      1055.2,
+      272.0,
+      1097.4,
+      288.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 18.8,
+     "speed_est_mps": 3.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 135,
+     "t": 4.5,
+     "box": [
+      1081.1,
+      275.5,
+      1122.4,
+      291.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 21.3,
+     "speed_est_mps": 4.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 150,
+     "t": 5.0,
+     "box": [
+      1107.2,
+      277.0,
+      1149.2,
+      294.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 22.6,
+     "speed_est_mps": 4.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 165,
+     "t": 5.5,
+     "box": [
+      1136.0,
+      283.0,
+      1179.0,
+      298.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 24.0,
+     "speed_est_mps": 4.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 180,
+     "t": 6.0,
+     "box": [
+      1167.0,
+      289.0,
+      1207.0,
+      304.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 25.3,
+     "speed_est_mps": 5.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 195,
+     "t": 6.5,
+     "box": [
+      1198.0,
+      291.0,
+      1243.0,
+      306.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 23.0,
+     "speed_est_mps": 4.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 210,
+     "t": 7.0,
+     "box": [
+      1226.0,
+      294.0,
+      1268.0,
+      309.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 26.2,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 225,
+     "t": 7.5,
+     "box": [
+      1264.0,
+      295.0,
+      1310.0,
+      310.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 30.3,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 240,
+     "t": 8.0,
+     "box": [
+      1298.0,
+      298.0,
+      1345.0,
+      313.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 27.5,
+     "speed_est_mps": 5.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 255,
+     "t": 8.5,
+     "box": [
+      1331.0,
+      300.0,
+      1381.0,
+      316.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 27.1,
+     "speed_est_mps": 5.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 270,
+     "t": 9.0,
+     "box": [
+      1364.0,
+      304.0,
+      1415.0,
+      320.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 29.3,
+     "speed_est_mps": 5.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 285,
+     "t": 9.5,
+     "box": [
+      1407.0,
+      305.0,
+      1450.0,
+      323.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 30.4,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 300,
+     "t": 10.0,
+     "box": [
+      1438.8,
+      309.0,
+      1491.0,
+      331.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 31.0,
+     "speed_est_mps": 6.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 315,
+     "t": 10.5,
+     "box": [
+      1480.8,
+      312.0,
+      1531.8,
+      333.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 37.2,
+     "speed_est_mps": 7.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      1534.0,
+      316.0,
+      1574.0,
+      332.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 34.5,
+     "speed_est_mps": 6.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 345,
+     "t": 11.5,
+     "box": [
+      1565.0,
+      319.8,
+      1616.5,
+      336.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 31.0,
+     "speed_est_mps": 6.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 360,
+     "t": 12.0,
+     "box": [
+      1600.5,
+      322.0,
+      1663.5,
+      341.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.9,
+     "speed_est_mps": 7.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 375,
+     "t": 12.5,
+     "box": [
+      1652.8,
+      324.0,
+      1709.2,
+      344.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 38.0,
+     "speed_est_mps": 7.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 390,
+     "t": 13.0,
+     "box": [
+      1696.5,
+      326.5,
+      1754.0,
+      345.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 33.9,
+     "speed_est_mps": 6.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 405,
+     "t": 13.5,
+     "box": [
+      1718.2,
+      327.2,
+      1764.2,
+      345.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 38.0,
+     "speed_est_mps": 7.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 420,
+     "t": 14.0,
+     "box": [
+      1725.5,
+      326.5,
+      1784.5,
+      347.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 39.3,
+     "speed_est_mps": 7.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 435,
+     "t": 14.5,
+     "box": [
+      1736.5,
+      323.0,
+      1797.5,
+      347.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 35.7,
+     "speed_est_mps": 7.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 450,
+     "t": 15.0,
+     "box": [
+      1751.0,
+      325.5,
+      1813.0,
+      347.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.5,
+     "speed_est_mps": 7.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 465,
+     "t": 15.5,
+     "box": [
+      1793.0,
+      329.0,
+      1855.0,
+      348.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.2,
+     "speed_est_mps": 7.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 480,
+     "t": 16.0,
+     "box": [
+      1840.0,
+      331.5,
+      1902.0,
+      351.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.2,
+     "speed_est_mps": 5.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 495,
+     "t": 16.5,
+     "box": [
+      1886.0,
+      332.0,
+      1919.0,
+      352.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 21.6,
+     "speed_est_mps": 4.3,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "P",
+   "n_sightings": 33,
+   "first_t": 0.5,
+   "last_t": 16.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": true,
+   "visible_at_clip_start": true,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m4",
+   "cls": "truck",
+   "cls_alt": "car",
+   "note": "silver/gray pickup truck driving right (east) along the hedge-lined lower edge of the mall lot, slow (~9 px/0.5 s) at t=0.5-8 s then speeding up, passes behind the hedge/poles, exits the frame at the right edge at t~22 s",
+   "sightings": [
+    {
+     "frame": 15,
+     "t": 0.5,
+     "box": [
+      849.8,
+      235.4,
+      871.8,
+      245.1
+     ],
+     "hard": true,
+     "px_per_0p5s": 7.2,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 30,
+     "t": 1.0,
+     "box": [
+      855.0,
+      238.6,
+      881.0,
+      248.4
+     ],
+     "hard": true,
+     "px_per_0p5s": 7.9,
+     "speed_est_mps": 1.6,
+     "speed": "slow"
+    },
+    {
+     "frame": 45,
+     "t": 1.5,
+     "box": [
+      865.0,
+      239.1,
+      889.0,
+      251.1
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.8,
+     "speed_est_mps": 1.6,
+     "speed": "slow"
+    },
+    {
+     "frame": 60,
+     "t": 2.0,
+     "box": [
+      872.0,
+      240.9,
+      898.0,
+      253.9
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.1,
+     "speed_est_mps": 1.7,
+     "speed": "slow"
+    },
+    {
+     "frame": 75,
+     "t": 2.5,
+     "box": [
+      883.0,
+      245.5,
+      907.0,
+      257.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 90,
+     "t": 3.0,
+     "box": [
+      893.5,
+      248.0,
+      917.5,
+      260.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.2,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 105,
+     "t": 3.5,
+     "box": [
+      904.0,
+      250.1,
+      928.0,
+      263.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 120,
+     "t": 4.0,
+     "box": [
+      915.0,
+      252.2,
+      939.0,
+      265.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.4,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 135,
+     "t": 4.5,
+     "box": [
+      926.8,
+      256.0,
+      951.8,
+      269.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 150,
+     "t": 5.0,
+     "box": [
+      939.0,
+      258.5,
+      963.5,
+      271.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.8,
+     "speed_est_mps": 1.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 165,
+     "t": 5.5,
+     "box": [
+      950.8,
+      261.5,
+      976.2,
+      272.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 180,
+     "t": 6.0,
+     "box": [
+      962.1,
+      266.0,
+      989.4,
+      281.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.6,
+     "speed_est_mps": 2.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 195,
+     "t": 6.5,
+     "box": [
+      975.4,
+      269.5,
+      1003.0,
+      284.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.4,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 210,
+     "t": 7.0,
+     "box": [
+      988.2,
+      273.5,
+      1018.0,
+      288.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 225,
+     "t": 7.5,
+     "box": [
+      1001.6,
+      277.5,
+      1031.4,
+      290.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 10.9,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 240,
+     "t": 8.0,
+     "box": [
+      1018.0,
+      280.5,
+      1049.6,
+      294.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 12.3,
+     "speed_est_mps": 2.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 255,
+     "t": 8.5,
+     "box": [
+      1031.0,
+      283.2,
+      1069.0,
+      299.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 14.9,
+     "speed_est_mps": 3.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 270,
+     "t": 9.0,
+     "box": [
+      1055.2,
+      290.0,
+      1089.6,
+      303.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 16.2,
+     "speed_est_mps": 3.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 285,
+     "t": 9.5,
+     "box": [
+      1069.0,
+      292.0,
+      1113.0,
+      307.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 19.7,
+     "speed_est_mps": 4.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 300,
+     "t": 10.0,
+     "box": [
+      1099.8,
+      293.2,
+      1142.8,
+      310.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 25.6,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 315,
+     "t": 10.5,
+     "box": [
+      1130.2,
+      298.0,
+      1173.8,
+      314.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 28.0,
+     "speed_est_mps": 5.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      1164.2,
+      301.2,
+      1208.2,
+      317.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 30.7,
+     "speed_est_mps": 6.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 345,
+     "t": 11.5,
+     "box": [
+      1200.2,
+      304.8,
+      1245.8,
+      319.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 33.4,
+     "speed_est_mps": 6.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 360,
+     "t": 12.0,
+     "box": [
+      1240.0,
+      306.5,
+      1285.0,
+      324.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 33.0,
+     "speed_est_mps": 6.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 375,
+     "t": 12.5,
+     "box": [
+      1276.0,
+      309.5,
+      1321.0,
+      325.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 35.9,
+     "speed_est_mps": 7.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 390,
+     "t": 13.0,
+     "box": [
+      1322.0,
+      313.0,
+      1367.0,
+      330.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 38.5,
+     "speed_est_mps": 7.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 405,
+     "t": 13.5,
+     "box": [
+      1342.0,
+      314.0,
+      1389.0,
+      330.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 36.0,
+     "speed_est_mps": 7.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 420,
+     "t": 14.0,
+     "box": [
+      1351.0,
+      314.0,
+      1398.0,
+      330.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 35.8,
+     "speed_est_mps": 7.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 435,
+     "t": 14.5,
+     "box": [
+      1363.0,
+      310.5,
+      1415.9,
+      333.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.7,
+     "speed_est_mps": 7.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 450,
+     "t": 15.0,
+     "box": [
+      1382.5,
+      316.0,
+      1433.5,
+      334.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 37.0,
+     "speed_est_mps": 7.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 465,
+     "t": 15.5,
+     "box": [
+      1424.0,
+      317.5,
+      1472.5,
+      338.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.3,
+     "speed_est_mps": 7.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 480,
+     "t": 16.0,
+     "box": [
+      1467.2,
+      320.8,
+      1518.8,
+      339.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 35.2,
+     "speed_est_mps": 7.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 495,
+     "t": 16.5,
+     "box": [
+      1511.0,
+      322.0,
+      1559.5,
+      340.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 34.9,
+     "speed_est_mps": 7.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 510,
+     "t": 17.0,
+     "box": [
+      1553.8,
+      323.7,
+      1605.0,
+      342.4
+     ],
+     "hard": true,
+     "px_per_0p5s": 36.4,
+     "speed_est_mps": 7.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 525,
+     "t": 17.5,
+     "box": [
+      1593.5,
+      324.7,
+      1647.3,
+      344.2
+     ],
+     "hard": true,
+     "px_per_0p5s": 36.7,
+     "speed_est_mps": 7.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 540,
+     "t": 18.0,
+     "box": [
+      1628.0,
+      326.2,
+      1681.0,
+      346.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.3,
+     "speed_est_mps": 7.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 555,
+     "t": 18.5,
+     "box": [
+      1666.9,
+      325.5,
+      1723.2,
+      347.4
+     ],
+     "hard": true,
+     "px_per_0p5s": 35.5,
+     "speed_est_mps": 7.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 570,
+     "t": 19.0,
+     "box": [
+      1705.5,
+      325.2,
+      1763.5,
+      348.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 33.8,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 585,
+     "t": 19.5,
+     "box": [
+      1741.5,
+      332.2,
+      1801.0,
+      352.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 32.2,
+     "speed_est_mps": 6.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 600,
+     "t": 20.0,
+     "box": [
+      1780.8,
+      331.0,
+      1839.0,
+      359.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.7,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 615,
+     "t": 20.5,
+     "box": [
+      1814.0,
+      339.5,
+      1874.0,
+      361.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 25.9,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 630,
+     "t": 21.0,
+     "box": [
+      1844.0,
+      344.0,
+      1908.0,
+      365.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 20.1,
+     "speed_est_mps": 4.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 645,
+     "t": 21.5,
+     "box": [
+      1879.0,
+      345.0,
+      1919.0,
+      366.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 9.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 660,
+     "t": 22.0,
+     "box": [
+      1896.0,
+      351.5,
+      1919.0,
+      369.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 3.2,
+     "speed_est_mps": 0.6,
+     "speed": "slow"
+    }
+   ],
+   "source_track": "Q",
+   "n_sightings": 44,
+   "first_t": 0.5,
+   "last_t": 22.0,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": true,
+   "visible_at_clip_start": true,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m5",
+   "cls": "car",
+   "cls_alt": "truck",
+   "note": "gray/silver SUV or pickup driving slowly left (west) along the lane in front of the red mall, far left of the lot; starts at t=0.5 s already moving, slows around t=3-6 s, keeps creeping left until it passes behind/past other cars ~t=11 s",
+   "sightings": [
+    {
+     "frame": 15,
+     "t": 0.5,
+     "box": [
+      983.5,
+      243.5,
+      1010.5,
+      255.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 10.9,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 30,
+     "t": 1.0,
+     "box": [
+      974.5,
+      244.2,
+      1004.5,
+      255.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.8,
+     "speed_est_mps": 4.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 45,
+     "t": 1.5,
+     "box": [
+      968.5,
+      244.0,
+      997.5,
+      256.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.6,
+     "speed_est_mps": 4.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 60,
+     "t": 2.0,
+     "box": [
+      965.6,
+      243.5,
+      990.9,
+      256.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.4,
+     "speed_est_mps": 3.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 75,
+     "t": 2.5,
+     "box": [
+      966.2,
+      245.0,
+      986.2,
+      257.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.9,
+     "speed_est_mps": 1.6,
+     "speed": "slow"
+    },
+    {
+     "frame": 90,
+     "t": 3.0,
+     "box": [
+      968.5,
+      245.0,
+      985.0,
+      257.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 1.8,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 105,
+     "t": 3.5,
+     "box": [
+      972.2,
+      243.8,
+      986.8,
+      256.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 1.9,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 120,
+     "t": 4.0,
+     "box": [
+      975.8,
+      243.5,
+      991.8,
+      256.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.6,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 135,
+     "t": 4.5,
+     "box": [
+      981.5,
+      243.5,
+      997.5,
+      256.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.6,
+     "speed_est_mps": 1.4,
+     "speed": "slow"
+    },
+    {
+     "frame": 150,
+     "t": 5.0,
+     "box": [
+      986.2,
+      243.4,
+      1002.0,
+      255.4
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.0,
+     "speed_est_mps": 1.1,
+     "speed": "slow"
+    },
+    {
+     "frame": 165,
+     "t": 5.5,
+     "box": [
+      991.5,
+      242.5,
+      1005.5,
+      255.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 1.9,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 180,
+     "t": 6.0,
+     "box": [
+      994.0,
+      242.8,
+      1008.0,
+      255.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.3,
+     "speed_est_mps": 1.3,
+     "speed": "slow"
+    },
+    {
+     "frame": 195,
+     "t": 6.5,
+     "box": [
+      994.5,
+      242.1,
+      1010.5,
+      255.4
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.0,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 210,
+     "t": 7.0,
+     "box": [
+      992.0,
+      241.4,
+      1011.4,
+      254.9
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.8,
+     "speed_est_mps": 3.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 225,
+     "t": 7.5,
+     "box": [
+      988.0,
+      242.0,
+      1010.0,
+      254.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.0,
+     "speed_est_mps": 2.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 240,
+     "t": 8.0,
+     "box": [
+      992.0,
+      241.4,
+      1007.0,
+      254.6
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.9,
+     "speed_est_mps": 3.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 255,
+     "t": 8.5,
+     "box": [
+      987.3,
+      241.0,
+      1002.7,
+      254.4
+     ],
+     "hard": true,
+     "px_per_0p5s": 8.6,
+     "speed_est_mps": 4.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 270,
+     "t": 9.0,
+     "box": [
+      981.4,
+      242.0,
+      997.0,
+      255.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 9.0,
+     "speed_est_mps": 5.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 285,
+     "t": 9.5,
+     "box": [
+      975.1,
+      242.1,
+      991.1,
+      255.7
+     ],
+     "hard": true,
+     "px_per_0p5s": 13.0,
+     "speed_est_mps": 7.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 300,
+     "t": 10.0,
+     "box": [
+      956.5,
+      243.0,
+      982.5,
+      255.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 12.6,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 315,
+     "t": 10.5,
+     "box": [
+      951.0,
+      242.6,
+      977.0,
+      255.9
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.7,
+     "speed_est_mps": 4.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      946.3,
+      242.8,
+      972.7,
+      256.1
+     ],
+     "hard": true,
+     "px_per_0p5s": 7.1,
+     "speed_est_mps": 3.9,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O13",
+   "n_sightings": 22,
+   "first_t": 0.5,
+   "last_t": 11.0,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": true,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m6",
+   "cls": "car",
+   "cls_alt": null,
+   "note": "silver/white sedan pulling slowly left into a parking space in the far (upper-left) part of the mall lot; decelerates to a stop by ~t=4.5 s",
+   "sightings": [
+    {
+     "frame": 15,
+     "t": 0.5,
+     "box": [
+      861.5,
+      223.0,
+      883.0,
+      232.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.9,
+     "speed_est_mps": 1.2,
+     "speed": "slow"
+    },
+    {
+     "frame": 30,
+     "t": 1.0,
+     "box": [
+      857.8,
+      223.1,
+      881.8,
+      232.9
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.8,
+     "speed_est_mps": 2.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 45,
+     "t": 1.5,
+     "box": [
+      848.5,
+      223.8,
+      874.0,
+      234.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.0,
+     "speed_est_mps": 2.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 60,
+     "t": 2.0,
+     "box": [
+      846.5,
+      223.8,
+      871.5,
+      234.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.1,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 75,
+     "t": 2.5,
+     "box": [
+      841.5,
+      224.6,
+      863.5,
+      235.6
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.5,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 90,
+     "t": 3.0,
+     "box": [
+      839.2,
+      224.8,
+      859.8,
+      235.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.7,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 105,
+     "t": 3.5,
+     "box": [
+      835.0,
+      224.4,
+      854.5,
+      233.9
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.1,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 120,
+     "t": 4.0,
+     "box": [
+      829.8,
+      224.5,
+      851.8,
+      234.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.0,
+     "speed_est_mps": 1.6,
+     "speed": "slow"
+    },
+    {
+     "frame": 135,
+     "t": 4.5,
+     "box": [
+      831.0,
+      225.0,
+      848.0,
+      235.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 2.8,
+     "speed_est_mps": 1.1,
+     "speed": "slow"
+    }
+   ],
+   "source_track": "O19",
+   "n_sightings": 9,
+   "first_t": 0.5,
+   "last_t": 4.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": true,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m7",
+   "cls": "car",
+   "cls_alt": null,
+   "note": "blue/gray sedan entering from the right edge (t=5 s), drives left along the road, waits (nearly stopped) at the stop line t=11.5-14 s, then turns right/down and drives toward the camera/right-bottom and exits at the lower right t~17.5 s",
+   "sightings": [
+    {
+     "frame": 150,
+     "t": 5.0,
+     "box": [
+      1892.0,
+      416.0,
+      1919.0,
+      437.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 33.1,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 165,
+     "t": 5.5,
+     "box": [
+      1870.0,
+      427.0,
+      1916.0,
+      448.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 38.8,
+     "speed_est_mps": 6.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 180,
+     "t": 6.0,
+     "box": [
+      1846.0,
+      438.5,
+      1892.0,
+      459.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 44.8,
+     "speed_est_mps": 7.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 195,
+     "t": 6.5,
+     "box": [
+      1824.0,
+      449.5,
+      1872.0,
+      471.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 44.1,
+     "speed_est_mps": 7.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 210,
+     "t": 7.0,
+     "box": [
+      1800.5,
+      460.2,
+      1850.5,
+      482.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 43.5,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 225,
+     "t": 7.5,
+     "box": [
+      1776.5,
+      470.5,
+      1829.5,
+      493.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 42.3,
+     "speed_est_mps": 6.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 240,
+     "t": 8.0,
+     "box": [
+      1754.0,
+      481.0,
+      1806.0,
+      505.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 41.5,
+     "speed_est_mps": 6.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 255,
+     "t": 8.5,
+     "box": [
+      1730.0,
+      491.0,
+      1784.0,
+      516.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 39.9,
+     "speed_est_mps": 6.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 270,
+     "t": 9.0,
+     "box": [
+      1707.5,
+      502.2,
+      1763.5,
+      528.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 37.9,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 285,
+     "t": 9.5,
+     "box": [
+      1688.2,
+      512.5,
+      1744.8,
+      538.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 32.6,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 300,
+     "t": 10.0,
+     "box": [
+      1676.0,
+      522.5,
+      1734.0,
+      548.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 27.8,
+     "speed_est_mps": 4.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 315,
+     "t": 10.5,
+     "box": [
+      1668.5,
+      531.0,
+      1727.5,
+      557.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 21.2,
+     "speed_est_mps": 3.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      1665.0,
+      539.0,
+      1725.0,
+      566.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.8,
+     "speed_est_mps": 2.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 345,
+     "t": 11.5,
+     "box": [
+      1669.0,
+      545.0,
+      1731.5,
+      574.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.3,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 360,
+     "t": 12.0,
+     "box": [
+      1678.0,
+      552.0,
+      1741.0,
+      581.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.3,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 375,
+     "t": 12.5,
+     "box": [
+      1689.5,
+      558.0,
+      1753.5,
+      588.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 3.9,
+     "speed_est_mps": 0.6,
+     "speed": "slow"
+    },
+    {
+     "frame": 390,
+     "t": 13.0,
+     "box": [
+      1703.0,
+      563.0,
+      1768.0,
+      593.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 3.4,
+     "speed_est_mps": 0.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 405,
+     "t": 13.5,
+     "box": [
+      1691.5,
+      565.5,
+      1755.5,
+      595.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.4,
+     "speed_est_mps": 0.7,
+     "speed": "slow"
+    },
+    {
+     "frame": 420,
+     "t": 14.0,
+     "box": [
+      1669.0,
+      565.5,
+      1728.0,
+      596.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.1,
+     "speed_est_mps": 1.3,
+     "speed": "slow"
+    },
+    {
+     "frame": 435,
+     "t": 14.5,
+     "box": [
+      1651.0,
+      569.0,
+      1703.0,
+      601.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.8,
+     "speed_est_mps": 1.6,
+     "speed": "slow"
+    },
+    {
+     "frame": 450,
+     "t": 15.0,
+     "box": [
+      1639.0,
+      576.0,
+      1681.0,
+      609.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.5,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 465,
+     "t": 15.5,
+     "box": [
+      1657.5,
+      587.0,
+      1692.0,
+      625.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 13.6,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 480,
+     "t": 16.0,
+     "box": [
+      1680.0,
+      608.0,
+      1729.0,
+      640.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 25.2,
+     "speed_est_mps": 4.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 495,
+     "t": 16.5,
+     "box": [
+      1716.5,
+      629.2,
+      1778.5,
+      670.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 38.0,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 510,
+     "t": 17.0,
+     "box": [
+      1766.5,
+      655.5,
+      1841.5,
+      699.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 55.6,
+     "speed_est_mps": 8.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 525,
+     "t": 17.5,
+     "box": [
+      1837.0,
+      686.5,
+      1919.0,
+      733.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 67.5,
+     "speed_est_mps": 10.8,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O2",
+   "n_sightings": 26,
+   "first_t": 5.0,
+   "last_t": 17.5,
+   "enters_at_frame_edge": true,
+   "leaves_at_frame_edge": true,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m8",
+   "cls": "car",
+   "cls_alt": null,
+   "note": "small dark car moving left on the lane behind the apartment block at the left-center of the frame (small, ~16x8 px); partially hidden by fence/trees at t=9-9.5 s; boxes hand-placed",
+   "sightings": [
+    {
+     "frame": 195,
+     "t": 6.5,
+     "box": [
+      551.0,
+      212.0,
+      570.0,
+      221.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 12.4,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 210,
+     "t": 7.0,
+     "box": [
+      541.0,
+      216.0,
+      557.0,
+      222.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 12.6,
+     "speed_est_mps": 7.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 225,
+     "t": 7.5,
+     "box": [
+      528.0,
+      216.5,
+      546.0,
+      223.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 11.9,
+     "speed_est_mps": 6.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 240,
+     "t": 8.0,
+     "box": [
+      519.0,
+      219.5,
+      535.0,
+      226.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 11.4,
+     "speed_est_mps": 6.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 255,
+     "t": 8.5,
+     "box": [
+      509.0,
+      223.0,
+      524.0,
+      231.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 13.0,
+     "speed_est_mps": 7.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 270,
+     "t": 9.0,
+     "box": [
+      495.0,
+      224.0,
+      511.0,
+      231.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 14.4,
+     "speed_est_mps": 8.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 285,
+     "t": 9.5,
+     "box": [
+      481.0,
+      227.0,
+      497.0,
+      233.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 10.7,
+     "speed_est_mps": 6.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 300,
+     "t": 10.0,
+     "box": [
+      475.0,
+      230.5,
+      491.0,
+      236.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 9.2,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 315,
+     "t": 10.5,
+     "box": [
+      465.0,
+      232.0,
+      479.0,
+      238.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 9.9,
+     "speed_est_mps": 5.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      455.0,
+      235.0,
+      473.0,
+      241.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 8.5,
+     "speed_est_mps": 4.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 345,
+     "t": 11.5,
+     "box": [
+      449.0,
+      236.5,
+      462.0,
+      241.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 8.5,
+     "speed_est_mps": 4.8,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O18",
+   "n_sightings": 11,
+   "first_t": 6.5,
+   "last_t": 11.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m9",
+   "cls": "car",
+   "cls_alt": "truck",
+   "note": "light-gray SUV/pickup that drives left (west) through the left part of the lot towards the lot edge t=11-15 s, then slows, turns and continues behind/under the roof edge in the foreground (t=15.5-17 s, occluded, hard). Probably the same vehicle as the white pickup m_O9 that appears from the same spot at t=17.5 s and drives right (U-turn), but identity link is not certain",
+   "sightings": [
+    {
+     "frame": 330,
+     "t": 11.0,
+     "box": [
+      576.9,
+      221.2,
+      593.9,
+      230.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 1.1,
+     "speed_est_mps": 0.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 345,
+     "t": 11.5,
+     "box": [
+      577.2,
+      221.8,
+      596.8,
+      231.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.6,
+     "speed_est_mps": 2.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 360,
+     "t": 12.0,
+     "box": [
+      585.6,
+      224.8,
+      607.9,
+      234.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.9,
+     "speed_est_mps": 4.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 375,
+     "t": 12.5,
+     "box": [
+      579.0,
+      224.8,
+      599.0,
+      235.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.1,
+     "speed_est_mps": 2.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 390,
+     "t": 13.0,
+     "box": [
+      572.0,
+      226.8,
+      598.0,
+      237.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.5,
+     "speed_est_mps": 3.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 405,
+     "t": 13.5,
+     "box": [
+      546.2,
+      229.5,
+      567.3,
+      240.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.0,
+     "speed_est_mps": 3.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 420,
+     "t": 14.0,
+     "box": [
+      509.4,
+      231.5,
+      528.2,
+      241.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.7,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 435,
+     "t": 14.5,
+     "box": [
+      479.2,
+      234.2,
+      496.8,
+      242.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.3,
+     "speed_est_mps": 1.1,
+     "speed": "slow"
+    },
+    {
+     "frame": 450,
+     "t": 15.0,
+     "box": [
+      452.5,
+      235.2,
+      472.5,
+      243.8
+     ],
+     "hard": true,
+     "px_per_0p5s": 1.8,
+     "speed_est_mps": 0.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 465,
+     "t": 15.5,
+     "box": [
+      450.0,
+      237.0,
+      465.0,
+      245.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 3.1,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 480,
+     "t": 16.0,
+     "box": [
+      456.0,
+      238.0,
+      472.0,
+      246.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 5.1,
+     "speed_est_mps": 2.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 495,
+     "t": 16.5,
+     "box": [
+      467.0,
+      238.5,
+      480.0,
+      245.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 8.7,
+     "speed_est_mps": 4.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 510,
+     "t": 17.0,
+     "box": [
+      479.0,
+      238.0,
+      495.0,
+      247.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 10.8,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O14b",
+   "n_sightings": 13,
+   "first_t": 11.0,
+   "last_t": 17.0,
+   "possible_same_as": "m10",
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m10",
+   "cls": "truck",
+   "cls_alt": "car",
+   "note": "white/silver pickup truck driving slowly right (east) through the lot (~3-10 px/0.5 s) in front of the mall from t=17.5 s to the end (t=39.5 s). Probably the continuation of O14b (U-turn at the far left of the lot), not certain",
+   "sightings": [
+    {
+     "frame": 525,
+     "t": 17.5,
+     "box": [
+      479.0,
+      240.8,
+      495.5,
+      249.2
+     ],
+     "hard": true,
+     "px_per_0p5s": 3.7,
+     "speed_est_mps": 1.1,
+     "speed": "slow"
+    },
+    {
+     "frame": 540,
+     "t": 18.0,
+     "box": [
+      474.8,
+      241.5,
+      496.2,
+      250.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 6.5,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 555,
+     "t": 18.5,
+     "box": [
+      484.7,
+      242.9,
+      508.5,
+      252.1
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.8,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 570,
+     "t": 19.0,
+     "box": [
+      493.5,
+      242.5,
+      514.5,
+      251.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.2,
+     "speed_est_mps": 2.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 585,
+     "t": 19.5,
+     "box": [
+      503.2,
+      245.2,
+      525.9,
+      254.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 11.8,
+     "speed_est_mps": 3.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 600,
+     "t": 20.0,
+     "box": [
+      519.5,
+      248.8,
+      536.5,
+      257.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 11.2,
+     "speed_est_mps": 3.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 615,
+     "t": 20.5,
+     "box": [
+      527.7,
+      250.2,
+      544.8,
+      258.7
+     ],
+     "hard": true,
+     "px_per_0p5s": 6.8,
+     "speed_est_mps": 2.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 630,
+     "t": 21.0,
+     "box": [
+      529.4,
+      251.6,
+      550.2,
+      261.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.8,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 645,
+     "t": 21.5,
+     "box": [
+      537.1,
+      254.2,
+      562.4,
+      264.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.2,
+     "speed_est_mps": 2.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 660,
+     "t": 22.0,
+     "box": [
+      541.9,
+      254.2,
+      567.1,
+      265.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.8,
+     "speed_est_mps": 2.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 675,
+     "t": 22.5,
+     "box": [
+      540.3,
+      255.5,
+      566.9,
+      266.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.9,
+     "speed_est_mps": 3.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 690,
+     "t": 23.0,
+     "box": [
+      538.3,
+      256.0,
+      564.4,
+      268.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.0,
+     "speed_est_mps": 2.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 705,
+     "t": 23.5,
+     "box": [
+      544.9,
+      256.5,
+      571.8,
+      268.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.6,
+     "speed_est_mps": 2.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 720,
+     "t": 24.0,
+     "box": [
+      551.9,
+      256.5,
+      578.9,
+      268.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 8.9,
+     "speed_est_mps": 2.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 735,
+     "t": 24.5,
+     "box": [
+      559.8,
+      256.0,
+      588.0,
+      269.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.4,
+     "speed_est_mps": 2.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 750,
+     "t": 25.0,
+     "box": [
+      569.6,
+      256.0,
+      599.1,
+      269.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.0,
+     "speed_est_mps": 2.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 765,
+     "t": 25.5,
+     "box": [
+      579.1,
+      256.5,
+      607.6,
+      269.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.6,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 780,
+     "t": 26.0,
+     "box": [
+      586.9,
+      256.5,
+      617.4,
+      269.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.3,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 795,
+     "t": 26.5,
+     "box": [
+      596.5,
+      257.0,
+      626.5,
+      270.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.8,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 810,
+     "t": 27.0,
+     "box": [
+      607.0,
+      257.5,
+      637.0,
+      270.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.1,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 825,
+     "t": 27.5,
+     "box": [
+      616.2,
+      257.5,
+      645.8,
+      270.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.0,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 840,
+     "t": 28.0,
+     "box": [
+      626.5,
+      257.5,
+      656.5,
+      270.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.9,
+     "speed_est_mps": 2.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 855,
+     "t": 28.5,
+     "box": [
+      636.5,
+      257.0,
+      668.2,
+      270.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.5,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 870,
+     "t": 29.0,
+     "box": [
+      646.0,
+      257.8,
+      677.5,
+      270.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.1,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 885,
+     "t": 29.5,
+     "box": [
+      654.8,
+      258.0,
+      686.2,
+      270.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 900,
+     "t": 30.0,
+     "box": [
+      634.9,
+      259.0,
+      664.1,
+      271.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.4,
+     "speed_est_mps": 2.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 915,
+     "t": 30.5,
+     "box": [
+      620.0,
+      260.5,
+      648.5,
+      273.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 9.7,
+     "speed_est_mps": 2.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 930,
+     "t": 31.0,
+     "box": [
+      602.0,
+      264.0,
+      630.5,
+      276.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.9,
+     "speed_est_mps": 1.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 945,
+     "t": 31.5,
+     "box": [
+      583.9,
+      264.8,
+      615.4,
+      278.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.4,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 960,
+     "t": 32.0,
+     "box": [
+      580.0,
+      268.0,
+      612.2,
+      281.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.3,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 975,
+     "t": 32.5,
+     "box": [
+      585.6,
+      268.5,
+      620.4,
+      283.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.8,
+     "speed_est_mps": 2.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 990,
+     "t": 33.0,
+     "box": [
+      590.1,
+      270.0,
+      624.8,
+      284.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.6,
+     "speed_est_mps": 2.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 1005,
+     "t": 33.5,
+     "box": [
+      594.8,
+      271.2,
+      631.8,
+      286.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.3,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 1020,
+     "t": 34.0,
+     "box": [
+      599.0,
+      273.0,
+      636.5,
+      288.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.0,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 1035,
+     "t": 34.5,
+     "box": [
+      604.0,
+      273.0,
+      640.0,
+      287.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.9,
+     "speed_est_mps": 1.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 1050,
+     "t": 35.0,
+     "box": [
+      609.1,
+      271.5,
+      648.9,
+      287.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.4,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 1065,
+     "t": 35.5,
+     "box": [
+      615.8,
+      272.0,
+      657.5,
+      288.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 7.2,
+     "speed_est_mps": 2.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 1080,
+     "t": 36.0,
+     "box": [
+      623.4,
+      274.0,
+      664.6,
+      289.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.4,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 1095,
+     "t": 36.5,
+     "box": [
+      629.1,
+      275.0,
+      671.4,
+      290.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.2,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 1110,
+     "t": 37.0,
+     "box": [
+      636.9,
+      275.5,
+      677.4,
+      290.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.0,
+     "speed_est_mps": 1.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 1125,
+     "t": 37.5,
+     "box": [
+      644.0,
+      277.0,
+      682.0,
+      292.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 5.0,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 1140,
+     "t": 38.0,
+     "box": [
+      650.2,
+      277.2,
+      685.2,
+      292.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.7,
+     "speed_est_mps": 1.4,
+     "speed": "slow"
+    },
+    {
+     "frame": 1155,
+     "t": 38.5,
+     "box": [
+      657.1,
+      277.5,
+      689.1,
+      293.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.1,
+     "speed_est_mps": 1.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 1170,
+     "t": 39.0,
+     "box": [
+      664.2,
+      277.0,
+      697.2,
+      294.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.9,
+     "speed_est_mps": 2.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 1185,
+     "t": 39.5,
+     "box": [
+      669.2,
+      273.5,
+      703.8,
+      292.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.5,
+     "speed_est_mps": 2.0,
+     "speed": "slow"
+    }
+   ],
+   "source_track": "O9",
+   "n_sightings": 45,
+   "first_t": 17.5,
+   "last_t": 39.5,
+   "possible_same_as": "m9",
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": true
+  },
+  {
+   "id": "m11",
+   "cls": "car",
+   "cls_alt": null,
+   "note": "black sedan on the residential street at the left, driving left (west) fast across the street; visible only t=19-20.5 s (enters behind a tree, exits at the left frame edge)",
+   "sightings": [
+    {
+     "frame": 570,
+     "t": 19.0,
+     "box": [
+      307.2,
+      585.0,
+      348.8,
+      606.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 66.3,
+     "speed_est_mps": 8.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 585,
+     "t": 19.5,
+     "box": [
+      224.2,
+      593.5,
+      296.8,
+      625.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 77.3,
+     "speed_est_mps": 9.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 600,
+     "t": 20.0,
+     "box": [
+      129.2,
+      614.4,
+      206.5,
+      647.4
+     ],
+     "hard": false,
+     "px_per_0p5s": 91.8,
+     "speed_est_mps": 11.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 615,
+     "t": 20.5,
+     "box": [
+      23.8,
+      636.0,
+      105.6,
+      670.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 96.1,
+     "speed_est_mps": 11.6,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O17",
+   "n_sightings": 4,
+   "first_t": 19.0,
+   "last_t": 20.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m12",
+   "cls": "car",
+   "cls_alt": null,
+   "note": "small maroon/red car driving left (west) along the distant road behind the lot top; small and faint (~18x8 px)",
+   "sightings": [
+    {
+     "frame": 645,
+     "t": 21.5,
+     "box": [
+      900.0,
+      196.5,
+      916.5,
+      204.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 12.4,
+     "speed_est_mps": 6.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 660,
+     "t": 22.0,
+     "box": [
+      886.2,
+      198.0,
+      903.8,
+      206.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 12.7,
+     "speed_est_mps": 6.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 675,
+     "t": 22.5,
+     "box": [
+      864.6,
+      199.1,
+      882.2,
+      207.1
+     ],
+     "hard": true,
+     "px_per_0p5s": 12.5,
+     "speed_est_mps": 6.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 690,
+     "t": 23.0,
+     "box": [
+      842.5,
+      199.0,
+      860.5,
+      207.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 12.1,
+     "speed_est_mps": 6.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 705,
+     "t": 23.5,
+     "box": [
+      830.6,
+      200.0,
+      848.6,
+      208.9
+     ],
+     "hard": true,
+     "px_per_0p5s": 12.7,
+     "speed_est_mps": 6.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 720,
+     "t": 24.0,
+     "box": [
+      817.5,
+      200.0,
+      835.5,
+      209.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 14.0,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 735,
+     "t": 24.5,
+     "box": [
+      801.8,
+      199.9,
+      823.2,
+      211.1
+     ],
+     "hard": true,
+     "px_per_0p5s": 14.5,
+     "speed_est_mps": 7.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 750,
+     "t": 25.0,
+     "box": [
+      789.0,
+      199.0,
+      810.6,
+      210.3
+     ],
+     "hard": true,
+     "px_per_0p5s": 13.3,
+     "speed_est_mps": 6.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 765,
+     "t": 25.5,
+     "box": [
+      777.4,
+      198.2,
+      799.3,
+      209.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 14.5,
+     "speed_est_mps": 7.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 780,
+     "t": 26.0,
+     "box": [
+      763.1,
+      197.3,
+      785.1,
+      208.7
+     ],
+     "hard": true,
+     "px_per_0p5s": 16.0,
+     "speed_est_mps": 8.0,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O15",
+   "n_sightings": 10,
+   "first_t": 21.5,
+   "last_t": 26.0,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m13",
+   "cls": "truck",
+   "cls_alt": "car",
+   "note": "maroon/dark-red pickup or SUV parked at the right side of the lot until t~21.5 s, then pulls out and drives right (east), accelerating and exits at the right frame edge at t~25.5 s",
+   "sightings": [
+    {
+     "frame": 645,
+     "t": 21.5,
+     "box": [
+      1804.0,
+      336.0,
+      1830.0,
+      356.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 3.1,
+     "speed_est_mps": 0.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 660,
+     "t": 22.0,
+     "box": [
+      1812.0,
+      338.8,
+      1840.0,
+      359.2
+     ],
+     "hard": true,
+     "px_per_0p5s": 2.8,
+     "speed_est_mps": 0.7,
+     "speed": "slow"
+    },
+    {
+     "frame": 675,
+     "t": 22.5,
+     "box": [
+      1810.0,
+      340.0,
+      1840.0,
+      361.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 3.2,
+     "speed_est_mps": 0.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 690,
+     "t": 23.0,
+     "box": [
+      1805.0,
+      342.0,
+      1842.0,
+      363.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.3,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 705,
+     "t": 23.5,
+     "box": [
+      1815.0,
+      345.0,
+      1860.0,
+      367.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.3,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 720,
+     "t": 24.0,
+     "box": [
+      1826.0,
+      347.0,
+      1881.0,
+      370.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 10.5,
+     "speed_est_mps": 2.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 735,
+     "t": 24.5,
+     "box": [
+      1848.0,
+      349.5,
+      1908.0,
+      372.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 10.0,
+     "speed_est_mps": 2.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 750,
+     "t": 25.0,
+     "box": [
+      1870.0,
+      352.0,
+      1919.0,
+      374.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 3.4,
+     "speed_est_mps": 0.8,
+     "speed": "slow"
+    },
+    {
+     "frame": 765,
+     "t": 25.5,
+     "box": [
+      1897.0,
+      355.0,
+      1919.0,
+      374.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 2.4,
+     "speed_est_mps": 0.6,
+     "speed": "slow"
+    }
+   ],
+   "source_track": "O6",
+   "n_sightings": 9,
+   "first_t": 21.5,
+   "last_t": 25.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": true,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": false
+  },
+  {
+   "id": "m14",
+   "cls": "car",
+   "cls_alt": "truck",
+   "note": "gray/silver SUV: backs/pulls out of a lot space at the right-center (t=28.5-31 s moves left slowly), turns around (t~32 s, nearly stopped), then drives right (east) accelerating along the lot road and leaves toward the right-bottom by t=39.5 s",
+   "sightings": [
+    {
+     "frame": 855,
+     "t": 28.5,
+     "box": [
+      1175.2,
+      311.8,
+      1215.8,
+      329.2
+     ],
+     "hard": true,
+     "px_per_0p5s": 8.5,
+     "speed_est_mps": 1.9,
+     "speed": "slow"
+    },
+    {
+     "frame": 870,
+     "t": 29.0,
+     "box": [
+      1175.5,
+      311.5,
+      1208.5,
+      329.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 6.7,
+     "speed_est_mps": 1.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 885,
+     "t": 29.5,
+     "box": [
+      1176.4,
+      312.5,
+      1206.6,
+      330.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.8,
+     "speed_est_mps": 1.1,
+     "speed": "slow"
+    },
+    {
+     "frame": 900,
+     "t": 30.0,
+     "box": [
+      1149.2,
+      312.8,
+      1177.8,
+      331.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.5,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 915,
+     "t": 30.5,
+     "box": [
+      1121.2,
+      315.0,
+      1148.5,
+      332.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 3.3,
+     "speed_est_mps": 0.7,
+     "speed": "slow"
+    },
+    {
+     "frame": 930,
+     "t": 31.0,
+     "box": [
+      1100.2,
+      315.8,
+      1124.0,
+      334.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.2,
+     "speed_est_mps": 0.5,
+     "speed": "slow"
+    },
+    {
+     "frame": 945,
+     "t": 31.5,
+     "box": [
+      1082.0,
+      318.2,
+      1103.0,
+      336.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 2.0,
+     "speed_est_mps": 0.4,
+     "speed": "slow"
+    },
+    {
+     "frame": 960,
+     "t": 32.0,
+     "box": [
+      1077.9,
+      321.0,
+      1095.6,
+      340.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 3.1,
+     "speed_est_mps": 0.7,
+     "speed": "slow"
+    },
+    {
+     "frame": 975,
+     "t": 32.5,
+     "box": [
+      1080.4,
+      325.0,
+      1103.5,
+      344.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 4.6,
+     "speed_est_mps": 1.0,
+     "speed": "slow"
+    },
+    {
+     "frame": 990,
+     "t": 33.0,
+     "box": [
+      1082.7,
+      328.0,
+      1111.8,
+      348.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 6.0,
+     "speed_est_mps": 1.3,
+     "speed": "slow"
+    },
+    {
+     "frame": 1005,
+     "t": 33.5,
+     "box": [
+      1089.0,
+      331.5,
+      1120.0,
+      352.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 10.2,
+     "speed_est_mps": 2.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 1020,
+     "t": 34.0,
+     "box": [
+      1099.9,
+      336.0,
+      1137.9,
+      356.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 14.0,
+     "speed_est_mps": 3.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 1035,
+     "t": 34.5,
+     "box": [
+      1115.0,
+      337.2,
+      1155.5,
+      357.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.5,
+     "speed_est_mps": 3.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 1050,
+     "t": 35.0,
+     "box": [
+      1134.2,
+      340.2,
+      1174.8,
+      359.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 18.7,
+     "speed_est_mps": 4.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 1065,
+     "t": 35.5,
+     "box": [
+      1156.8,
+      343.2,
+      1199.8,
+      361.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 21.3,
+     "speed_est_mps": 4.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 1080,
+     "t": 36.0,
+     "box": [
+      1182.0,
+      346.5,
+      1225.5,
+      365.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 22.9,
+     "speed_est_mps": 5.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 1095,
+     "t": 36.5,
+     "box": [
+      1209.0,
+      350.0,
+      1253.5,
+      368.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 25.3,
+     "speed_est_mps": 5.6,
+     "speed": "normal"
+    },
+    {
+     "frame": 1110,
+     "t": 37.0,
+     "box": [
+      1239.5,
+      352.5,
+      1283.5,
+      371.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 26.7,
+     "speed_est_mps": 5.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 1125,
+     "t": 37.5,
+     "box": [
+      1270.2,
+      355.0,
+      1313.2,
+      373.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 28.3,
+     "speed_est_mps": 6.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 1140,
+     "t": 38.0,
+     "box": [
+      1304.8,
+      358.0,
+      1345.2,
+      376.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 31.5,
+     "speed_est_mps": 7.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 1155,
+     "t": 38.5,
+     "box": [
+      1339.0,
+      360.5,
+      1384.0,
+      379.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 33.3,
+     "speed_est_mps": 7.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 1170,
+     "t": 39.0,
+     "box": [
+      1375.5,
+      362.5,
+      1420.5,
+      382.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 33.0,
+     "speed_est_mps": 7.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 1185,
+     "t": 39.5,
+     "box": [
+      1409.5,
+      365.5,
+      1457.5,
+      384.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 32.7,
+     "speed_est_mps": 7.3,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O10",
+   "n_sightings": 23,
+   "first_t": 28.5,
+   "last_t": 39.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": true
+  },
+  {
+   "id": "m15",
+   "cls": "truck",
+   "cls_alt": "car",
+   "note": "black pickup truck entering from the right frame edge at t=32.5 s and driving left (west) along the lot road in front of the red mall for the rest of the clip (about 30-40 px/0.5 s)",
+   "sightings": [
+    {
+     "frame": 975,
+     "t": 32.5,
+     "box": [
+      1882.0,
+      321.0,
+      1919.0,
+      339.5
+     ],
+     "hard": true,
+     "px_per_0p5s": 21.6,
+     "speed_est_mps": 3.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 990,
+     "t": 33.0,
+     "box": [
+      1848.0,
+      321.0,
+      1919.0,
+      342.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 30.9,
+     "speed_est_mps": 4.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 1005,
+     "t": 33.5,
+     "box": [
+      1813.5,
+      323.0,
+      1882.5,
+      343.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 39.7,
+     "speed_est_mps": 5.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 1020,
+     "t": 34.0,
+     "box": [
+      1779.5,
+      325.2,
+      1848.5,
+      344.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 38.2,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 1035,
+     "t": 34.5,
+     "box": [
+      1747.5,
+      320.5,
+      1816.5,
+      343.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 38.0,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 1050,
+     "t": 35.0,
+     "box": [
+      1717.5,
+      324.8,
+      1783.5,
+      342.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 36.6,
+     "speed_est_mps": 5.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 1065,
+     "t": 35.5,
+     "box": [
+      1688.2,
+      324.8,
+      1754.2,
+      343.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 35.4,
+     "speed_est_mps": 4.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 1080,
+     "t": 36.0,
+     "box": [
+      1660.8,
+      327.0,
+      1724.2,
+      344.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 34.0,
+     "speed_est_mps": 4.7,
+     "speed": "normal"
+    },
+    {
+     "frame": 1095,
+     "t": 36.5,
+     "box": [
+      1633.5,
+      327.5,
+      1697.5,
+      345.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 32.2,
+     "speed_est_mps": 4.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 1110,
+     "t": 37.0,
+     "box": [
+      1607.0,
+      327.0,
+      1671.5,
+      343.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 32.1,
+     "speed_est_mps": 4.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 1125,
+     "t": 37.5,
+     "box": [
+      1579.0,
+      326.8,
+      1644.5,
+      344.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 35.7,
+     "speed_est_mps": 5.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 1140,
+     "t": 38.0,
+     "box": [
+      1554.0,
+      327.5,
+      1600.0,
+      345.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 30.1,
+     "speed_est_mps": 4.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 1155,
+     "t": 38.5,
+     "box": [
+      1528.4,
+      327.5,
+      1591.5,
+      345.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 25.1,
+     "speed_est_mps": 3.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 1170,
+     "t": 39.0,
+     "box": [
+      1502.0,
+      328.0,
+      1566.0,
+      346.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.2,
+     "speed_est_mps": 4.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 1185,
+     "t": 39.5,
+     "box": [
+      1476.0,
+      326.0,
+      1540.0,
+      346.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 29.0,
+     "speed_est_mps": 4.0,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O7",
+   "n_sightings": 15,
+   "first_t": 32.5,
+   "last_t": 39.5,
+   "enters_at_frame_edge": true,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": true
+  },
+  {
+   "id": "m16",
+   "cls": "car",
+   "cls_alt": null,
+   "note": "black SUV/hatchback emerging from behind the parked white pickup at the left side of the lot (t=35.5 s) and driving left (west) towards the left edge",
+   "sightings": [
+    {
+     "frame": 1065,
+     "t": 35.5,
+     "box": [
+      331.0,
+      244.0,
+      358.0,
+      256.0
+     ],
+     "hard": true,
+     "px_per_0p5s": 15.4,
+     "speed_est_mps": 5.1,
+     "speed": "normal"
+    },
+    {
+     "frame": 1080,
+     "t": 36.0,
+     "box": [
+      315.0,
+      243.0,
+      342.5,
+      254.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.4,
+     "speed_est_mps": 5.0,
+     "speed": "normal"
+    },
+    {
+     "frame": 1095,
+     "t": 36.5,
+     "box": [
+      298.5,
+      244.8,
+      327.0,
+      257.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 16.1,
+     "speed_est_mps": 5.3,
+     "speed": "normal"
+    },
+    {
+     "frame": 1110,
+     "t": 37.0,
+     "box": [
+      281.0,
+      247.8,
+      309.5,
+      260.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 16.6,
+     "speed_est_mps": 5.4,
+     "speed": "normal"
+    },
+    {
+     "frame": 1125,
+     "t": 37.5,
+     "box": [
+      263.8,
+      250.2,
+      292.8,
+      262.8
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.9,
+     "speed_est_mps": 5.2,
+     "speed": "normal"
+    },
+    {
+     "frame": 1140,
+     "t": 38.0,
+     "box": [
+      247.5,
+      252.1,
+      276.5,
+      266.0
+     ],
+     "hard": false,
+     "px_per_0p5s": 15.1,
+     "speed_est_mps": 4.9,
+     "speed": "normal"
+    },
+    {
+     "frame": 1155,
+     "t": 38.5,
+     "box": [
+      233.0,
+      256.0,
+      260.5,
+      268.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 14.6,
+     "speed_est_mps": 4.8,
+     "speed": "normal"
+    },
+    {
+     "frame": 1170,
+     "t": 39.0,
+     "box": [
+      218.2,
+      258.2,
+      245.8,
+      271.2
+     ],
+     "hard": false,
+     "px_per_0p5s": 13.7,
+     "speed_est_mps": 4.5,
+     "speed": "normal"
+    },
+    {
+     "frame": 1185,
+     "t": 39.5,
+     "box": [
+      205.0,
+      261.0,
+      231.5,
+      272.5
+     ],
+     "hard": false,
+     "px_per_0p5s": 13.0,
+     "speed_est_mps": 4.2,
+     "speed": "normal"
+    }
+   ],
+   "source_track": "O16",
+   "n_sightings": 9,
+   "first_t": 35.5,
+   "last_t": 39.5,
+   "enters_at_frame_edge": false,
+   "leaves_at_frame_edge": false,
+   "visible_at_clip_start": false,
+   "visible_at_clip_end": true
+  }
+ ],
+ "checked_times": [
+  0.5,
+  1.0,
+  1.5,
+  2.0,
+  2.5,
+  3.0,
+  3.5,
+  4.0,
+  4.5,
+  5.0,
+  5.5,
+  6.0,
+  6.5,
+  7.0,
+  7.5,
+  8.0,
+  8.5,
+  9.0,
+  9.5,
+  10.0,
+  10.5,
+  11.0,
+  11.5,
+  12.0,
+  12.5,
+  13.0,
+  13.5,
+  14.0,
+  14.5,
+  15.0,
+  15.5,
+  16.0,
+  16.5,
+  17.0,
+  17.5,
+  18.0,
+  18.5,
+  19.0,
+  19.5,
+  20.0,
+  20.5,
+  21.0,
+  21.5,
+  22.0,
+  22.5,
+  23.0,
+  23.5,
+  24.0,
+  24.5,
+  25.0,
+  25.5,
+  26.0,
+  26.5,
+  27.0,
+  27.5,
+  28.0,
+  28.5,
+  29.0,
+  29.5,
+  30.0,
+  30.5,
+  31.0,
+  31.5,
+  32.0,
+  32.5,
+  33.0,
+  33.5,
+  34.0,
+  34.5,
+  35.0,
+  35.5,
+  36.0,
+  36.5,
+  37.0,
+  37.5,
+  38.0,
+  38.5,
+  39.0,
+  39.5
+ ],
+ "notes": "METHOD. 81 frames were sampled every 0.5 s (frames 0,15,...,1185 plus 1199 for t=40 s). Per frame: SIFT (9000 features, top 110 px masked) + RANSAC homography (3 px) to the neighbours at +-0.5 s and +-1.0 s (92-97% inliers; median feature residual 0.3-0.5 px, p95 2-5 px). Proposals: (1) motion-compensated differences (min over the two directions, same-sign filter, blobs of vehicle/person size) and a dense-flow anomaly map (Farneback after homography warp, local-median flow removed); (2) YOLO VisDrone-yolo26x on 8 overlapping 640 px tiles per frame at imgsz 1280, conf 0.15 (8271 boxes over t=0.5..39.5), each box template-searched (NCC) in the +-0.5/+-1.0 s warped neighbours; boxes whose displacement beats the local static level in both directions (572 flagged) were linked into 97 chains. Every chain, every residual flow chain in the upper 2/3 of the frame, and lower-frame flow overlays at 8 times were inspected on crop strips/sheets of warped frames (sheets/L_*.jpg, un1_*.jpg, anom1_*.jpg, ped2_*.jpg, V1..V5, G*.jpg, H1*.jpg, W1*.jpg, zones/*.jpg). Verified movers were then tracked every 0.5 s (detector boxes where the detector fired, NCC template tracking / hand-placed boxes elsewhere; 'hard': true marks sightings that are interpolated, template-tracked, hand-placed, partially occluded (hedge, tree, roof canopy, poles) or cut by the frame edge; their boxes are +-3-6 px accurate, others are detector boxes). Boxes are clipped to the frame. Frame k is at t=k/30. Only t=0.5..39.5 s are annotated (frames 15..1185): objects already moving at t=0 (m1, m2, m3, m4 and probably more) or still in view at t=40 are visible slightly outside the annotated window.\nPARALLAX / STATIC LEVEL. For parked cars near the image centre the NCC-search displacement against +-0.5 s is p50=0, p90=1.0, p95=1.4 px (after homography); it grows to 3-8 px per 0.5 s near the image edges and for tall/near objects (roof vents, chimneys, poles, tree crowns, building edges). Parked car at the right edge (1840,550) drifts 8 px/0.5 s together with the building next to it; a parked trailer at (1704,400) drifts 2 px/0.5 s. True movers here move 10-60 px/0.5 s, the slow ones 3-9 px/0.5 s.\nSPEED. speed_est_mps = ground-relative image displacement per 0.5 s converted with 4.5 m = the object's median box length (crude, foreshortening ignored; +-40%). 'slow' = under 2 m/s. Objects that decelerate to a stop (m1 start, m7 stop line, m6, m14 turning point, m13 start) have slow sightings inside an otherwise 'normal' track.\nCLASSES. Pickup trucks are labelled 'truck' with cls_alt 'car' (the detector calls them car/truck inconsistently); SUVs/sedans 'car'.\nNOT INCLUDED / REJECTED. All roof vents, chimneys, poles, tree/bush clumps, stop sign, red 'parked' car in driveway (~(760,790)), parked car next to the right-edge building (1800,540), parked grey trailer at (1704,400), black pickup in front of the mall doors (~(640,262), measured static over t=30-38 s by NCC drift) were checked and rejected as static/parallax. No pedestrian or cyclist could be verified (no detector box of class pedestrian/people/bicycle/motor had a consistent ground-relative displacement; persons near the mall doors are tiny, <=8x15 px, and none was seen to translate): the list contains vehicles only. Possible extra slow movers NOT listed because the displacement stayed within ~1-2 px per 0.5 s: a gray truck at ~(904,230) t=3-7 s (maybe creeping left at ~1.3 px/0.5 s) and several cars manoeuvring in the dense far lot at t=20-40 s.\nUNCERTAIN CASES. m10/m9: the light-gray SUV/pickup of the 'O14b' track drives left until t~15 s then disappears behind the foreground roof edge, and a white pickup appears at the same spot at t=16.5-17.5 s and drives right for the rest of the clip - almost certainly the same vehicle (U-turn), kept as two objects with possible_same_as. m8 (small dark car behind the apartment block) and the sightings of m2 at t=0.5-1.0 s (behind a roof canopy) use hand-placed boxes. m3 (black pickup, t=5.5-9 s) and m4 are partly hidden behind hedge/poles, boxes there are approximate. m12 is tiny (~18x8 px) and faint. m13 starts from standstill at t~22 s (first moving sighting t=22.0 s). Object identity continuity inside the dense lot (m10, m16, m4, m3) was judged by eye."
+}

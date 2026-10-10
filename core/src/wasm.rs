@@ -25,7 +25,8 @@ impl WasmEdge {
         let cfg: EdgeConfig = if config_json.trim().is_empty() { EdgeConfig::default() } else { serde_json::from_str(config_json).map_err(js)? };
         Ok(WasmEdge { inner: Edge::new(cfg) })
     }
-    /// `tracks_json`: `[{"id":1,"class":2,"e":..,"n":..,"ve":..,"vn":..,"conf":200,"ce":null,"bbox":[u,v,w,h]|null}]`;
+    /// `tracks_json`: `[{"id":1,"class":2,"e":..,"n":..,"ve":..,"vn":..,"conf":200,"ce":null,"bbox":[u,v,w,h]|null,
+    /// "u":metres above the origin|null,"yaw":degrees true|null}]` (`u` and `yaw` optional, null or absent = unknown);
     /// `ego_json`: `EgoInput` fields. Returns packed frames (u16-LE length prefix each).
     pub fn tick(&mut self, tracks_json: &str, ego_json: &str, now: u32) -> Result<Vec<u8>, JsValue> {
         let tracks: Vec<Track> = serde_json::from_str(tracks_json).map_err(js)?;

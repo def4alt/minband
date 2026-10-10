@@ -1,0 +1,9719 @@
+{
+ "clip": "runs/recon3d/labrador/clip.mp4",
+ "width": 1920,
+ "height": 1080,
+ "fps": 30,
+ "frames": [
+  {
+   "frame": 75,
+   "t": 2.5,
+   "objects": [
+    {
+     "box": [
+      673.5,
+      636.6,
+      743.7,
+      669.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      1371.0,
+      443.2,
+      1419.1,
+      463.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": true,
+     "mover": "m1"
+    },
+    {
+     "box": [
+      1740.6,
+      504.7,
+      1798.0,
+      528.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": false
+    },
+    {
+     "box": [
+      1561.4,
+      540.8,
+      1650.8,
+      578.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": true,
+     "mover": "m2"
+    },
+    {
+     "box": [
+      1146.7,
+      263.8,
+      1171.3,
+      276.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      1192.4,
+      266.1,
+      1219.4,
+      277.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      1563.4,
+      283.2,
+      1589.4,
+      297.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": false
+    },
+    {
+     "box": [
+      1619.9,
+      284.7,
+      1651.3,
+      301.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      367.7,
+      357.2,
+      387.1,
+      375.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      294.0,
+      421.0,
+      316.3,
+      438.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": false
+    },
+    {
+     "box": [
+      1467.9,
+      274.6,
+      1499.7,
+      290.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      1593.7,
+      285.8,
+      1617.9,
+      298.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      846.0,
+      340.0,
+      884.0,
+      361.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      883.0,
+      245.7,
+      906.8,
+      257.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": true,
+     "mover": "m4"
+    },
+    {
+     "box": [
+      1536.1,
+      282.0,
+      1561.6,
+      296.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      1420.0,
+      272.0,
+      1451.0,
+      288.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      966.2,
+      245.0,
+      986.2,
+      257.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": true,
+     "mover": "m5"
+    },
+    {
+     "box": [
+      404.6,
+      296.7,
+      438.0,
+      308.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      1272.5,
+      269.8,
+      1298.2,
+      280.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      1446.2,
+      274.7,
+      1470.0,
+      288.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      85.8,
+      981.2,
+      233.8,
+      1059.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": false
+    },
+    {
+     "box": [
+      1221.6,
+      267.5,
+      1246.8,
+      278.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      931.1,
+      265.9,
+      961.0,
+      280.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      19.9,
+      431.6,
+      42.9,
+      454.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": false
+    },
+    {
+     "box": [
+      1079.0,
+      262.0,
+      1105.0,
+      277.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      561.3,
+      383.9,
+      586.1,
+      402.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      1169.3,
+      265.9,
+      1194.3,
+      277.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": false
+    },
+    {
+     "box": [
+      857.0,
+      249.0,
+      881.0,
+      261.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      998.3,
+      268.0,
+      1035.5,
+      281.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": true,
+     "mover": "m3"
+    },
+    {
+     "box": [
+      542.0,
+      279.0,
+      572.6,
+      290.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      855.0,
+      232.0,
+      884.0,
+      244.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": false
+    },
+    {
+     "box": [
+      825.0,
+      232.0,
+      857.0,
+      242.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      887.9,
+      234.1,
+      918.1,
+      245.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      1108.0,
+      265.0,
+      1145.0,
+      281.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      1039.8,
+      263.3,
+      1072.6,
+      278.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      843.0,
+      248.0,
+      860.0,
+      259.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      478.0,
+      293.0,
+      512.0,
+      306.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": false
+    },
+    {
+     "box": [
+      1099.7,
+      262.7,
+      1120.0,
+      275.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      1031.5,
+      258.2,
+      1056.7,
+      271.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      1596.1,
+      364.5,
+      1630.7,
+      391.9
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      841.5,
+      224.7,
+      863.3,
+      235.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": true,
+     "mover": "m6"
+    },
+    {
+     "box": [
+      710.4,
+      229.6,
+      730.6,
+      240.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      833.0,
+      247.0,
+      848.0,
+      257.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 43",
+     "moving": false
+    },
+    {
+     "box": [
+      1009.8,
+      256.5,
+      1037.8,
+      270.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 45",
+     "moving": false
+    },
+    {
+     "box": [
+      1244.8,
+      266.5,
+      1268.8,
+      280.1
+     ],
+     "cls": "van",
+     "hard": true,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      817.0,
+      246.0,
+      836.0,
+      256.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": false
+    },
+    {
+     "box": [
+      497.1,
+      203.0,
+      513.7,
+      210.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      1062.8,
+      260.1,
+      1086.3,
+      270.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      803.0,
+      227.0,
+      817.0,
+      237.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 50",
+     "moving": false
+    },
+    {
+     "box": [
+      722.0,
+      232.0,
+      737.0,
+      243.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      757.0,
+      224.0,
+      772.0,
+      235.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      646.0,
+      212.0,
+      662.0,
+      222.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 53",
+     "moving": false
+    },
+    {
+     "box": [
+      787.0,
+      227.0,
+      812.0,
+      238.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      526.1,
+      200.0,
+      541.9,
+      206.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      1826.4,
+      290.6,
+      1855.8,
+      304.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 56",
+     "moving": false
+    },
+    {
+     "box": [
+      597.3,
+      203.5,
+      609.2,
+      210.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": false
+    },
+    {
+     "box": [
+      816.0,
+      224.0,
+      841.0,
+      236.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      1809.0,
+      295.0,
+      1833.0,
+      308.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      735.0,
+      221.0,
+      756.0,
+      232.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      770.0,
+      225.0,
+      786.0,
+      237.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 65",
+     "moving": false
+    },
+    {
+     "box": [
+      697.6,
+      220.0,
+      717.1,
+      229.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 68",
+     "moving": false
+    },
+    {
+     "box": [
+      688.0,
+      217.0,
+      700.0,
+      230.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      575.0,
+      204.8,
+      588.3,
+      213.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 71",
+     "moving": false
+    },
+    {
+     "box": [
+      1315.5,
+      178.6,
+      1344.9,
+      189.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 73",
+     "moving": false
+    },
+    {
+     "box": [
+      630.0,
+      211.0,
+      648.0,
+      220.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 74",
+     "moving": false
+    },
+    {
+     "box": [
+      516.4,
+      198.7,
+      531.9,
+      206.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 75",
+     "moving": false
+    },
+    {
+     "box": [
+      310.5,
+      277.2,
+      337.5,
+      286.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 76",
+     "moving": false
+    },
+    {
+     "box": [
+      624.0,
+      298.0,
+      639.0,
+      310.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 78",
+     "moving": false
+    },
+    {
+     "box": [
+      657.0,
+      215.0,
+      691.0,
+      226.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 79",
+     "moving": false
+    },
+    {
+     "box": [
+      1344.0,
+      162.0,
+      1361.0,
+      169.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      471.9,
+      199.9,
+      488.5,
+      207.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 81",
+     "moving": false
+    },
+    {
+     "box": [
+      722.0,
+      222.0,
+      737.0,
+      232.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 83",
+     "moving": false
+    },
+    {
+     "box": [
+      588.4,
+      203.8,
+      598.5,
+      211.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 84",
+     "moving": false
+    },
+    {
+     "box": [
+      447.0,
+      281.0,
+      491.0,
+      303.0
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      618.0,
+      211.0,
+      634.0,
+      220.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 87",
+     "moving": false
+    },
+    {
+     "box": [
+      702.0,
+      215.0,
+      726.0,
+      228.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 88",
+     "moving": false
+    },
+    {
+     "box": [
+      466.0,
+      256.0,
+      484.0,
+      271.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 89",
+     "moving": false
+    },
+    {
+     "box": [
+      894.0,
+      226.0,
+      913.0,
+      234.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 91",
+     "moving": false
+    },
+    {
+     "box": [
+      607.8,
+      204.2,
+      618.0,
+      211.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 92",
+     "moving": false
+    },
+    {
+     "box": [
+      464.8,
+      199.1,
+      480.6,
+      206.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 93",
+     "moving": false
+    },
+    {
+     "box": [
+      561.1,
+      206.8,
+      575.0,
+      214.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 96",
+     "moving": false
+    },
+    {
+     "box": [
+      594.1,
+      210.8,
+      613.5,
+      219.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 103",
+     "moving": false
+    },
+    {
+     "box": [
+      485.7,
+      201.4,
+      500.3,
+      208.7
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 105",
+     "moving": false
+    },
+    {
+     "box": [
+      637.0,
+      199.0,
+      660.0,
+      209.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 112",
+     "moving": false
+    },
+    {
+     "box": [
+      620.0,
+      201.0,
+      637.0,
+      210.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 115",
+     "moving": false
+    },
+    {
+     "box": [
+      752.0,
+      220.0,
+      773.0,
+      228.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 116",
+     "moving": false
+    },
+    {
+     "box": [
+      475,
+      249,
+      490,
+      259
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark green car partly hidden behind dark car 89",
+     "moving": false
+    },
+    {
+     "box": [
+      1700,
+      168,
+      1712,
+      177
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: small dark car with white top on far road, right side",
+     "moving": false
+    },
+    {
+     "box": [
+      1698,
+      159,
+      1712,
+      167
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark car at far driveway, right side",
+     "moving": false
+    },
+    {
+     "box": [
+      1394,
+      160,
+      1407,
+      166
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark car at house driveway far town",
+     "moving": false
+    },
+    {
+     "box": [
+      662,
+      213,
+      688,
+      220
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: white car mostly hidden behind black pickup 79 (white roof visible above it)",
+     "moving": false
+    },
+    {
+     "box": [
+      735,
+      232,
+      750,
+      243
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: cream car right of white car 51",
+     "moving": false
+    },
+    {
+     "box": [
+      810,
+      244,
+      819,
+      255
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark car mostly hidden left of white car 47",
+     "moving": false
+    },
+    {
+     "box": [
+      949,
+      266,
+      959,
+      279
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "added: person in red at the open tailgate of silver van 23",
+     "moving": false
+    }
+   ],
+   "ignore": [],
+   "ignore_est": 0
+  },
+  {
+   "frame": 225,
+   "t": 7.5,
+   "objects": [
+    {
+     "box": [
+      720.0,
+      767.0,
+      801.7,
+      811.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      1587.9,
+      511.7,
+      1646.9,
+      547.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": true,
+     "mover": "m2"
+    },
+    {
+     "box": [
+      1776.8,
+      470.5,
+      1829.4,
+      493.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": true,
+     "mover": "m7"
+    },
+    {
+     "box": [
+      1306.9,
+      472.2,
+      1355.3,
+      493.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": true,
+     "mover": "m1"
+    },
+    {
+     "box": [
+      1550.4,
+      289.0,
+      1584.0,
+      305.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      1247.8,
+      280.0,
+      1276.6,
+      292.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      265.6,
+      463.5,
+      291.4,
+      484.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": false
+    },
+    {
+     "box": [
+      1526.7,
+      289.8,
+      1552.1,
+      304.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      1628.6,
+      297.2,
+      1655.4,
+      313.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      1722.8,
+      300.4,
+      1755.8,
+      319.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": false
+    },
+    {
+     "box": [
+      1197.5,
+      277.8,
+      1223.9,
+      290.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      350.6,
+      385.9,
+      373.6,
+      406.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      1692.8,
+      301.9,
+      1717.9,
+      316.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      480.0,
+      311.1,
+      509.7,
+      327.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": false
+    },
+    {
+     "box": [
+      1334.7,
+      284.0,
+      1362.7,
+      296.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      874.6,
+      261.4,
+      904.9,
+      274.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      965.0,
+      280.1,
+      996.5,
+      296.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": false
+    },
+    {
+     "box": [
+      1658.4,
+      298.4,
+      1687.2,
+      314.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      1497.9,
+      286.4,
+      1530.8,
+      303.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      393.2,
+      316.0,
+      429.8,
+      329.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      1001.5,
+      277.2,
+      1031.2,
+      290.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": true,
+     "mover": "m4"
+    },
+    {
+     "box": [
+      1221.5,
+      279.5,
+      1248.7,
+      292.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      881.2,
+      369.3,
+      921.8,
+      388.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      1116.0,
+      276.2,
+      1142.9,
+      289.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": false
+    },
+    {
+     "box": [
+      540.7,
+      295.4,
+      574.2,
+      307.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      910.2,
+      244.7,
+      942.6,
+      255.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      1278.6,
+      281.4,
+      1307.0,
+      293.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": false
+    },
+    {
+     "box": [
+      566.5,
+      417.6,
+      595.2,
+      439.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      1081.1,
+      278.2,
+      1119.4,
+      292.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": false
+    },
+    {
+     "box": [
+      1726.1,
+      394.6,
+      1767.5,
+      425.5
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      1301.3,
+      280.9,
+      1331.1,
+      294.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": false
+    },
+    {
+     "box": [
+      1071.2,
+      271.6,
+      1106.0,
+      286.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      1161.1,
+      280.6,
+      1195.2,
+      296.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      1047.3,
+      270.4,
+      1076.1,
+      284.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      879.0,
+      244.2,
+      906.2,
+      254.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      841.3,
+      241.8,
+      871.8,
+      252.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      838.1,
+      257.3,
+      860.1,
+      268.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": false
+    },
+    {
+     "box": [
+      491,
+      210,
+      503,
+      218
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      797.2,
+      237.6,
+      832.4,
+      248.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      521.9,
+      207.7,
+      539.1,
+      214.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      851.6,
+      258.8,
+      869.6,
+      270.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": false
+    },
+    {
+     "box": [
+      861.4,
+      260.4,
+      883.2,
+      272.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      720.8,
+      239.9,
+      741.4,
+      251.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 43",
+     "moving": false
+    },
+    {
+     "box": [
+      646.7,
+      221.1,
+      667.2,
+      230.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 44",
+     "moving": false
+    },
+    {
+     "box": [
+      832.5,
+      235.1,
+      859.5,
+      247.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 45",
+     "moving": false
+    },
+    {
+     "box": [
+      1145,
+      276,
+      1163,
+      289
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      766,
+      236,
+      781,
+      245
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": false
+    },
+    {
+     "box": [
+      733.0,
+      241.3,
+      758.4,
+      252.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      596.8,
+      211.0,
+      610.1,
+      218.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      1104.6,
+      273.3,
+      1128.4,
+      284.7
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 50",
+     "moving": false
+    },
+    {
+     "box": [
+      560.1,
+      215.5,
+      573.7,
+      222.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      866.1,
+      232.9,
+      891.2,
+      243.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      1351.9,
+      184.1,
+      1381.8,
+      193.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 53",
+     "moving": false
+    },
+    {
+     "box": [
+      622.7,
+      208.0,
+      639.9,
+      217.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      745.7,
+      232.8,
+      767.8,
+      242.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      988.0,
+      241.9,
+      1010.5,
+      254.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": true,
+     "mover": "m5"
+    },
+    {
+     "box": [
+      461.2,
+      271.6,
+      476.4,
+      285.7
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      781.4,
+      235.9,
+      800.3,
+      245.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 60",
+     "moving": false
+    },
+    {
+     "box": [
+      830.3,
+      255.6,
+      848.9,
+      266.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      631,
+      221,
+      646,
+      229
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      705.3,
+      230.0,
+      729.4,
+      239.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 63",
+     "moving": false
+    },
+    {
+     "box": [
+      514.5,
+      206.0,
+      528.9,
+      213.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 64",
+     "moving": false
+    },
+    {
+     "box": [
+      528.5,
+      216.6,
+      545.8,
+      223.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 65",
+     "moving": true,
+     "mover": "m8"
+    },
+    {
+     "box": [
+      663.6,
+      223.5,
+      687.3,
+      234.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 66",
+     "moving": false
+    },
+    {
+     "box": [
+      631.2,
+      317.9,
+      647.4,
+      330.3
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 67",
+     "moving": false
+    },
+    {
+     "box": [
+      292.3,
+      292.9,
+      321.1,
+      305.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 69",
+     "moving": false
+    },
+    {
+     "box": [
+      1523.7,
+      286.4,
+      1530.9,
+      300.5
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      480.6,
+      208.8,
+      496.1,
+      216.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 74",
+     "moving": false
+    },
+    {
+     "box": [
+      439.7,
+      298.1,
+      501.8,
+      326.5
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 75",
+     "moving": false
+    },
+    {
+     "box": [
+      577.5,
+      212.6,
+      588.2,
+      220.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 76",
+     "moving": false
+    },
+    {
+     "box": [
+      608.7,
+      211.3,
+      624.0,
+      219.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 77",
+     "moving": false
+    },
+    {
+     "box": [
+      698,
+      226,
+      709,
+      240
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 79",
+     "moving": false
+    },
+    {
+     "box": [
+      859.7,
+      239.1,
+      878.8,
+      248.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      604.0,
+      219.4,
+      621.8,
+      227.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 81",
+     "moving": false
+    },
+    {
+     "box": [
+      750,
+      228,
+      766,
+      237
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 82",
+     "moving": false
+    },
+    {
+     "box": [
+      589.0,
+      211.7,
+      599.1,
+      219.3
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 83",
+     "moving": false
+    },
+    {
+     "box": [
+      744.3,
+      244.6,
+      765.9,
+      254.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 85",
+     "moving": false
+    },
+    {
+     "box": [
+      704.7,
+      224.0,
+      725.5,
+      232.7
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      732.2,
+      229.7,
+      753.4,
+      241.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 87",
+     "moving": false
+    },
+    {
+     "box": [
+      621,
+      220,
+      633,
+      228
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 90",
+     "moving": false
+    },
+    {
+     "box": [
+      465.9,
+      207.3,
+      483.6,
+      214.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 92",
+     "moving": false
+    },
+    {
+     "box": [
+      792,
+      239,
+      802,
+      247
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 94",
+     "moving": false
+    },
+    {
+     "box": [
+      1412.8,
+      194.2,
+      1416.9,
+      202.8
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 96",
+     "moving": false
+    },
+    {
+     "box": [
+      882.1,
+      366.7,
+      901.4,
+      377.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 98",
+     "moving": false
+    },
+    {
+     "box": [
+      634.0,
+      208.8,
+      649.1,
+      217.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 99",
+     "moving": false
+    },
+    {
+     "box": [
+      764,
+      229,
+      782,
+      237
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 100",
+     "moving": false
+    },
+    {
+     "box": [
+      503.7,
+      205.8,
+      518.2,
+      213.4
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 103",
+     "moving": false
+    },
+    {
+     "box": [
+      451.2,
+      314.5,
+      470.7,
+      326.2
+     ],
+     "cls": "other",
+     "hard": true,
+     "tag": "cand 105",
+     "moving": false
+    },
+    {
+     "box": [
+      1156.1,
+      282.7,
+      1173.3,
+      293.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 113",
+     "moving": false
+    },
+    {
+     "box": [
+      320,
+      443,
+      342,
+      458
+     ],
+     "cls": "other",
+     "hard": true,
+     "tag": "cand 117",
+     "moving": false
+    },
+    {
+     "box": [
+      456,
+      206,
+      467,
+      214
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 122",
+     "moving": false
+    },
+    {
+     "box": [
+      646.8,
+      207.9,
+      660.9,
+      216.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 123",
+     "moving": false
+    },
+    {
+     "box": [
+      851.5,
+      229.8,
+      875.7,
+      240.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 126",
+     "moving": false
+    },
+    {
+     "box": [
+      800.2,
+      232.3,
+      825.0,
+      242.7
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 127",
+     "moving": false
+    },
+    {
+     "box": [
+      1446,
+      166,
+      1462,
+      171
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far town road, dark low car under white townhouses",
+     "moving": false
+    },
+    {
+     "box": [
+      1745,
+      162,
+      1760,
+      169
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far town road right, dark car",
+     "moving": false
+    },
+    {
+     "box": [
+      1779,
+      166,
+      1792,
+      173
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far town road right, small car",
+     "moving": false
+    },
+    {
+     "box": [
+      1264.0,
+      295.0,
+      1310.0,
+      310.0
+     ],
+     "cls": "truck",
+     "hard": true,
+     "moving": true,
+     "mover": "m3",
+     "tag": "added from the mover inventory"
+    }
+   ],
+   "ignore": [],
+   "ignore_est": 0
+  },
+  {
+   "frame": 375,
+   "t": 12.5,
+   "objects": [
+    {
+     "box": [
+      795.4,
+      912.9,
+      897.5,
+      972.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      1689.2,
+      558.4,
+      1753.5,
+      587.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": true,
+     "mover": "m7"
+    },
+    {
+     "box": [
+      1627.7,
+      307.5,
+      1661.3,
+      324.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": false
+    },
+    {
+     "box": [
+      1358.1,
+      298.3,
+      1388.1,
+      312.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": false
+    },
+    {
+     "box": [
+      393.4,
+      337.8,
+      432.7,
+      351.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      923.4,
+      397.1,
+      965.2,
+      417.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      1300.4,
+      296.8,
+      1330.8,
+      310.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": false
+    },
+    {
+     "box": [
+      1600.6,
+      308.0,
+      1627.6,
+      323.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      1569.7,
+      303.6,
+      1604.2,
+      322.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      1161.3,
+      293.0,
+      1188.1,
+      306.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": false
+    },
+    {
+     "box": [
+      255.1,
+      506.7,
+      283.1,
+      530.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      1246.8,
+      294.7,
+      1274.4,
+      308.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      1817.2,
+      319.9,
+      1851.1,
+      340.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      1085.6,
+      448.2,
+      1137.7,
+      468.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": true,
+     "mover": "m1"
+    },
+    {
+     "box": [
+      900.8,
+      276.8,
+      933.0,
+      289.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      1713.7,
+      317.0,
+      1741.1,
+      333.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      1334.5,
+      298.9,
+      1363.3,
+      311.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": false
+    },
+    {
+     "box": [
+      480.0,
+      331.8,
+      518.9,
+      348.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      1783.8,
+      320.9,
+      1810.0,
+      336.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      348.2,
+      415.2,
+      372.5,
+      438.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      584.2,
+      452.9,
+      615.4,
+      476.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": false
+    },
+    {
+     "box": [
+      1403,
+      301,
+      1422,
+      315
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      1001.1,
+      297.9,
+      1034.0,
+      314.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      1123.3,
+      294.9,
+      1161.8,
+      310.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": false
+    },
+    {
+     "box": [
+      935.7,
+      258.0,
+      968.6,
+      270.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      1746.2,
+      317.5,
+      1778.4,
+      335.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      1652.5,
+      323.7,
+      1709.6,
+      344.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": true,
+     "mover": "m3"
+    },
+    {
+     "box": [
+      863.1,
+      254.6,
+      894.1,
+      266.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      1273.5,
+      295.9,
+      1300.6,
+      309.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": false
+    },
+    {
+     "box": [
+      1086.6,
+      286.3,
+      1116.5,
+      301.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      550.2,
+      312.4,
+      586.1,
+      327.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": false
+    },
+    {
+     "box": [
+      875.8,
+      273.8,
+      899.6,
+      286.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      887.3,
+      275.8,
+      911.7,
+      288.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      1191.0,
+      292.7,
+      1224.3,
+      307.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      817.2,
+      250.5,
+      852.4,
+      262.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      1209.9,
+      296.4,
+      1245.2,
+      314.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": false
+    },
+    {
+     "box": [
+      861.8,
+      271.9,
+      884.6,
+      283.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      495.1,
+      221.0,
+      513.0,
+      228.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      902.2,
+      258.4,
+      929.9,
+      269.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      525.6,
+      217.4,
+      543.3,
+      224.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": false
+    },
+    {
+     "box": [
+      736,
+      254,
+      753,
+      266
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      1384.1,
+      193.1,
+      1415.7,
+      203.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 43",
+     "moving": false
+    },
+    {
+     "box": [
+      656.2,
+      232.3,
+      678.4,
+      242.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      1144.8,
+      289.1,
+      1172.5,
+      302.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": false
+    },
+    {
+     "box": [
+      603.8,
+      221.3,
+      617.0,
+      229.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      761.4,
+      245.1,
+      785.4,
+      255.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 50",
+     "moving": false
+    },
+    {
+     "box": [
+      853.1,
+      248.4,
+      884.1,
+      260.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      785.2,
+      245.5,
+      811.4,
+      257.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      719.6,
+      242.2,
+      741.3,
+      252.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      749.2,
+      254.7,
+      769.6,
+      266.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 56",
+     "moving": false
+    },
+    {
+     "box": [
+      938.3,
+      248.6,
+      964.0,
+      258.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": false
+    },
+    {
+     "box": [
+      678.1,
+      233.9,
+      703.9,
+      243.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      761.6,
+      255.9,
+      783.2,
+      268.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 60",
+     "moving": false
+    },
+    {
+     "box": [
+      631.0,
+      219.2,
+      648.0,
+      228.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      884.6,
+      241.7,
+      906.1,
+      253.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      467.5,
+      217.4,
+      485.8,
+      225.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 64",
+     "moving": false
+    },
+    {
+     "box": [
+      646.0,
+      231.5,
+      662.0,
+      240.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 65",
+     "moving": false
+    },
+    {
+     "box": [
+      506.2,
+      214.5,
+      521.7,
+      221.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 67",
+     "moving": false
+    },
+    {
+     "box": [
+      515.8,
+      215.5,
+      532.8,
+      223.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 69",
+     "moving": false
+    },
+    {
+     "box": [
+      565.2,
+      225.9,
+      580.3,
+      234.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 75",
+     "moving": false
+    },
+    {
+     "box": [
+      642.4,
+      218.8,
+      658.9,
+      227.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 76",
+     "moving": false
+    },
+    {
+     "box": [
+      579.0,
+      226.0,
+      599.6,
+      236.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 78",
+     "moving": true,
+     "mover": "m9"
+    },
+    {
+     "box": [
+      653.0,
+      218.2,
+      670.0,
+      227.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 81",
+     "moving": false
+    },
+    {
+     "box": [
+      615.1,
+      221.9,
+      626.1,
+      229.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 82",
+     "moving": false
+    },
+    {
+     "box": [
+      458.7,
+      216.7,
+      476.6,
+      223.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 89",
+     "moving": false
+    },
+    {
+     "box": [
+      604.0,
+      230.5,
+      629.9,
+      240.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 91",
+     "moving": false
+    },
+    {
+     "box": [
+      853.6,
+      270.8,
+      868.6,
+      281.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 118",
+     "moving": false
+    },
+    {
+     "box": [
+      1117,
+      286,
+      1147,
+      296
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      1111,
+      291,
+      1125,
+      303
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      740,
+      240,
+      763,
+      254
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 44",
+     "moving": false
+    },
+    {
+     "box": [
+      799,
+      246.5,
+      815,
+      259.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      710,
+      239,
+      721,
+      251
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 59",
+     "moving": false
+    },
+    {
+     "box": [
+      703,
+      236,
+      714,
+      247
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 73",
+     "moving": false
+    },
+    {
+     "box": [
+      631,
+      230.5,
+      644,
+      241
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 87",
+     "moving": false
+    },
+    {
+     "box": [
+      1278,
+      311,
+      1321,
+      327
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 68",
+     "moving": true,
+     "mover": "m4"
+    },
+    {
+     "box": [
+      443,
+      318,
+      496,
+      343
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 93",
+     "moving": false
+    },
+    {
+     "box": [
+      1851.7,
+      426.5,
+      1898.7,
+      461.3
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      651,
+      339,
+      669,
+      353
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      466,
+      279,
+      482,
+      303
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 108",
+     "moving": false
+    },
+    {
+     "box": [
+      452,
+      335,
+      478,
+      349
+     ],
+     "cls": "other",
+     "hard": true,
+     "tag": "cand 104",
+     "moving": false
+    },
+    {
+     "box": [
+      285.4,
+      311.6,
+      317.5,
+      323.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 83",
+     "moving": false
+    },
+    {
+     "box": [
+      214.1,
+      318.4,
+      239.9,
+      330.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 110",
+     "moving": false
+    },
+    {
+     "box": [
+      924.3,
+      394.0,
+      942.5,
+      404.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 114",
+     "moving": false
+    },
+    {
+     "box": [
+      1766,
+      315,
+      1779,
+      331
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 113",
+     "moving": false
+    },
+    {
+     "box": [
+      1424.9,
+      184.9,
+      1429.6,
+      193.8
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 96",
+     "moving": false
+    },
+    {
+     "box": [
+      482.5,
+      219.2,
+      497.4,
+      226.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 77",
+     "moving": false
+    },
+    {
+     "box": [
+      720.0,
+      235.3,
+      741.1,
+      245.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 63",
+     "moving": false
+    },
+    {
+     "box": [
+      779.4,
+      241.2,
+      805.1,
+      252.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 71",
+     "moving": false
+    },
+    {
+     "box": [
+      769.5,
+      240.5,
+      788.0,
+      250.3
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      584.0,
+      223.3,
+      597.7,
+      230.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 90",
+     "moving": false
+    },
+    {
+     "box": [
+      816.8,
+      245.9,
+      837.2,
+      254.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 97",
+     "moving": false
+    },
+    {
+     "box": [
+      668.1,
+      218.1,
+      683.2,
+      226.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 106",
+     "moving": false
+    },
+    {
+     "box": [
+      623.5,
+      222.2,
+      634.9,
+      229.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 116",
+     "moving": false
+    },
+    {
+     "box": [
+      623,
+      230,
+      636,
+      237
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 103",
+     "moving": false
+    },
+    {
+     "box": [
+      1450.4,
+      203.3,
+      1454.6,
+      212.8
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 107",
+     "moving": false
+    },
+    {
+     "box": [
+      884,
+      252,
+      901,
+      262
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: red car mostly hidden behind black pickup #28, right side visible",
+     "moving": false
+    },
+    {
+     "box": [
+      826,
+      241,
+      845,
+      249
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark car at the building front behind white car #97",
+     "moving": false
+    },
+    {
+     "box": [
+      809,
+      251,
+      819,
+      261
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: red car front between white car #70 and navy pickup #36",
+     "moving": false
+    },
+    {
+     "box": [
+      1203,
+      294,
+      1231,
+      309
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: white car behind red SUV #37 (front end sticks out left, roof above)",
+     "moving": false
+    },
+    {
+     "box": [
+      1388,
+      303,
+      1404,
+      315
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: white car between black SUV #4 and dark car #22, behind lamp pole",
+     "moving": false
+    },
+    {
+     "box": [
+      866,
+      179,
+      880,
+      186
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far dark car on road in front of white building behind the mall",
+     "moving": false
+    },
+    {
+     "box": [
+      1781,
+      168,
+      1795,
+      177
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far dark car on road in front of house, right side",
+     "moving": false
+    },
+    {
+     "box": [
+      1813,
+      169,
+      1826,
+      178
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far gray car next to previous",
+     "moving": false
+    },
+    {
+     "box": [
+      1451,
+      169,
+      1464,
+      179
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far dark car in front of white house near park",
+     "moving": false
+    },
+    {
+     "box": [
+      903,
+      254,
+      931,
+      264
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: second maroon car behind maroon sedan #40 (own tail light, roofline above #40)",
+     "moving": false
+    }
+   ],
+   "ignore": [
+    [
+     1636,
+     170,
+     1666,
+     187
+    ]
+   ],
+   "ignore_est": 1
+  },
+  {
+   "frame": 525,
+   "t": 17.5,
+   "objects": [
+    {
+     "box": [
+      842,
+      1031,
+      972,
+      1080
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      1246.5,
+      301.0,
+      1276.2,
+      314.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": false
+    },
+    {
+     "box": [
+      1576.5,
+      308.3,
+      1608.4,
+      326.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": false
+    },
+    {
+     "box": [
+      1834.7,
+      686.7,
+      1919.6,
+      731.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": true,
+     "mover": "m7"
+    },
+    {
+     "box": [
+      293.0,
+      352.9,
+      336.2,
+      367.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      1190.4,
+      298.6,
+      1218.1,
+      312.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      249.6,
+      439.0,
+      277.0,
+      464.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": false
+    },
+    {
+     "box": [
+      1304.5,
+      301.3,
+      1334.5,
+      316.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      1218.0,
+      300.6,
+      1244.9,
+      313.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      152.1,
+      544.7,
+      184.6,
+      571.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": false
+    },
+    {
+     "box": [
+      513.8,
+      478.2,
+      549.3,
+      504.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      1280.4,
+      302.4,
+      1308.9,
+      315.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      940.1,
+      304.3,
+      973.4,
+      322.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      875.6,
+      410.5,
+      917.6,
+      433.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": false
+    },
+    {
+     "box": [
+      1664.2,
+      317.8,
+      1690.2,
+      334.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      1102.4,
+      297.9,
+      1129.4,
+      311.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      1518.6,
+      305.6,
+      1551.7,
+      324.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": false
+    },
+    {
+     "box": [
+      1696.9,
+      318.9,
+      1725.0,
+      336.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      1549.2,
+      309.1,
+      1575.3,
+      325.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      1766.8,
+      320.0,
+      1798.9,
+      340.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      831.9,
+      282.5,
+      863.0,
+      296.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": false
+    },
+    {
+     "box": [
+      1733.3,
+      320.5,
+      1757.6,
+      336.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      461.0,
+      325.4,
+      499.2,
+      339.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      1051.4,
+      293.0,
+      1087.7,
+      308.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": false
+    },
+    {
+     "box": [
+      385.8,
+      345.8,
+      428.1,
+      363.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      826.6,
+      262.8,
+      856.1,
+      274.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      1064.9,
+      300.1,
+      1103.5,
+      316.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": false
+    },
+    {
+     "box": [
+      1154.1,
+      301.4,
+      1190.4,
+      319.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      863.5,
+      262.4,
+      895.7,
+      274.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": false
+    },
+    {
+     "box": [
+      736.4,
+      255.3,
+      771.8,
+      267.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      1301.6,
+      193.0,
+      1330.7,
+      202.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": false
+    },
+    {
+     "box": [
+      1340.6,
+      304.2,
+      1369.3,
+      318.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      420.0,
+      222.9,
+      439.1,
+      229.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      1024.9,
+      291.3,
+      1056.6,
+      307.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      784.6,
+      259.0,
+      817.8,
+      271.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      1133,
+      297,
+      1154,
+      312
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      387.7,
+      225.8,
+      407.6,
+      234.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": false
+    },
+    {
+     "box": [
+      804.4,
+      279.9,
+      825.3,
+      292.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      650.2,
+      243.3,
+      675.1,
+      254.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      504.7,
+      226.4,
+      519.5,
+      234.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      1087.2,
+      293.8,
+      1113.8,
+      306.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": false
+    },
+    {
+     "box": [
+      814.1,
+      281.9,
+      839.0,
+      294.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      786.8,
+      277.9,
+      809.8,
+      290.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 43",
+     "moving": false
+    },
+    {
+     "box": [
+      564.9,
+      237.4,
+      586.5,
+      247.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 44",
+     "moving": false
+    },
+    {
+     "box": [
+      859.8,
+      251.5,
+      887.1,
+      262.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 45",
+     "moving": false
+    },
+    {
+     "box": [
+      651.3,
+      259.4,
+      672.9,
+      270.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      701.4,
+      250.0,
+      727.1,
+      262.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": false
+    },
+    {
+     "box": [
+      675.7,
+      250.1,
+      701.2,
+      260.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      1828.8,
+      429.9,
+      1878.6,
+      465.5
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      1595.5,
+      325.6,
+      1648.0,
+      344.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 50",
+     "moving": true,
+     "mover": "m4"
+    },
+    {
+     "box": [
+      630.5,
+      246.2,
+      654.9,
+      257.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      803.5,
+      245.6,
+      826.6,
+      256.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      660.2,
+      249.3,
+      683.0,
+      259.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 53",
+     "moving": false
+    },
+    {
+     "box": [
+      552.0,
+      236.8,
+      569.5,
+      245.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      366.4,
+      299.6,
+      383.4,
+      313.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      478.8,
+      240.8,
+      495.5,
+      249.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 56",
+     "moving": true,
+     "mover": "m10"
+    },
+    {
+     "box": [
+      665.7,
+      260.4,
+      688.3,
+      272.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": false
+    },
+    {
+     "box": [
+      412.2,
+      220.6,
+      429.2,
+      228.8
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      464.6,
+      231.8,
+      479.0,
+      239.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 59",
+     "moving": false
+    },
+    {
+     "box": [
+      716,
+      250,
+      730,
+      264
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 60",
+     "moving": false
+    },
+    {
+     "box": [
+      476.7,
+      228.5,
+      494.7,
+      237.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      735.3,
+      251.0,
+      759.4,
+      261.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      359.5,
+      222.9,
+      378.2,
+      231.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 63",
+     "moving": false
+    },
+    {
+     "box": [
+      612,
+      241,
+      624,
+      251
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 64",
+     "moving": false
+    },
+    {
+     "box": [
+      621,
+      243,
+      633,
+      257
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 65",
+     "moving": false
+    },
+    {
+     "box": [
+      506.9,
+      236.3,
+      534.0,
+      246.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 67",
+     "moving": false
+    },
+    {
+     "box": [
+      680.1,
+      245.2,
+      703.8,
+      254.2
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 68",
+     "moving": false
+    },
+    {
+     "box": [
+      773.9,
+      252.9,
+      803.8,
+      265.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 69",
+     "moving": false
+    },
+    {
+     "box": [
+      517.4,
+      227.0,
+      531.5,
+      234.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      695.2,
+      245.7,
+      719.9,
+      257.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 71",
+     "moving": false
+    },
+    {
+     "box": [
+      591.1,
+      238.6,
+      610.8,
+      248.2
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 72",
+     "moving": false
+    },
+    {
+     "box": [
+      523.7,
+      234.1,
+      542.1,
+      242.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 73",
+     "moving": false
+    },
+    {
+     "box": [
+      546.4,
+      223.9,
+      561.6,
+      232.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 74",
+     "moving": false
+    },
+    {
+     "box": [
+      678.8,
+      260.9,
+      702.0,
+      273.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 75",
+     "moving": false
+    },
+    {
+     "box": [
+      560.9,
+      222.7,
+      574.9,
+      231.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 76",
+     "moving": false
+    },
+    {
+     "box": [
+      579,
+      351,
+      597,
+      366
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 77",
+     "moving": false
+    },
+    {
+     "box": [
+      878,
+      406,
+      895,
+      417
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 78",
+     "moving": false
+    },
+    {
+     "box": [
+      573.1,
+      222.3,
+      588.8,
+      231.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      584,
+      241,
+      614,
+      253
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 81",
+     "moving": false
+    },
+    {
+     "box": [
+      535.0,
+      235.6,
+      554.7,
+      244.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 82",
+     "moving": false
+    },
+    {
+     "box": [
+      1370.4,
+      203.6,
+      1374.2,
+      213.0
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 84",
+     "moving": false
+    },
+    {
+     "box": [
+      375.0,
+      224.8,
+      390.3,
+      232.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 85",
+     "moving": false
+    },
+    {
+     "box": [
+      626.4,
+      241.2,
+      650.3,
+      251.2
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      494.8,
+      228.2,
+      509.3,
+      236.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 88",
+     "moving": false
+    },
+    {
+     "box": [
+      532.9,
+      223.7,
+      550.7,
+      233.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 90",
+     "moving": false
+    },
+    {
+     "box": [
+      173.1,
+      325.1,
+      206.9,
+      337.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 91",
+     "moving": false
+    },
+    {
+     "box": [
+      725.9,
+      249.2,
+      747.7,
+      257.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 93",
+     "moving": false
+    },
+    {
+     "box": [
+      348,
+      331,
+      404,
+      356
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 94",
+     "moving": false
+    },
+    {
+     "box": [
+      1360,
+      169,
+      1373,
+      178
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 95",
+     "moving": false
+    },
+    {
+     "box": [
+      348.1,
+      221.6,
+      368.5,
+      229.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 100",
+     "moving": false
+    },
+    {
+     "box": [
+      362,
+      349,
+      386,
+      362
+     ],
+     "cls": "other",
+     "hard": true,
+     "tag": "cand 101",
+     "moving": false
+    },
+    {
+     "box": [
+      399.1,
+      220.8,
+      419.0,
+      229.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 104",
+     "moving": false
+    },
+    {
+     "box": [
+      92,
+      333,
+      125,
+      347
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 105",
+     "moving": false
+    },
+    {
+     "box": [
+      758.8,
+      254.1,
+      774.9,
+      266.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 111",
+     "moving": false
+    },
+    {
+     "box": [
+      727,
+      257,
+      737,
+      266
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: red car front visible between white SUV #60 and dark pickup #30",
+     "moving": false
+    },
+    {
+     "box": [
+      802,
+      257,
+      825,
+      267
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: red car behind black pickup #35",
+     "moving": false
+    },
+    {
+     "box": [
+      828,
+      259,
+      855,
+      268
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: maroon car behind maroon car #26",
+     "moving": false
+    },
+    {
+     "box": [
+      778,
+      276,
+      792,
+      288
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: red car left of white SUV #43, partly hidden",
+     "moving": false
+    },
+    {
+     "box": [
+      1147,
+      298,
+      1166,
+      311
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: white car between #36 and red pickup #28",
+     "moving": false
+    },
+    {
+     "box": [
+      1679,
+      164,
+      1698,
+      177
+     ],
+     "cls": "van",
+     "hard": true,
+     "tag": "added: tan/olive van on street edge by gray building, far right",
+     "moving": false
+    },
+    {
+     "box": [
+      771,
+      181,
+      783,
+      187
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark car beside white shed, far lot",
+     "moving": false
+    }
+   ],
+   "ignore": [],
+   "ignore_est": 0
+  },
+  {
+   "frame": 675,
+   "t": 22.5,
+   "objects": [
+    {
+     "box": [
+      488.3,
+      506.0,
+      526.4,
+      533.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      94.4,
+      580.4,
+      129.5,
+      609.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": false
+    },
+    {
+     "box": [
+      259.3,
+      368.4,
+      304.1,
+      383.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": false
+    },
+    {
+     "box": [
+      1257.3,
+      314.0,
+      1287.9,
+      328.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": false
+    },
+    {
+     "box": [
+      1317.9,
+      314.5,
+      1347.8,
+      330.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      208.1,
+      461.5,
+      236.8,
+      488.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      1198.5,
+      312.1,
+      1227.0,
+      326.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": false
+    },
+    {
+     "box": [
+      1694.3,
+      332.6,
+      1720.2,
+      349.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      1602.0,
+      322.8,
+      1635.5,
+      341.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      938.9,
+      317.6,
+      973.0,
+      336.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": false
+    },
+    {
+     "box": [
+      1292.3,
+      315.6,
+      1321.3,
+      329.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      1067.2,
+      313.0,
+      1108.5,
+      330.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      1107.0,
+      310.6,
+      1134.4,
+      324.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      1573.6,
+      323.5,
+      1600.2,
+      340.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": false
+    },
+    {
+     "box": [
+      1227.3,
+      313.1,
+      1255.6,
+      327.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      355.6,
+      360.0,
+      401.5,
+      379.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      1728.9,
+      333.9,
+      1757.2,
+      351.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": false
+    },
+    {
+     "box": [
+      877.0,
+      430.0,
+      920.0,
+      452.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      823.4,
+      293.8,
+      857.8,
+      308.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      1765.9,
+      336.2,
+      1791.6,
+      352.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      1541.2,
+      319.6,
+      1574.6,
+      339.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": false
+    },
+    {
+     "box": [
+      1060.0,
+      304.0,
+      1091.0,
+      318.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      1354.9,
+      317.3,
+      1384.2,
+      331.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      1138.7,
+      310.1,
+      1172.5,
+      325.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": false
+    },
+    {
+     "box": [
+      773.4,
+      268.8,
+      809.3,
+      281.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      1161.8,
+      315.4,
+      1198.7,
+      333.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      854.7,
+      272.9,
+      890.6,
+      285.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": false
+    },
+    {
+     "box": [
+      1302.1,
+      201.5,
+      1334.1,
+      212.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      778.5,
+      288.9,
+      803.5,
+      302.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": false
+    },
+    {
+     "box": [
+      400.4,
+      230.4,
+      419.5,
+      237.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      1808.9,
+      339.4,
+      1840.2,
+      362.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": true,
+     "mover": "m13"
+    },
+    {
+     "box": [
+      437.6,
+      337.8,
+      477.8,
+      353.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      819.0,
+      271.9,
+      847.9,
+      284.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      367.0,
+      233.0,
+      381.0,
+      243.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      795.5,
+      290.8,
+      818.4,
+      304.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      806.3,
+      293.1,
+      832.0,
+      306.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      486.0,
+      234.0,
+      504.0,
+      243.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": false
+    },
+    {
+     "box": [
+      637.4,
+      269.1,
+      661.9,
+      281.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      725.9,
+      264.4,
+      762.3,
+      277.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      1025.9,
+      303.8,
+      1058.7,
+      320.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      459.0,
+      236.0,
+      478.0,
+      247.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": false
+    },
+    {
+     "box": [
+      763.2,
+      262.5,
+      796.1,
+      275.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      665.5,
+      271.0,
+      689.3,
+      284.3
+     ],
+     "cls": "van",
+     "hard": false,
+     "tag": "cand 43",
+     "moving": false
+    },
+    {
+     "box": [
+      541.0,
+      255.0,
+      568.0,
+      266.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 44",
+     "moving": true,
+     "mover": "m10"
+    },
+    {
+     "box": [
+      318.0,
+      356.0,
+      378.0,
+      380.0
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 45",
+     "moving": false
+    },
+    {
+     "box": [
+      547.0,
+      246.0,
+      571.0,
+      257.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      515.8,
+      231.5,
+      534.7,
+      241.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": false
+    },
+    {
+     "box": [
+      1090.7,
+      306.2,
+      1118.3,
+      319.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      1885.3,
+      454.9,
+      1919.7,
+      491.3
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      636.0,
+      253.0,
+      662.0,
+      264.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 50",
+     "moving": false
+    },
+    {
+     "box": [
+      726.0,
+      261.0,
+      746.0,
+      270.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      689.0,
+      263.0,
+      712.0,
+      274.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      852.8,
+      261.6,
+      878.7,
+      272.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 53",
+     "moving": false
+    },
+    {
+     "box": [
+      768.7,
+      286.5,
+      790.4,
+      299.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      705.0,
+      263.0,
+      727.0,
+      274.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      648.0,
+      258.0,
+      670.0,
+      269.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 56",
+     "moving": false
+    },
+    {
+     "box": [
+      795.1,
+      255.1,
+      818.1,
+      267.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": false
+    },
+    {
+     "box": [
+      612.0,
+      254.0,
+      640.0,
+      267.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      661.8,
+      259.5,
+      689.7,
+      270.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 59",
+     "moving": false
+    },
+    {
+     "box": [
+      651.6,
+      270.1,
+      677.0,
+      282.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 60",
+     "moving": false
+    },
+    {
+     "box": [
+      443.7,
+      239.8,
+      461.0,
+      247.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      598.0,
+      250.0,
+      609.0,
+      262.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      337.5,
+      230.3,
+      357.5,
+      239.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 63",
+     "moving": false
+    },
+    {
+     "box": [
+      488.0,
+      245.0,
+      516.0,
+      256.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 64",
+     "moving": false
+    },
+    {
+     "box": [
+      877.0,
+      428.0,
+      896.0,
+      438.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 65",
+     "moving": false
+    },
+    {
+     "box": [
+      866.0,
+      198.4,
+      883.0,
+      205.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 66",
+     "moving": true,
+     "mover": "m12"
+    },
+    {
+     "box": [
+      500.8,
+      235.1,
+      516.0,
+      243.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 67",
+     "moving": false
+    },
+    {
+     "box": [
+      194.3,
+      240.2,
+      214.4,
+      249.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 68",
+     "moving": false
+    },
+    {
+     "box": [
+      391.1,
+      228.0,
+      407.6,
+      236.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 69",
+     "moving": false
+    },
+    {
+     "box": [
+      135.6,
+      338.2,
+      170.6,
+      351.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      606.0,
+      250.0,
+      623.0,
+      262.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 71",
+     "moving": false
+    },
+    {
+     "box": [
+      536.0,
+      246.0,
+      554.0,
+      256.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 73",
+     "moving": false
+    },
+    {
+     "box": [
+      720.0,
+      266.0,
+      738.0,
+      277.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 74",
+     "moving": false
+    },
+    {
+     "box": [
+      567.0,
+      250.0,
+      600.0,
+      263.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 76",
+     "moving": false
+    },
+    {
+     "box": [
+      327.0,
+      228.8,
+      347.3,
+      237.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 78",
+     "moving": false
+    },
+    {
+     "box": [
+      557.4,
+      230.6,
+      572.6,
+      239.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 79",
+     "moving": false
+    },
+    {
+     "box": [
+      544.7,
+      230.8,
+      558.9,
+      239.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      552.8,
+      366.1,
+      573.3,
+      381.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 83",
+     "moving": false
+    },
+    {
+     "box": [
+      354.0,
+      232.0,
+      368.0,
+      242.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 85",
+     "moving": false
+    },
+    {
+     "box": [
+      671.5,
+      254.2,
+      695.8,
+      265.8
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      530.8,
+      231.3,
+      546.0,
+      240.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 89",
+     "moving": false
+    },
+    {
+     "box": [
+      341.8,
+      310.2,
+      357.5,
+      326.3
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 90",
+     "moving": false
+    },
+    {
+     "box": [
+      518.4,
+      244.6,
+      536.9,
+      253.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 91",
+     "moving": false
+    },
+    {
+     "box": [
+      174.0,
+      546.0,
+      198.0,
+      566.0
+     ],
+     "cls": "other",
+     "hard": true,
+     "tag": "cand 96",
+     "moving": false
+    },
+    {
+     "box": [
+      379.0,
+      231.0,
+      392.0,
+      242.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 98",
+     "moving": false
+    },
+    {
+     "box": [
+      600.0,
+      243.0,
+      619.0,
+      252.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 99",
+     "moving": false
+    },
+    {
+     "box": [
+      1154.0,
+      315.0,
+      1177.0,
+      330.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 108",
+     "moving": false
+    },
+    {
+     "box": [
+      641.0,
+      242.0,
+      647.0,
+      252.0
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 110",
+     "moving": false
+    },
+    {
+     "box": [
+      957.0,
+      320.0,
+      966.0,
+      334.0
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 115",
+     "moving": false
+    },
+    {
+     "box": [
+      697.0,
+      256.0,
+      720.0,
+      266.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 117",
+     "moving": false
+    },
+    {
+     "box": [
+      49.2,
+      347.4,
+      79.7,
+      360.3
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 122",
+     "moving": false
+    },
+    {
+     "box": [
+      222,
+      240,
+      240,
+      248
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: maroon car right of dark car 68, partly hidden by lamp post",
+     "moving": false
+    },
+    {
+     "box": [
+      797,
+      267,
+      816,
+      278
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: tan/pink car mostly hidden behind black pickup 25 (roof and dark tail visible)",
+     "moving": false
+    },
+    {
+     "box": [
+      1053,
+      310,
+      1070,
+      322
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: white sedan in front of black pickup 22 and left of black SUV 12",
+     "moving": false
+    },
+    {
+     "box": [
+      1721,
+      184,
+      1735,
+      190
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: small dark car on the far road (white windshield), right side",
+     "moving": false
+    }
+   ],
+   "ignore": [],
+   "ignore_est": 0
+  },
+  {
+   "frame": 825,
+   "t": 27.5,
+   "objects": [
+    {
+     "box": [
+      32.6,
+      619.3,
+      70.2,
+      652.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      1293.9,
+      316.6,
+      1325.7,
+      331.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": false
+    },
+    {
+     "box": [
+      1358.2,
+      317.4,
+      1391.2,
+      334.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": false
+    },
+    {
+     "box": [
+      476.0,
+      531.0,
+      515.9,
+      561.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": false
+    },
+    {
+     "box": [
+      1262.4,
+      315.5,
+      1291.3,
+      330.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      1331.4,
+      317.4,
+      1360.7,
+      332.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      230.4,
+      373.8,
+      279.1,
+      390.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": false
+    },
+    {
+     "box": [
+      895.9,
+      445.2,
+      942.7,
+      471.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      1231.4,
+      313.8,
+      1261.4,
+      329.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      1763.7,
+      336.9,
+      1791.4,
+      355.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": false
+    },
+    {
+     "box": [
+      1597.0,
+      322.8,
+      1627.9,
+      343.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      1663.1,
+      326.5,
+      1697.8,
+      346.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      423.1,
+      342.0,
+      465.2,
+      357.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      956.6,
+      319.3,
+      992.7,
+      339.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": false
+    },
+    {
+     "box": [
+      1632.7,
+      327.3,
+      1660.1,
+      345.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      1133.4,
+      312.0,
+      1163.2,
+      327.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      1398.3,
+      320.7,
+      1428.0,
+      335.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": false
+    },
+    {
+     "box": [
+      1801.3,
+      338.3,
+      1831.5,
+      358.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      830.8,
+      293.5,
+      866.7,
+      309.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      1193.3,
+      317.1,
+      1232.3,
+      336.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      336.4,
+      365.4,
+      384.3,
+      386.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": false
+    },
+    {
+     "box": [
+      1842.3,
+      341.7,
+      1869.1,
+      359.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      1076.3,
+      305.8,
+      1116.4,
+      324.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      863.2,
+      270.6,
+      900.3,
+      284.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": false
+    },
+    {
+     "box": [
+      168.1,
+      477.7,
+      197.6,
+      508.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      824.8,
+      270.9,
+      855.5,
+      283.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      777.8,
+      266.8,
+      815.6,
+      279.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": false
+    },
+    {
+     "box": [
+      1093.5,
+      314.5,
+      1135.1,
+      333.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      784.4,
+      287.9,
+      809.4,
+      302.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": false
+    },
+    {
+     "box": [
+      802.5,
+      289.8,
+      827.4,
+      304.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      1047.1,
+      304.7,
+      1071.8,
+      322.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": false
+    },
+    {
+     "box": [
+      1167.9,
+      311.6,
+      1213.5,
+      329.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      716.8,
+      261.8,
+      764.0,
+      275.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      388.1,
+      224.7,
+      408.1,
+      232.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      814.0,
+      292.6,
+      842.5,
+      306.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      353.7,
+      228.7,
+      374.4,
+      236.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      1321.1,
+      196.7,
+      1353.7,
+      207.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": false
+    },
+    {
+     "box": [
+      859.1,
+      257.6,
+      889.4,
+      269.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      634.4,
+      265.5,
+      661.3,
+      278.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      632.7,
+      248.5,
+      659.6,
+      259.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      320.6,
+      310.6,
+      338.8,
+      326.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": false
+    },
+    {
+     "box": [
+      724.2,
+      257.6,
+      750.8,
+      268.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      1115.9,
+      307.6,
+      1144.6,
+      321.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 43",
+     "moving": false
+    },
+    {
+     "box": [
+      478.1,
+      229.5,
+      492.8,
+      238.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 44",
+     "moving": false
+    },
+    {
+     "box": [
+      659.9,
+      255.7,
+      688.4,
+      267.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 45",
+     "moving": false
+    },
+    {
+     "box": [
+      539.1,
+      241.9,
+      564.2,
+      252.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      617.8,
+      257.9,
+      644.9,
+      270.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": true,
+     "mover": "m10"
+    },
+    {
+     "box": [
+      434.5,
+      235.1,
+      449.8,
+      243.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      688,
+      262,
+      707,
+      271
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      773.6,
+      286.0,
+      796.5,
+      299.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 50",
+     "moving": false
+    },
+    {
+     "box": [
+      649.9,
+      267.3,
+      676.1,
+      280.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      447.5,
+      231.6,
+      466.3,
+      241.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      765.4,
+      259.3,
+      800.5,
+      273.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 53",
+     "moving": false
+    },
+    {
+     "box": [
+      664.2,
+      267.9,
+      689.5,
+      282.5
+     ],
+     "cls": "van",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      508.5,
+      239.8,
+      529.0,
+      248.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      899,
+      440,
+      925,
+      455
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 56",
+     "moving": false
+    },
+    {
+     "box": [
+      560.1,
+      246.2,
+      593.0,
+      259.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": false
+    },
+    {
+     "box": [
+      378.0,
+      222.1,
+      395.3,
+      231.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      321.3,
+      224.3,
+      343.8,
+      233.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 59",
+     "moving": false
+    },
+    {
+     "box": [
+      704,
+      260,
+      723,
+      272
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 60",
+     "moving": false
+    },
+    {
+     "box": [
+      172.2,
+      235.1,
+      193.8,
+      244.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      202.4,
+      233.8,
+      226.6,
+      243.4
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      526.5,
+      240.9,
+      545.3,
+      250.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 63",
+     "moving": false
+    },
+    {
+     "box": [
+      602,
+      247,
+      619,
+      263
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 64",
+     "moving": false
+    },
+    {
+     "box": [
+      491.3,
+      230.1,
+      503.4,
+      237.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 65",
+     "moving": false
+    },
+    {
+     "box": [
+      308,
+      225,
+      326,
+      234
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 66",
+     "moving": false
+    },
+    {
+     "box": [
+      338.9,
+      226.9,
+      361.0,
+      235.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 67",
+     "moving": false
+    },
+    {
+     "box": [
+      497.5,
+      237.9,
+      515.7,
+      246.0
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 68",
+     "moving": false
+    },
+    {
+     "box": [
+      478.2,
+      239.7,
+      510.1,
+      251.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 69",
+     "moving": false
+    },
+    {
+     "box": [
+      798.9,
+      251.3,
+      823.1,
+      263.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      469.2,
+      231.3,
+      482.6,
+      239.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 71",
+     "moving": false
+    },
+    {
+     "box": [
+      643.1,
+      253.0,
+      667.6,
+      266.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 73",
+     "moving": false
+    },
+    {
+     "box": [
+      666.9,
+      250.1,
+      689.5,
+      261.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 74",
+     "moving": false
+    },
+    {
+     "box": [
+      565,
+      243,
+      586,
+      251
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 75",
+     "moving": false
+    },
+    {
+     "box": [
+      581.2,
+      245.2,
+      607.4,
+      256.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 76",
+     "moving": false
+    },
+    {
+     "box": [
+      101.2,
+      340.5,
+      137.4,
+      353.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 78",
+     "moving": false
+    },
+    {
+     "box": [
+      540.0,
+      235.6,
+      559.4,
+      243.9
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 79",
+     "moving": false
+    },
+    {
+     "box": [
+      507.2,
+      226.4,
+      526.8,
+      236.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      289.3,
+      348.7,
+      357.5,
+      382.3
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 81",
+     "moving": false
+    },
+    {
+     "box": [
+      687,
+      248,
+      710,
+      258
+     ],
+     "cls": "van",
+     "hard": true,
+     "tag": "cand 85",
+     "moving": false
+    },
+    {
+     "box": [
+      0.8,
+      200.3,
+      21.9,
+      209.5
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      542.6,
+      373.6,
+      568.5,
+      389.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 88",
+     "moving": false
+    },
+    {
+     "box": [
+      717.0,
+      251.6,
+      745.9,
+      263.4
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 91",
+     "moving": false
+    },
+    {
+     "box": [
+      309.8,
+      369.9,
+      334.5,
+      385.1
+     ],
+     "cls": "other",
+     "hard": true,
+     "tag": "cand 92",
+     "moving": false
+    },
+    {
+     "box": [
+      525,
+      225,
+      548,
+      236
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 93",
+     "moving": false
+    },
+    {
+     "box": [
+      122,
+      577,
+      150,
+      599
+     ],
+     "cls": "other",
+     "hard": true,
+     "tag": "cand 94",
+     "moving": false
+    },
+    {
+     "box": [
+      617,
+      248,
+      634,
+      258
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 95",
+     "moving": false
+    },
+    {
+     "box": [
+      1742.4,
+      164.3,
+      1764.4,
+      173.3
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 96",
+     "moving": false
+    },
+    {
+     "box": [
+      549.8,
+      225.0,
+      566.0,
+      234.7
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 99",
+     "moving": false
+    },
+    {
+     "box": [
+      1753.1,
+      175.8,
+      1765.7,
+      183.7
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 101",
+     "moving": false
+    },
+    {
+     "box": [
+      365.5,
+      221.8,
+      384.4,
+      230.9
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 104",
+     "moving": false
+    },
+    {
+     "box": [
+      612.2,
+      252.8,
+      637.2,
+      265.2
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 113",
+     "moving": false
+    },
+    {
+     "box": [
+      6.8,
+      351.5,
+      34.9,
+      364.8
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 123",
+     "moving": false
+    },
+    {
+     "box": [
+      716,
+      264,
+      730,
+      274
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: red car front half hidden behind navy pickup",
+     "moving": false
+    },
+    {
+     "box": [
+      803,
+      265,
+      823,
+      275
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: maroon car behind black pickup",
+     "moving": false
+    },
+    {
+     "box": [
+      826,
+      269,
+      855,
+      278
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: maroon SUV behind red sedan",
+     "moving": false
+    },
+    {
+     "box": [
+      1078,
+      312,
+      1101,
+      325
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: silver sedan in front of black pickup",
+     "moving": false
+    },
+    {
+     "box": [
+      1185,
+      314,
+      1212,
+      331
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: white car in front of red pickup",
+     "moving": false
+    },
+    {
+     "box": [
+      1373,
+      174,
+      1384,
+      181
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far town: small dark car in front of white house",
+     "moving": false
+    }
+   ],
+   "ignore": [],
+   "ignore_est": 0
+  },
+  {
+   "frame": 975,
+   "t": 32.5,
+   "objects": [
+    {
+     "box": [
+      1222.4,
+      319.3,
+      1254.3,
+      335.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      1190.1,
+      319.0,
+      1218.8,
+      334.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": false
+    },
+    {
+     "box": [
+      1527.7,
+      322.6,
+      1559.6,
+      344.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": false
+    },
+    {
+     "box": [
+      1287.2,
+      319.0,
+      1319.6,
+      336.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": false
+    },
+    {
+     "box": [
+      1157.9,
+      316.9,
+      1188.0,
+      333.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      1260.1,
+      320.3,
+      1289.6,
+      335.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      823.5,
+      461.7,
+      877.1,
+      491.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": false
+    },
+    {
+     "box": [
+      1328.5,
+      322.8,
+      1357.6,
+      337.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      1593.1,
+      326.0,
+      1624.2,
+      346.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      1080.3,
+      325.0,
+      1103.5,
+      344.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": true,
+     "mover": "m14"
+    },
+    {
+     "box": [
+      741.5,
+      298.1,
+      778.9,
+      314.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      380.3,
+      567.4,
+      419.3,
+      602.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      1562.4,
+      327.2,
+      1589.3,
+      345.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      93.3,
+      393.3,
+      146.9,
+      412.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": false
+    },
+    {
+     "box": [
+      306.0,
+      356.3,
+      352.2,
+      372.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      1693.9,
+      336.2,
+      1721.2,
+      356.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      1731.3,
+      337.6,
+      1758.7,
+      357.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": false
+    },
+    {
+     "box": [
+      1769.7,
+      340.0,
+      1795.7,
+      359.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      878,
+      326,
+      907,
+      347
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      208.4,
+      381.3,
+      265.6,
+      406.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      770.2,
+      272.9,
+      809.4,
+      288.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": false
+    },
+    {
+     "box": [
+      731.3,
+      274.4,
+      762.5,
+      287.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      1058.2,
+      316.5,
+      1086.5,
+      332.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      585.7,
+      268.0,
+      619.2,
+      283.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": true,
+     "mover": "m10"
+    },
+    {
+     "box": [
+      1120.6,
+      322.3,
+      1158.5,
+      342.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      528.9,
+      271.6,
+      550.6,
+      284.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      1018.3,
+      322.0,
+      1059.2,
+      339.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": false
+    },
+    {
+     "box": [
+      679.4,
+      270.2,
+      721.1,
+      284.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      23.5,
+      513.7,
+      60.5,
+      548.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": false
+    },
+    {
+     "box": [
+      667.5,
+      262.1,
+      704.3,
+      277.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      711.2,
+      295.1,
+      736.4,
+      309.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      969.4,
+      308.9,
+      1004.0,
+      327.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      545.7,
+      272.2,
+      569.3,
+      286.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      690.3,
+      293.1,
+      717.5,
+      307.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      224.3,
+      232.9,
+      246.6,
+      241.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      1881.7,
+      320.8,
+      1920.0,
+      340.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": true,
+     "mover": "m15"
+    },
+    {
+     "box": [
+      1041.8,
+      312.0,
+      1067.2,
+      327.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      723.1,
+      297.7,
+      750.3,
+      312.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      426.0,
+      245.7,
+      452.2,
+      256.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      625.6,
+      264.8,
+      665.3,
+      279.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": false
+    },
+    {
+     "box": [
+      359.6,
+      244.6,
+      391.0,
+      256.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 43",
+     "moving": false
+    },
+    {
+     "box": [
+      525.9,
+      252.4,
+      553.1,
+      263.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 45",
+     "moving": false
+    },
+    {
+     "box": [
+      261.6,
+      227.9,
+      283.0,
+      236.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      310.8,
+      238.7,
+      328.5,
+      247.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": false
+    },
+    {
+     "box": [
+      357.3,
+      232.9,
+      373.9,
+      242.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      325.4,
+      235.2,
+      346.2,
+      245.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 50",
+     "moving": false
+    },
+    {
+     "box": [
+      555.3,
+      259.8,
+      585.9,
+      271.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      503.0,
+      256.7,
+      530.3,
+      268.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 53",
+     "moving": false
+    },
+    {
+     "box": [
+      538.4,
+      259.7,
+      563.4,
+      270.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      411.7,
+      244.5,
+      433.7,
+      255.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      622.6,
+      260.7,
+      651.2,
+      272.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 56",
+     "moving": false
+    },
+    {
+     "box": [
+      249.0,
+      225.0,
+      268.2,
+      235.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": false
+    },
+    {
+     "box": [
+      372.2,
+      233.5,
+      385.5,
+      241.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      1226.6,
+      194.7,
+      1256.7,
+      205.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 59",
+     "moving": false
+    },
+    {
+     "box": [
+      236.8,
+      225.3,
+      256.6,
+      234.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 60",
+     "moving": false
+    },
+    {
+     "box": [
+      460.5,
+      246.5,
+      484.1,
+      257.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      190.2,
+      228.1,
+      213.1,
+      237.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      631.0,
+      252.6,
+      666.4,
+      267.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 63",
+     "moving": false
+    },
+    {
+     "box": [
+      700.3,
+      254.3,
+      725.5,
+      266.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 72",
+     "moving": false
+    },
+    {
+     "box": [
+      189.9,
+      322.5,
+      211.5,
+      339.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 73",
+     "moving": false
+    },
+    {
+     "box": [
+      162,
+      364,
+      234,
+      400
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 74",
+     "moving": false
+    },
+    {
+     "box": [
+      20.1,
+      240.3,
+      49.2,
+      252.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 76",
+     "moving": false
+    },
+    {
+     "box": [
+      178.4,
+      226.9,
+      202.0,
+      236.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 77",
+     "moving": false
+    },
+    {
+     "box": [
+      448.4,
+      250.3,
+      485.2,
+      264.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 81",
+     "moving": false
+    },
+    {
+     "box": [
+      392,
+      245,
+      408,
+      254
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      389.1,
+      229.2,
+      412.6,
+      240.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 101",
+     "moving": false
+    },
+    {
+     "box": [
+      1754.2,
+      204.1,
+      1779.4,
+      216.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 114",
+     "moving": false
+    },
+    {
+     "box": [
+      1556.7,
+      181.9,
+      1573.9,
+      190.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 119",
+     "moving": false
+    },
+    {
+     "box": [
+      181.4,
+      388.4,
+      207.3,
+      404.5
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 93",
+     "moving": false
+    },
+    {
+     "box": [
+      562.4,
+      273.6,
+      587.1,
+      288.3
+     ],
+     "cls": "van",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": false
+    },
+    {
+     "box": [
+      903,
+      329,
+      914,
+      344
+     ],
+     "cls": "person",
+     "hard": false,
+     "tag": "cand 83",
+     "moving": false
+    },
+    {
+     "box": [
+      1303.2,
+      207.2,
+      1307.6,
+      216.2
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 96",
+     "moving": false
+    },
+    {
+     "box": [
+      835,
+      458,
+      857,
+      470
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 120",
+     "moving": false
+    },
+    {
+     "box": [
+      1005,
+      309,
+      1039,
+      324
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 44",
+     "moving": false
+    },
+    {
+     "box": [
+      1111,
+      318,
+      1143,
+      337
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      764,
+      258,
+      799,
+      273
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      701,
+      267,
+      727,
+      279
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 97",
+     "moving": false
+    },
+    {
+     "box": [
+      650,
+      259,
+      666,
+      272
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 110",
+     "moving": false
+    },
+    {
+     "box": [
+      559,
+      253,
+      583,
+      262
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 67",
+     "moving": false
+    },
+    {
+     "box": [
+      589,
+      252,
+      607,
+      260
+     ],
+     "cls": "van",
+     "hard": true,
+     "tag": "cand 88",
+     "moving": false
+    },
+    {
+     "box": [
+      589,
+      259,
+      611,
+      269
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 79",
+     "moving": false
+    },
+    {
+     "box": [
+      609,
+      263,
+      624,
+      272
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      615,
+      267,
+      627,
+      278
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 69",
+     "moving": false
+    },
+    {
+     "box": [
+      616,
+      258,
+      630,
+      267
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 91",
+     "moving": false
+    },
+    {
+     "box": [
+      492,
+      249.5,
+      511,
+      258.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 65",
+     "moving": false
+    },
+    {
+     "box": [
+      480.0,
+      249.0,
+      500.3,
+      259.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      375.8,
+      241.5,
+      401.0,
+      252.1
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 78",
+     "moving": false
+    },
+    {
+     "box": [
+      398.0,
+      235.9,
+      419.8,
+      245.6
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 105",
+     "moving": false
+    },
+    {
+     "box": [
+      418.6,
+      228.3,
+      436.0,
+      238.8
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 94",
+     "moving": false
+    },
+    {
+     "box": [
+      55.3,
+      239.5,
+      84.8,
+      250.9
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 99",
+     "moving": false
+    },
+    {
+     "box": [
+      208,
+      230,
+      226,
+      240
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 71",
+     "moving": false
+    },
+    {
+     "box": [
+      444.2,
+      393.4,
+      465.8,
+      406.4
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 108",
+     "moving": false
+    },
+    {
+     "box": [
+      1457.5,
+      173.2,
+      1475.1,
+      183.2
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 103",
+     "moving": false
+    },
+    {
+     "box": [
+      679.3,
+      290.4,
+      703.6,
+      304.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      343.3,
+      234.9,
+      361.2,
+      244.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 90",
+     "moving": false
+    },
+    {
+     "box": [
+      1000,
+      317,
+      1019,
+      330
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: silver car in front of black pickup #44, partly hidden by black pickup #27",
+     "moving": false
+    },
+    {
+     "box": [
+      731,
+      270,
+      762,
+      281
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: second maroon car (own tail light) behind maroon sedan #22",
+     "moving": false
+    },
+    {
+     "box": [
+      681,
+      253,
+      706,
+      262
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: dark maroon car behind blue pickup #72",
+     "moving": false
+    },
+    {
+     "box": [
+      509,
+      250,
+      525,
+      258
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark gray car behind maroon SUV #53",
+     "moving": false
+    },
+    {
+     "box": [
+      493,
+      257,
+      505,
+      268
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: black car partly hidden left of maroon SUV #53",
+     "moving": false
+    },
+    {
+     "box": [
+      529,
+      260,
+      541,
+      268
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: black car between maroon #53 and gray-green #54, under white #45",
+     "moving": false
+    },
+    {
+     "box": [
+      577,
+      255,
+      591,
+      264
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: dark green car left of white van/sedan cluster",
+     "moving": false
+    },
+    {
+     "box": [
+      586,
+      264,
+      601,
+      272
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: blue car hidden behind silver pickup #24",
+     "moving": false
+    },
+    {
+     "box": [
+      1614,
+      184,
+      1638,
+      193
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: dark SUV on the road by the park",
+     "moving": false
+    },
+    {
+     "box": [
+      1285,
+      169,
+      1304,
+      178
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: dark SUV parked in front of white townhouses",
+     "moving": false
+    },
+    {
+     "box": [
+      649,
+      182,
+      666,
+      188
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far dark car in front of white building behind the mall",
+     "moving": false
+    },
+    {
+     "box": [
+      1776,
+      202,
+      1805,
+      211
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: silver car beside red car #114",
+     "moving": false
+    }
+   ],
+   "ignore": [
+    [
+     788,
+     182,
+     827,
+     190
+    ]
+   ],
+   "ignore_est": 2
+  },
+  {
+   "frame": 1125,
+   "t": 37.5,
+   "objects": [
+    {
+     "box": [
+      1248.0,
+      333.7,
+      1280.9,
+      350.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 1",
+     "moving": false
+    },
+    {
+     "box": [
+      1214.1,
+      333.6,
+      1243.6,
+      349.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 2",
+     "moving": false
+    },
+    {
+     "box": [
+      1747.7,
+      354.1,
+      1775.2,
+      374.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 3",
+     "moving": false
+    },
+    {
+     "box": [
+      1180.1,
+      331.4,
+      1211.5,
+      348.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 4",
+     "moving": false
+    },
+    {
+     "box": [
+      1316.8,
+      334.0,
+      1350.4,
+      352.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 5",
+     "moving": false
+    },
+    {
+     "box": [
+      1787.5,
+      354.7,
+      1815.9,
+      376.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 6",
+     "moving": false
+    },
+    {
+     "box": [
+      1270.2,
+      355.0,
+      1312.8,
+      373.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 7",
+     "moving": true,
+     "mover": "m14"
+    },
+    {
+     "box": [
+      886.7,
+      340.3,
+      924.0,
+      362.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 8",
+     "moving": false
+    },
+    {
+     "box": [
+      1639.6,
+      343.1,
+      1673.4,
+      364.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 9",
+     "moving": false
+    },
+    {
+     "box": [
+      1074.9,
+      330.1,
+      1106.4,
+      346.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 10",
+     "moving": false
+    },
+    {
+     "box": [
+      1287.6,
+      335.1,
+      1318.6,
+      351.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 11",
+     "moving": false
+    },
+    {
+     "box": [
+      54.5,
+      413.3,
+      112.5,
+      432.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 12",
+     "moving": false
+    },
+    {
+     "box": [
+      1358.8,
+      337.6,
+      1390.1,
+      353.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 13",
+     "moving": false
+    },
+    {
+     "box": [
+      831.6,
+      491.9,
+      887.3,
+      524.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 14",
+     "moving": false
+    },
+    {
+     "box": [
+      284.0,
+      372.1,
+      331.2,
+      388.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 15",
+     "moving": false
+    },
+    {
+     "box": [
+      1828.7,
+      359.0,
+      1854.7,
+      377.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 16",
+     "moving": false
+    },
+    {
+     "box": [
+      1569.8,
+      339.8,
+      1604.1,
+      361.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 17",
+     "moving": false
+    },
+    {
+     "box": [
+      742.4,
+      309.4,
+      782.3,
+      327.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 18",
+     "moving": false
+    },
+    {
+     "box": [
+      1607.3,
+      343.0,
+      1634.8,
+      362.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 19",
+     "moving": false
+    },
+    {
+     "box": [
+      711.7,
+      305.4,
+      737.6,
+      321.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 20",
+     "moving": false
+    },
+    {
+     "box": [
+      177.1,
+      399.8,
+      237.0,
+      426.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 21",
+     "moving": false
+    },
+    {
+     "box": [
+      557.0,
+      282.0,
+      583.0,
+      297.3
+     ],
+     "cls": "van",
+     "hard": false,
+     "tag": "cand 22",
+     "moving": false
+    },
+    {
+     "box": [
+      1033.1,
+      335.4,
+      1076.3,
+      354.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 23",
+     "moving": false
+    },
+    {
+     "box": [
+      522.5,
+      279.4,
+      545.0,
+      292.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 24",
+     "moving": false
+    },
+    {
+     "box": [
+      1013.2,
+      322.8,
+      1054.4,
+      344.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 25",
+     "moving": false
+    },
+    {
+     "box": [
+      732.3,
+      283.1,
+      766.2,
+      296.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 26",
+     "moving": false
+    },
+    {
+     "box": [
+      773.5,
+      282.6,
+      814.3,
+      298.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 27",
+     "moving": false
+    },
+    {
+     "box": [
+      1140.1,
+      337.3,
+      1181.4,
+      357.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 28",
+     "moving": false
+    },
+    {
+     "box": [
+      680.0,
+      278.5,
+      720.4,
+      292.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 29",
+     "moving": false
+    },
+    {
+     "box": [
+      767.9,
+      266.8,
+      800.0,
+      281.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 30",
+     "moving": false
+    },
+    {
+     "box": [
+      263.8,
+      250.4,
+      292.7,
+      262.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 31",
+     "moving": true,
+     "mover": "m16"
+    },
+    {
+     "box": [
+      690.3,
+      303.3,
+      718.8,
+      318.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 32",
+     "moving": false
+    },
+    {
+     "box": [
+      580.5,
+      272.1,
+      604.9,
+      282.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 33",
+     "moving": false
+    },
+    {
+     "box": [
+      1057.4,
+      325.3,
+      1084.0,
+      341.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 34",
+     "moving": false
+    },
+    {
+     "box": [
+      980.5,
+      321.5,
+      1018.2,
+      341.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 35",
+     "moving": false
+    },
+    {
+     "box": [
+      251.2,
+      230.3,
+      272.7,
+      239.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 36",
+     "moving": false
+    },
+    {
+     "box": [
+      212.5,
+      236.1,
+      235.1,
+      245.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 37",
+     "moving": false
+    },
+    {
+     "box": [
+      722.4,
+      309.0,
+      754.8,
+      324.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 38",
+     "moving": false
+    },
+    {
+     "box": [
+      520.4,
+      258.6,
+      548.9,
+      270.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 39",
+     "moving": false
+    },
+    {
+     "box": [
+      540.2,
+      280.7,
+      567.5,
+      294.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 40",
+     "moving": false
+    },
+    {
+     "box": [
+      344.8,
+      611.1,
+      390.9,
+      651.5
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 41",
+     "moving": false
+    },
+    {
+     "box": [
+      416.6,
+      250.9,
+      445.3,
+      262.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 42",
+     "moving": false
+    },
+    {
+     "box": [
+      644.0,
+      276.7,
+      682.4,
+      291.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 43",
+     "moving": true,
+     "mover": "m10"
+    },
+    {
+     "box": [
+      1581,
+      328,
+      1644,
+      346
+     ],
+     "cls": "truck",
+     "hard": false,
+     "tag": "cand 44",
+     "moving": true,
+     "mover": "m15"
+    },
+    {
+     "box": [
+      678.0,
+      300.6,
+      700.9,
+      314.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 45",
+     "moving": false
+    },
+    {
+     "box": [
+      178.0,
+      231.3,
+      201.0,
+      241.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 46",
+     "moving": false
+    },
+    {
+     "box": [
+      497.3,
+      262.6,
+      525.6,
+      276.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 47",
+     "moving": false
+    },
+    {
+     "box": [
+      240.3,
+      228.9,
+      259.2,
+      239.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 48",
+     "moving": false
+    },
+    {
+     "box": [
+      622,
+      272,
+      646,
+      290
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 49",
+     "moving": false
+    },
+    {
+     "box": [
+      315.0,
+      239.4,
+      337.1,
+      250.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 50",
+     "moving": false
+    },
+    {
+     "box": [
+      700.2,
+      261.4,
+      726.8,
+      273.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 51",
+     "moving": false
+    },
+    {
+     "box": [
+      666.2,
+      270.4,
+      704.1,
+      285.2
+     ],
+     "cls": "van",
+     "hard": false,
+     "tag": "cand 52",
+     "moving": false
+    },
+    {
+     "box": [
+      348.6,
+      236.7,
+      365.7,
+      246.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 53",
+     "moving": false
+    },
+    {
+     "box": [
+      300.3,
+      243.0,
+      318.3,
+      252.3
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 54",
+     "moving": false
+    },
+    {
+     "box": [
+      349.8,
+      249.3,
+      382.8,
+      262.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 55",
+     "moving": false
+    },
+    {
+     "box": [
+      334.7,
+      238.9,
+      352.6,
+      248.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 56",
+     "moving": false
+    },
+    {
+     "box": [
+      550.6,
+      267.1,
+      581.6,
+      279.0
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 57",
+     "moving": false
+    },
+    {
+     "box": [
+      165.6,
+      229.7,
+      191.4,
+      239.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 58",
+     "moving": false
+    },
+    {
+     "box": [
+      441,
+      257,
+      480,
+      271
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 59",
+     "moving": false
+    },
+    {
+     "box": [
+      533.1,
+      266.6,
+      560.1,
+      277.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 60",
+     "moving": false
+    },
+    {
+     "box": [
+      475,
+      255,
+      489,
+      266
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 61",
+     "moving": false
+    },
+    {
+     "box": [
+      611,
+      274,
+      625,
+      287
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 62",
+     "moving": false
+    },
+    {
+     "box": [
+      619.2,
+      268.1,
+      649.9,
+      279.7
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 63",
+     "moving": false
+    },
+    {
+     "box": [
+      196.2,
+      233.8,
+      217.2,
+      243.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 64",
+     "moving": false
+    },
+    {
+     "box": [
+      403.3,
+      249.8,
+      423.1,
+      261.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 65",
+     "moving": false
+    },
+    {
+     "box": [
+      6,
+      243,
+      32,
+      254
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 66",
+     "moving": false
+    },
+    {
+     "box": [
+      588,
+      267,
+      616,
+      284
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 68",
+     "moving": false
+    },
+    {
+     "box": [
+      1242.6,
+      199.8,
+      1273.8,
+      210.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 69",
+     "moving": false
+    },
+    {
+     "box": [
+      558.2,
+      260.5,
+      583.3,
+      272.6
+     ],
+     "cls": "van",
+     "hard": true,
+     "tag": "cand 70",
+     "moving": false
+    },
+    {
+     "box": [
+      623,
+      259,
+      657,
+      272
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 71",
+     "moving": false
+    },
+    {
+     "box": [
+      224.5,
+      227.6,
+      246.1,
+      237.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 72",
+     "moving": false
+    },
+    {
+     "box": [
+      843,
+      488,
+      872,
+      501
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 73",
+     "moving": false
+    },
+    {
+     "box": [
+      584,
+      259,
+      604,
+      269
+     ],
+     "cls": "van",
+     "hard": true,
+     "tag": "cand 74",
+     "moving": false
+    },
+    {
+     "box": [
+      382.8,
+      248.7,
+      409.1,
+      259.6
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 75",
+     "moving": false
+    },
+    {
+     "box": [
+      369.6,
+      247.2,
+      391.6,
+      256.3
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 77",
+     "moving": false
+    },
+    {
+     "box": [
+      381.4,
+      232.9,
+      407.1,
+      244.4
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 78",
+     "moving": false
+    },
+    {
+     "box": [
+      452.4,
+      252.2,
+      474.0,
+      262.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 79",
+     "moving": false
+    },
+    {
+     "box": [
+      486,
+      254,
+      506,
+      265
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 80",
+     "moving": false
+    },
+    {
+     "box": [
+      128.7,
+      380.7,
+      208.8,
+      420.8
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 83",
+     "moving": false
+    },
+    {
+     "box": [
+      34,
+      244,
+      57,
+      255
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 84",
+     "moving": false
+    },
+    {
+     "box": [
+      431,
+      415,
+      458,
+      429
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 86",
+     "moving": false
+    },
+    {
+     "box": [
+      353.9,
+      229.9,
+      381.1,
+      241.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 87",
+     "moving": false
+    },
+    {
+     "box": [
+      396.5,
+      233.3,
+      414.8,
+      243.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 88",
+     "moving": false
+    },
+    {
+     "box": [
+      407.5,
+      232.0,
+      425.8,
+      242.8
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 89",
+     "moving": false
+    },
+    {
+     "box": [
+      148.9,
+      406.6,
+      175.9,
+      424.4
+     ],
+     "cls": "other",
+     "hard": false,
+     "tag": "cand 90",
+     "moving": false
+    },
+    {
+     "box": [
+      165.7,
+      333.3,
+      187.9,
+      352.1
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 91",
+     "moving": false
+    },
+    {
+     "box": [
+      1280,
+      172,
+      1296,
+      182
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 92",
+     "moving": false
+    },
+    {
+     "box": [
+      1320,
+      212,
+      1326,
+      222
+     ],
+     "cls": "person",
+     "hard": true,
+     "tag": "cand 93",
+     "moving": false
+    },
+    {
+     "box": [
+      426.7,
+      232.9,
+      447.0,
+      241.9
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 97",
+     "moving": false
+    },
+    {
+     "box": [
+      704,
+      275,
+      728,
+      288
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 99",
+     "moving": false
+    },
+    {
+     "box": [
+      912,
+      345,
+      921,
+      361
+     ],
+     "cls": "person",
+     "hard": false,
+     "tag": "cand 100",
+     "moving": false
+    },
+    {
+     "box": [
+      358.1,
+      235.5,
+      378.4,
+      246.2
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "cand 102",
+     "moving": false
+    },
+    {
+     "box": [
+      486,
+      262,
+      500,
+      275
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 107",
+     "moving": false
+    },
+    {
+     "box": [
+      1674,
+      160,
+      1697,
+      169
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 112",
+     "moving": false
+    },
+    {
+     "box": [
+      609,
+      265,
+      630,
+      274
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 114",
+     "moving": false
+    },
+    {
+     "box": [
+      638,
+      269,
+      668,
+      280
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "cand 117",
+     "moving": false
+    },
+    {
+     "box": [
+      46,
+      241,
+      70,
+      252
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: red car behind/right of gray car #84, partly hidden by bushes",
+     "moving": false
+    },
+    {
+     "box": [
+      505,
+      256,
+      523,
+      266
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: dark car behind maroon SUV #47",
+     "moving": false
+    },
+    {
+     "box": [
+      732,
+      278,
+      765,
+      288
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: maroon SUV behind front maroon sedan #26",
+     "moving": false
+    },
+    {
+     "box": [
+      1132,
+      337,
+      1162,
+      352
+     ],
+     "cls": "car",
+     "hard": false,
+     "tag": "added: white car partly hidden behind red pickup #28",
+     "moving": false
+    },
+    {
+     "box": [
+      649,
+      182,
+      662,
+      189
+     ],
+     "cls": "car",
+     "hard": true,
+     "tag": "added: far dark car beside white shed, church-like building lot",
+     "moving": false
+    }
+   ],
+   "ignore": [],
+   "ignore_est": 0
+  }
+ ],
+ "method": "eye audit: verdicts on a detector-union candidate pool, every 2x tile scanned for misses, movers from motion-compensated strips"
+}
