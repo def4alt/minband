@@ -1,38 +1,21 @@
 [package]
 name = "minband-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Deterministic entity predictor, divergence thresholds and delta codec shared by edge and twin"
+description = "Contact extraction, trickle-link scheduler and self-contained wire codec shared by the edge and the receiver"
 license = "MIT"
 
 [lib]
 crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
-serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
-postcard = { version = "1", default-features = false, features = ["alloc"] }
-wasm-bindgen = { version = "0.2", optional = true }
-serde_json = { version = "1", optional = true }
-uniffi = { version = "0.29", optional = true }
-
-# The bindgen CLI (uniffi/cli: clap, askama, goblin, ...) is only needed on the host that
-# generates the Swift bindings; target-specific features keep it out of the iOS static library.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
-uniffi = { version = "0.29", optional = true, features = ["cli"] }
-
-# Host-only: `cargo run --features ios --bin uniffi-bindgen -- generate ...` (tools/build-ios.sh).
-[[bin]]
-name = "uniffi-bindgen"
-path = "src/bin/uniffi-bindgen.rs"
-required-features = ["ios"]
-
-[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+wasm-bindgen = { version = "0.2", optional = true }
 
 [features]
 default = []
-wasm = ["dep:wasm-bindgen", "dep:serde_json"]
-ios = ["dep:uniffi"]
+wasm = ["dep:wasm-bindgen"]
 
 [profile.release]
 opt-level = "s"

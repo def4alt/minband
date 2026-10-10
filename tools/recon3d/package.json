@@ -1,0 +1,21 @@
+{
+  "name": "minband-recon3d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "3D operator page: detections placed in the MASt3R-SLAM reconstruction, through the real WASM edge, link and receiver",
+  "scripts": {
+    "start": "tsx src/driver.ts",
+    "shot": "node scripts/screenshot.mjs"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.12",
+    "playwright-core": "^1.56.0",
+    "tsx": "^4.19.2"
+  }
+}

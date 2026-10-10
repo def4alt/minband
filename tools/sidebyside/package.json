@@ -1,0 +1,22 @@
+{
+  "name": "minband-sidebyside",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Side-by-side test page: drone clip with edge tracks (left) vs what a receiver decodes from the wire (right)",
+  "scripts": {
+    "start": "tsx src/driver.ts",
+    "mock": "tsx src/mock.ts",
+    "check": "node scripts/check-projection.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "shot": "node scripts/screenshot.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.2"
+  }
+}

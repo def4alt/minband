@@ -1,0 +1,7 @@
+[5s] receiver start (laptop :5561, decoder stream_rt.py, gui=0)
+[7s] simulated phone (port 18319) + SLAM start on home (frozen frame until SLAM is ready)
+[34s] SLAM ready -> clip starts playing
+[34s] sender start through tunnel (rate 2500 B/s, slot 1s, PKT 500, stream_rt.py)
+[78s] sender exited (0)
+[93s] receiver finished
+[95s] done
