@@ -14,9 +14,15 @@ BLEUart bleuart;
 static uint16_t connHandle = BLE_CONN_HANDLE_INVALID;
 static uint16_t seq = 0;
 
-#define RANGETEST_PAYLOAD_SIZE 40 // only size confirmed clean round-trip so far, see handoff plan
-#define RANGETEST_SEND_INTERVAL_MS 100
+#define RANGETEST_PAYLOAD_SIZE 40 // known-good default, see handoff plan
 #define RANGETEST_PHY BLE_GAP_PHY_CODED // BLE_GAP_PHY_1MBPS / _2MBPS / _CODED
+// Stop-and-wait: don't generate frame N+1 until frame N's echo is fully back
+// (or this times out). Without it, on Coded PHY a multi-packet frame's RTT
+// can exceed the send interval, so RX starts frame N+1 while TX's echo of
+// frame N is still mid-transit - tx_echo.ino has no frame-boundary
+// awareness, so it splices the two frames' bytes together and bridge.py's
+// CRC check correctly rejects the result. See handoff plan section 2.
+#define RANGETEST_ECHO_TIMEOUT_MS 2000
 
 static void onConnect(uint16_t conn_handle) {
   connHandle = conn_handle;
@@ -63,8 +69,19 @@ static uint8_t frameBuf[2600]; // worst-case SLIP escaping of a 1200B+2B-seq bod
 static size_t frameLen = 0;
 static size_t frameSent = 0;
 
+// Set once frame N is fully sent; cleared by pumpBleToUsb() once its echo
+// (both SLIP_END bytes) has come back, or here on timeout as a fallback so
+// a lost echo can't wedge the generator forever.
+static bool waitingEcho = false;
+static unsigned long echoWaitStartMs = 0;
+
 static void pumpGeneratedToBle() {
   if (connHandle == BLE_CONN_HANDLE_INVALID) return;
+
+  if (waitingEcho) {
+    if (millis() - echoWaitStartMs < RANGETEST_ECHO_TIMEOUT_MS) return;
+    waitingEcho = false; // echo never came back; don't stall forever
+  }
 
   if (frameLen == 0) {
     static uint8_t body[2 + RANGETEST_PAYLOAD_SIZE];
@@ -91,11 +108,17 @@ static void pumpGeneratedToBle() {
 
   seq++;
   frameLen = 0;
-  delay(RANGETEST_SEND_INTERVAL_MS);
+  waitingEcho = true;
+  echoWaitStartMs = millis();
 }
 
 // Forwards TX's echoed bytes to USB serial for bridge.py to decode, same
-// as rx_peripheral.ino's pumpBleToUsb().
+// as rx_peripheral.ino's pumpBleToUsb(). Also watches for the echoed
+// frame's two SLIP_END bytes (frame start + end marker) to know the
+// in-flight frame is fully back, clearing waitingEcho so the next frame
+// can go out.
+static int echoEndsSeen = 0;
+
 static void pumpBleToUsb() {
   uint8_t buf[256];
   int n = bleuart.available();
@@ -104,6 +127,21 @@ static void pumpBleToUsb() {
   int got = bleuart.read(buf, n);
   if (got <= 0) return;
   Serial.write(buf, got);
+
+  if (waitingEcho) {
+    for (int i = 0; i < got; i++) {
+      if (buf[i] == SLIP_END) {
+        echoEndsSeen++;
+        if (echoEndsSeen >= 2) {
+          waitingEcho = false;
+          echoEndsSeen = 0;
+          break;
+        }
+      }
+    }
+  } else {
+    echoEndsSeen = 0;
+  }
 }
 
 void loop() {
