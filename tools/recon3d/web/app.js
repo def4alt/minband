@@ -70,12 +70,24 @@ const GCELL = 16, GN = 128;                         // 16 m cells, a 2 km window
 const GQ = 0.35, GCAP = 3, GMEM_S = 120;            // cell percentile, weight cap per cell, how long a sample outlives its contact
 const G_SIGMA = 30, G_REACH = 100, G_PRIOR = 0.25;  // the kernel's scale, where a contact stops counting (3.3 sigma), the plane's weight
 const G_SLOPE = 0.12, G_RIDGE = 900, G_RES = 2;     // steepest plane, its slope ridge (resid sd^2 / slope sd^2), robust residual scale (m)
-const G_REBUILD_S = 0.5, G_TAU_S = 2;               // rebuild period, easing time constant (display time: frame-exact in recordings)
+const G_REBUILD_S = 0.5, G_TAU_S = 3;               // rebuild period, easing time constant (display time: frame-exact in recordings)
+// Steadiness. The ground is a backdrop, not a measurement: it should settle once and then stay. Measured on the Labrador
+// replay at 25 fixed points ahead of the drone, the first version moved each a median 15 m up and down in 37 s (a 5 m
+// range): the plane was refitted to every new contact (the far lot, on rising ground, tilted the whole ground under the
+// camera), each contact fed its latest base (noisy by a metre or two), and the fresh/unheard weights flipped as parked
+// cars went unrevised. Now a contact's base is its own running average, liveness no longer weighs, the plane follows
+// its refits slowly, a cell with contacts in reach averages its own field over the time it has had them (so a cell
+// once learned barely moves; new evidence weighs in over up to G_SETTLE_S), and a cell without only moves with the
+// plane when it would move by more than G_DEAD_M. Median travel 15 -> 7 m with the first three, then [below].
+const G_SAMPLE_TAU_S = 4, G_PLANE_TAU_S = 15, G_DEAD_M = 0.3;   // a contact's base average, the plane's follow time, the dead band
+const G_SETTLE_S = 20;                                           // the longest a cell's average remembers (s of evidence)
 const SNAP_M = 3;                                   // an object within 3 m of the ground stands on it (base noise is ~2 m); beyond 6 m it keeps its sent height
 $('vGround').textContent = FLAT ? 'flat sim · objects at sent height' : 'simulated · from contact bases';
 const G = {
   x0: 0, z0: 0, set: false, samples: new Map(),     // window corner (world x, z of cell 0's centre), contact id -> sample
   target: new Float32Array(GN * GN), shown: new Float32Array(GN * GN), tBuilt: -1e9, tShown: null, jump: true, tex: null,
+  plane: null,                                      // the plane the field is built on: follows the refits by G_PLANE_TAU_S
+  ev: new Float32Array(GN * GN),                    // per cell: seconds of evidence its target averages (capped at G_SETTLE_S)
 };
 G.tex = new THREE.DataTexture(G.shown, GN, GN, THREE.RedFormat, THREE.FloatType);
 G.tex.minFilter = G.tex.magFilter = THREE.NearestFilter; G.tex.needsUpdate = true;   // bilinear in the shader: float textures need no filter extension
@@ -132,18 +144,34 @@ function groundIdw(pts, pl, x, z) {
 function rebuildGround(t, snap) {
   G.tBuilt = t;
   for (const [id, s] of G.samples) if (t - s.t > GMEM_S) G.samples.delete(id);
-  const pts = groundPoints(), pl = groundPlane(pts);
-  const T = G.target;
-  for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) T[j * GN + i] = pl.a + pl.b * (G.x0 + i * GCELL) + pl.c * (G.z0 + j * GCELL);
+  const pts = groundPoints(), fit = groundPlane(pts);
+  // The plane follows its refits slowly (the first one, or a snap, is taken as it is).
+  const reset = snap || G.jump || !G.plane;
+  if (reset) G.ev.fill(0);
+  const k = reset ? 1 : 1 - Math.exp(-G_REBUILD_S / G_PLANE_TAU_S);
+  const pl = G.plane = reset ? fit : { a: lerp(G.plane.a, fit.a, k), b: lerp(G.plane.b, fit.b, k), c: lerp(G.plane.c, fit.c, k) };
+  const T = G.target, inReach = new Uint8Array(GN * GN);
   // The cells within reach of a representative get the kernel average; the rest keep the plane.
   if (pts.length) {
     const lo = (v) => clamp(Math.floor((v - G_REACH - G.x0) / GCELL), 0, GN - 1), hi = (v) => clamp(Math.ceil((v + G_REACH - G.x0) / GCELL), 0, GN - 1);
     const i0 = lo(Math.min(...pts.map((p) => p.x))), i1 = hi(Math.max(...pts.map((p) => p.x)));
     const zlo = (v) => clamp(Math.floor((v - G_REACH - G.z0) / GCELL), 0, GN - 1), zhi = (v) => clamp(Math.ceil((v + G_REACH - G.z0) / GCELL), 0, GN - 1);
     const j0 = zlo(Math.min(...pts.map((p) => p.z))), j1 = zhi(Math.max(...pts.map((p) => p.z)));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) T[j * GN + i] = groundIdw(pts, pl, G.x0 + i * GCELL, G.z0 + j * GCELL);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const q = j * GN + i, h = groundIdw(pts, pl, G.x0 + i * GCELL, G.z0 + j * GCELL);
+      inReach[q] = 1;
+      if (reset || !G.ev[q]) { T[q] = h; G.ev[q] = G_REBUILD_S; continue; }
+      T[q] += (h - T[q]) * G_REBUILD_S / (G.ev[q] + G_REBUILD_S);
+      G.ev[q] = Math.min(G.ev[q] + G_REBUILD_S, G_SETTLE_S);
+    }
   }
-  if (snap || G.jump) { G.shown.set(T); G.tex.needsUpdate = true; G.jump = false; }
+  for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) {
+    const q = j * GN + i;
+    if (inReach[q] || G.ev[q]) continue;            // a cell that had contacts keeps what they said
+    const h = pl.a + pl.b * (G.x0 + i * GCELL) + pl.c * (G.z0 + j * GCELL);
+    if (reset || Math.abs(h - T[q]) > G_DEAD_M) T[q] = h;
+  }
+  if (reset) { G.shown.set(T); G.tex.needsUpdate = true; G.jump = false; }
 }
 // Ease the shown field towards the target by the display time elapsed (so a recording at any frame rate is the same).
 function easeGround(tt, snap) {
@@ -403,16 +431,19 @@ function placeOf(c, chip) {
   const u = c.u ?? h;
   return { u, base: u - h, h, sent: c.u != null };
 }
-// What a contact tells the ground: its base, weighted by how much the receiver still vouches for it (a lost contact
-// stood on real ground but may have been misplaced; a group's base is its members' mean) and by its position error
-// (a far contact's height is as uncertain as its range). The memory is per contact id, replaced as it moves.
-const G_LIVE_W = { fresh: 1, unheard: 0.6 };
+// What a contact tells the ground: its base, averaged over the last few seconds of that contact (one report's height
+// is noisy by a metre or two), weighted down when the receiver has lost it (it stood on real ground but may have been
+// misplaced), for a group (its base is its members' mean) and by its position error (a far contact's height is as
+// uncertain as its range). Fresh or merely unrevised weigh the same: a parked car the edge has no reason to revise is
+// as good a witness of the ground as one it just did. The memory is per contact id; its position follows the contact.
 function groundSample(c, p, t) {
   if (FLAT || !G.set || !p.sent) return;
   const x = c.e, z = -c.n, i = Math.round((x - G.x0) / GCELL), j = Math.round((z - G.z0) / GCELL);
   if (i < 0 || j < 0 || i >= GN || j >= GN) return;
-  const w = (G_LIVE_W[c.liveness] ?? 0.3) * (c.group ? 0.5 : 1) / (1 + (c.ceShown / 4) ** 2);
-  G.samples.set(c.id, { i, j, x, z, h: p.base, w, t });
+  const w = (c.liveness === 'lost' ? 0.3 : 1) * (c.group ? 0.5 : 1) / (1 + (c.ceShown / 4) ** 2);
+  const old = G.samples.get(c.id), dt = old ? t - old.t : 0;
+  const h = old && dt > 0 ? lerp(old.h, p.base, 1 - Math.exp(-dt / G_SAMPLE_TAU_S)) : old ? old.h : p.base;
+  G.samples.set(c.id, { i, j, x, z, h, w, t });
 }
 // Yaw (degrees true): course while it moves (> 1.5 m/s), else the heading that crossed the link, else the
 // chip's own orientation, else the course (or north).
