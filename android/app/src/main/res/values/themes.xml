@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- docs/STYLE.md: monochrome on #070809, dark only. -->
+    <style name="Theme.MinBand" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#070809</item>
+        <item name="android:colorBackground">#070809</item>
+        <item name="android:statusBarColor">#070809</item>
+        <item name="android:navigationBarColor">#070809</item>
+        <item name="android:textColorPrimary">#E6E7E9</item>
+        <item name="android:colorAccent">#E6E7E9</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
