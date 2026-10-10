@@ -1,0 +1,343 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 016e743..bdaa736 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -193,6 +193,11 @@ add_executable(mono_tum
+         Examples/Monocular/mono_tum.cc)
+ target_link_libraries(mono_tum ${PROJECT_NAME})
+ 
++# minband: headless runner that also exports map points / keyframe observations (System::ExportMonoMap)
++add_executable(mono_seq
++        Examples/Monocular/mono_seq.cc)
++target_link_libraries(mono_seq ${PROJECT_NAME})
++
+ add_executable(mono_kitti
+         Examples/Monocular/mono_kitti.cc)
+ target_link_libraries(mono_kitti ${PROJECT_NAME})
+diff --git a/Examples/Monocular/mono_seq.cc b/Examples/Monocular/mono_seq.cc
+new file mode 100644
+index 0000000..f7696e4
+--- /dev/null
++++ b/Examples/Monocular/mono_seq.cc
+@@ -0,0 +1,143 @@
++// Headless monocular runner for TUM-style sequences (rgb.txt: "timestamp rgb/xxxxx.jpg", '#' comments allowed).
++// Usage: mono_seq vocab settings seq_dir out_dir [--viewer] [--fast]
++//   --fast : do not pace frames at the sequence frame rate (default: real-time pacing like mono_tum)
++// Writes into out_dir: KeyFrameTrajectory.txt, CameraTrajectory.txt, mappoints.txt, mappoints_info.txt,
++//   kf_observations.txt, maps.txt, frames.txt (per-frame state + live pose), timing.txt
++
++#include <algorithm>
++#include <chrono>
++#include <fstream>
++#include <iomanip>
++#include <iostream>
++#include <numeric>
++#include <sstream>
++#include <thread>
++#include <unistd.h>
++
++#include <opencv2/core/core.hpp>
++#include <opencv2/imgcodecs.hpp>
++#include <opencv2/imgproc.hpp>
++
++#include <System.h>
++
++using namespace std;
++
++static void LoadImages(const string &strFile, vector<string> &vFiles, vector<double> &vT)
++{
++    ifstream f(strFile.c_str());
++    string line;
++    while (getline(f, line))
++    {
++        if (line.empty() || line[0] == '#') continue;
++        stringstream ss(line);
++        double t; string name;
++        if (ss >> t >> name) { vT.push_back(t); vFiles.push_back(name); }
++    }
++}
++
++int main(int argc, char **argv)
++{
++    if (argc < 5)
++    {
++        cerr << "Usage: mono_seq vocab settings seq_dir out_dir [--viewer] [--fast]" << endl;
++        return 1;
++    }
++    bool viewer = false, fast = false;
++    for (int i = 5; i < argc; i++)
++    {
++        string a = argv[i];
++        if (a == "--viewer") viewer = true;
++        if (a == "--fast") fast = true;
++    }
++    const string seq = argv[3], out = argv[4];
++
++    vector<string> vFiles; vector<double> vT;
++    LoadImages(seq + "/rgb.txt", vFiles, vT);
++    const int n = vFiles.size();
++    if (n == 0) { cerr << "no images in " << seq << "/rgb.txt" << endl; return 1; }
++
++    auto wall0 = chrono::steady_clock::now();
++    ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::MONOCULAR, viewer);
++    auto wallInit = chrono::steady_clock::now();
++    const float imageScale = SLAM.GetImageScale();
++
++    vector<double> vTrack(n, 0.0);
++    ofstream ffr((out + "/frames.txt").c_str());
++    ffr << "# idx timestamp state n_tracked_mps track_ms  live_Twc(tx ty tz qx qy qz qw; zeros if not tracking)\n";
++    ffr << "# state: -1 not ready, 0 no images, 1 not initialized, 2 OK, 3 recently lost, 4 lost\n" << fixed;
++
++    int firstOK = -1, nOK = 0, nLost = 0, nNotInit = 0, prevState = -2, nMapChanges = 0;
++    cout << "Images in the sequence: " << n << endl;
++    for (int i = 0; i < n; i++)
++    {
++        cv::Mat im = cv::imread(seq + "/" + vFiles[i], cv::IMREAD_UNCHANGED);
++        if (im.empty()) { cerr << "Failed to load " << vFiles[i] << endl; return 1; }
++        if (imageScale != 1.f)
++            cv::resize(im, im, cv::Size(im.cols * imageScale, im.rows * imageScale));
++
++        auto t1 = chrono::steady_clock::now();
++        Sophus::SE3f Tcw = SLAM.TrackMonocular(im, vT[i]);
++        auto t2 = chrono::steady_clock::now();
++        double ttrack = chrono::duration<double>(t2 - t1).count();
++        vTrack[i] = ttrack * 1e3;
++
++        int state = SLAM.GetTrackingState();
++        int nMP = 0;
++        for (auto p : SLAM.GetTrackedMapPoints()) if (p) nMP++;
++        if (SLAM.MapChanged()) { nMapChanges++; cout << "[mono_seq] frame " << i << ": big map change (loop closure / merge / GBA)" << endl; }
++        if (state != prevState)
++            cout << "[mono_seq] frame " << i << " t=" << setprecision(3) << vT[i] << ": tracking state " << prevState << " -> " << state << endl;
++        prevState = state;
++        if (state == 2) { nOK++; if (firstOK < 0) firstOK = i; }
++        else if (state == 3 || state == 4) nLost++;
++        else nNotInit++;
++
++        ffr << i << " " << setprecision(6) << vT[i] << " " << state << " " << nMP << " " << setprecision(2) << vTrack[i];
++        if (state == 2 || state == 3)
++        {
++            Sophus::SE3f Twc = Tcw.inverse();
++            Eigen::Vector3f t = Twc.translation(); Eigen::Quaternionf q = Twc.unit_quaternion();
++            ffr << setprecision(6) << " " << t(0) << " " << t(1) << " " << t(2) << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w();
++        }
++        else ffr << " 0 0 0 0 0 0 1";
++        ffr << "\n";
++
++        if (!fast)
++        {
++            double T = (i < n - 1) ? vT[i + 1] - vT[i] : (i > 0 ? vT[i] - vT[i - 1] : 0);
++            if (ttrack < T) usleep((T - ttrack) * 1e6);
++        }
++    }
++    ffr.close();
++    auto wallLoop = chrono::steady_clock::now();
++
++    SLAM.Shutdown();
++    auto wallShut = chrono::steady_clock::now();
++    SLAM.ExportMonoMap(out);
++
++    vector<double> s = vTrack; sort(s.begin(), s.end());
++    double mean = accumulate(s.begin(), s.end(), 0.0) / n;
++    auto pct = [&](double p) { return s[min(n - 1, (int)(p * (n - 1) + 0.5))]; };
++    ofstream ft((out + "/timing.txt").c_str());
++    ft << fixed << setprecision(2);
++    ft << "frames " << n << "\n";
++    ft << "pacing " << (fast ? "none (--fast)" : "real-time (sleep to sequence timestamps)") << "\n";
++    ft << "track_ms_median " << pct(0.5) << "\n";
++    ft << "track_ms_mean " << mean << "\n";
++    ft << "track_ms_p90 " << pct(0.9) << "\n";
++    ft << "track_ms_max " << s.back() << "\n";
++    ft << "track_ms_total " << accumulate(s.begin(), s.end(), 0.0) << "\n";
++    ft << "wall_s_init_vocab " << chrono::duration<double>(wallInit - wall0).count() << "\n";
++    ft << "wall_s_loop " << chrono::duration<double>(wallLoop - wallInit).count() << "\n";
++    ft << "wall_s_shutdown " << chrono::duration<double>(wallShut - wallLoop).count() << "\n";
++    ft << "wall_s_total " << chrono::duration<double>(wallShut - wall0).count() << "\n";
++    ft << "first_ok_frame " << firstOK << "\n";
++    ft << "frames_ok " << nOK << "\nframes_lost " << nLost << "\nframes_not_initialized " << nNotInit << "\n";
++    ft << "big_map_changes " << nMapChanges << "\n";
++    ft << "# per-frame track ms in frames.txt (col 5)\n";
++    ft.close();
++
++    cout << "first OK frame " << firstOK << ", OK " << nOK << ", lost " << nLost << ", not-init " << nNotInit << endl;
++    cout << "median tracking time " << pct(0.5) << " ms, mean " << mean << " ms" << endl;
++    return 0;
++}
+diff --git a/Thirdparty/DBoW2/DBoW2/FORB.cpp b/Thirdparty/DBoW2/DBoW2/FORB.cpp
+index 1f1990c..80bf473 100644
+--- a/Thirdparty/DBoW2/DBoW2/FORB.cpp
++++ b/Thirdparty/DBoW2/DBoW2/FORB.cpp
+@@ -13,7 +13,7 @@
+ #include <vector>
+ #include <string>
+ #include <sstream>
+-#include <stdint-gcc.h>
++#include <stdint.h>
+ 
+ #include "FORB.h"
+ 
+diff --git a/include/LoopClosing.h b/include/LoopClosing.h
+index c9ccb26..7b6bfe0 100644
+--- a/include/LoopClosing.h
++++ b/include/LoopClosing.h
+@@ -223,7 +223,7 @@ protected:
+     bool mbFixScale;
+ 
+ 
+-    bool mnFullBAIdx;
++    int mnFullBAIdx;
+ 
+ 
+ 
+diff --git a/include/System.h b/include/System.h
+index 872c86e..f24c0d5 100644
+--- a/include/System.h
++++ b/include/System.h
+@@ -151,6 +151,8 @@ public:
+     // Call first Shutdown()
+     // See format details at: http://vision.in.tum.de/data/datasets/rgbd-dataset
+     void SaveKeyFrameTrajectoryTUM(const string &filename);
++    // Headless export (added): biggest map in the atlas, all files in that map's world frame.
++    void ExportMonoMap(const string &dir);
+ 
+     void SaveTrajectoryEuRoC(const string &filename);
+     void SaveKeyFrameTrajectoryEuRoC(const string &filename);
+diff --git a/run_seq.sh b/run_seq.sh
+new file mode 100755
+index 0000000..a86a607
+--- /dev/null
++++ b/run_seq.sh
+@@ -0,0 +1,12 @@
++#!/usr/bin/env bash
++# run_seq.sh <seq_dir> <out_dir> <settings.yaml> [extra mono_seq flags, e.g. --fast]
++set -euo pipefail
++ORB=$(cd "$(dirname "$0")" && pwd)
++SEQ=$1; OUT=$2; CFG=$3; shift 3
++mkdir -p "$OUT"
++cp "$CFG" "$OUT/settings.yaml"
++t0=$(date +%s)
++"$ORB/Examples/Monocular/mono_seq" "$ORB/Vocabulary/ORBvoc.txt" "$OUT/settings.yaml" "$SEQ" "$OUT" "$@" > "$OUT/run.log" 2>&1
++rc=$?
++echo "wall_s_process $(( $(date +%s) - t0 ))" >> "$OUT/timing.txt"
++exit $rc
+diff --git a/src/ORBmatcher.cc b/src/ORBmatcher.cc
+index 9129683..e26c678 100644
+--- a/src/ORBmatcher.cc
++++ b/src/ORBmatcher.cc
+@@ -25,7 +25,7 @@
+ 
+ #include "Thirdparty/DBoW2/DBoW2/FeatureVector.h"
+ 
+-#include<stdint-gcc.h>
++#include<stdint.h>
+ 
+ using namespace std;
+ 
+diff --git a/src/System.cc b/src/System.cc
+index 60d9c51..cf1da43 100644
+--- a/src/System.cc
++++ b/src/System.cc
+@@ -1547,3 +1547,103 @@ string System::CalculateCheckSum(string filename, int type)
+ 
+ } //namespace ORB_SLAM
+ 
++
++// ---- Added for headless runs: export biggest map (trajectory, keyframes, map points, observations) ----
++namespace ORB_SLAM3 {
++void System::ExportMonoMap(const string &dir)
++{
++    vector<Map*> vpMaps = mpAtlas->GetAllMaps();
++    Map* pBig = nullptr; size_t nBig = 0;
++    ofstream fs((dir + "/maps.txt").c_str());
++    fs << "# map_id n_keyframes n_mappoints\n";
++    for(Map* pMap : vpMaps)
++    {
++        fs << pMap->GetId() << " " << pMap->GetAllKeyFrames().size() << " " << pMap->GetAllMapPoints().size() << "\n";
++        if(pMap->GetAllKeyFrames().size() > nBig) { nBig = pMap->GetAllKeyFrames().size(); pBig = pMap; }
++    }
++    fs.close();
++    if(!pBig) { cerr << "ExportMonoMap: no map" << endl; return; }
++    cout << "Exporting map " << pBig->GetId() << " (" << nBig << " KFs) of " << vpMaps.size() << " maps" << endl;
++
++    vector<KeyFrame*> vpKFs = pBig->GetAllKeyFrames();
++    sort(vpKFs.begin(), vpKFs.end(), KeyFrame::lId);
++
++    // Keyframe trajectory, TUM, camera-to-world, map world frame
++    ofstream fk((dir + "/KeyFrameTrajectory.txt").c_str());
++    fk << fixed;
++    for(KeyFrame* pKF : vpKFs)
++    {
++        if(pKF->isBad()) continue;
++        Sophus::SE3f Twc = pKF->GetPoseInverse();
++        Eigen::Quaternionf q = Twc.unit_quaternion();
++        Eigen::Vector3f t = Twc.translation();
++        fk << setprecision(6) << pKF->mTimeStamp << " " << setprecision(9) << t(0) << " " << t(1) << " " << t(2)
++           << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << "\n";
++    }
++    fk.close();
++
++    // All-frame trajectory (frames tracked w.r.t. a keyframe of the exported map), TUM, same frame
++    ofstream ff((dir + "/CameraTrajectory.txt").c_str());
++    ff << fixed;
++    auto lRit = mpTracker->mlpReferences.begin();
++    auto lT = mpTracker->mlFrameTimes.begin();
++    auto lbL = mpTracker->mlbLost.begin();
++    for(auto lit = mpTracker->mlRelativeFramePoses.begin(); lit != mpTracker->mlRelativeFramePoses.end(); lit++, lRit++, lT++, lbL++)
++    {
++        if(*lbL) continue;
++        KeyFrame* pKF = *lRit;
++        if(!pKF) continue;
++        Sophus::SE3f Trw;
++        while(pKF && pKF->isBad()) { Trw = Trw * pKF->mTcp; pKF = pKF->GetParent(); }
++        if(!pKF || pKF->GetMap() != pBig) continue;
++        Trw = Trw * pKF->GetPose();
++        Sophus::SE3f Twc = ((*lit) * Trw).inverse();
++        Eigen::Quaternionf q = Twc.unit_quaternion();
++        Eigen::Vector3f t = Twc.translation();
++        ff << setprecision(6) << *lT << " " << setprecision(9) << t(0) << " " << t(1) << " " << t(2)
++           << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << "\n";
++    }
++    ff.close();
++
++    // Map points: "x y z" (world), row index used by kf_observations.txt
++    vector<MapPoint*> vpMPs = pBig->GetAllMapPoints();
++    std::map<MapPoint*, long> row;
++    ofstream fm((dir + "/mappoints.txt").c_str());
++    ofstream fmi((dir + "/mappoints_info.txt").c_str());
++    fmi << "# row mp_id n_obs found_ratio min_dist max_dist ref_kf_id\n";
++    fm << fixed << setprecision(6);
++    long r = 0;
++    for(MapPoint* pMP : vpMPs)
++    {
++        if(!pMP || pMP->isBad()) continue;
++        Eigen::Vector3f p = pMP->GetWorldPos();
++        fm << p(0) << " " << p(1) << " " << p(2) << "\n";
++        KeyFrame* pRef = pMP->GetReferenceKeyFrame();
++        fmi << r << " " << pMP->mnId << " " << pMP->Observations() << " " << setprecision(3) << pMP->GetFoundRatio()
++            << " " << pMP->GetMinDistanceInvariance() << " " << pMP->GetMaxDistanceInvariance() << " " << (pRef ? (long)pRef->mnId : -1L) << setprecision(6) << "\n";
++        row[pMP] = r++;
++    }
++    fm.close(); fmi.close();
++
++    // Observations: "kf_id timestamp mp_row u v" (undistorted pixel coords)
++    ofstream fo((dir + "/kf_observations.txt").c_str());
++    fo << "# kf_id timestamp mappoint_row u v\n" << fixed;
++    for(KeyFrame* pKF : vpKFs)
++    {
++        if(pKF->isBad()) continue;
++        vector<MapPoint*> vm = pKF->GetMapPointMatches();
++        for(size_t i = 0; i < vm.size(); i++)
++        {
++            MapPoint* pMP = vm[i];
++            if(!pMP || pMP->isBad()) continue;
++            auto it = row.find(pMP);
++            if(it == row.end()) continue;
++            const cv::KeyPoint &kp = (pKF->NLeft == -1) ? pKF->mvKeysUn[i] : pKF->mvKeys[i];
++            fo << pKF->mnId << " " << setprecision(6) << pKF->mTimeStamp << " " << it->second << " "
++               << setprecision(2) << kp.pt.x << " " << kp.pt.y << "\n";
++        }
++    }
++    fo.close();
++    cout << "Exported " << r << " map points" << endl;
++}
++}

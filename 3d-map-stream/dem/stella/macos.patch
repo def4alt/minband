@@ -1,0 +1,61 @@
+# stella_vslam @ e445b54 and stella_vslam_examples @ defc69e: headless macOS arm64 (no OpenMP, no videoio)
+diff --git a/stella_vslam/CMakeLists.txt b/stella_vslam/CMakeLists.txt
+index a10562a..5f9011a 100644
+--- a/stella_vslam/CMakeLists.txt
++++ b/stella_vslam/CMakeLists.txt
+@@ -100,7 +100,10 @@ endif()
+ find_package(Threads REQUIRED)
+ 
+ # OpenMP
+-find_package(OpenMP REQUIRED)
++find_package(OpenMP QUIET)  # Apple clang has no OpenMP; the library builds with USE_OPENMP OFF
++if(NOT OpenMP_FOUND)
++    set(OpenMP_CXX_FLAGS "")  # else the fallback target below links -lNOTFOUND
++endif()
+ if(NOT TARGET OpenMP::OpenMP_CXX)
+     add_library(OpenMP::OpenMP_CXX IMPORTED INTERFACE)
+     set_property(TARGET OpenMP::OpenMP_CXX
+@@ -116,11 +119,11 @@ find_package(yaml-cpp REQUIRED)
+ # OpenCV
+ find_package(OpenCV 3.3.1 QUIET
+              COMPONENTS
+-             core imgcodecs videoio features2d calib3d highgui)
++             core imgcodecs features2d calib3d highgui)  # videoio: only the video/camera examples
+ if(NOT OpenCV_FOUND)
+     find_package(OpenCV 4.0 QUIET
+                  COMPONENTS
+-                 core imgcodecs videoio features2d calib3d highgui)
++                 core imgcodecs features2d calib3d highgui)  # videoio: only the video/camera examples
+     if(NOT OpenCV_FOUND)
+         message(FATAL_ERROR "OpenCV >= 3.3.1 not found")
+     endif()
+diff --git a/stella_vslam/cmake/Config.cmake.in b/stella_vslam/cmake/Config.cmake.in
+index e8cfa4e..5cf8e57 100644
+--- a/stella_vslam/cmake/Config.cmake.in
++++ b/stella_vslam/cmake/Config.cmake.in
+@@ -1,7 +1,11 @@
+ include(CMakeFindDependencyMacro)
+ 
+ find_dependency(Threads)
+-find_dependency(OpenMP)
++find_package(OpenMP QUIET)  # optional, as in the top-level CMakeLists (Apple clang)
++if(NOT TARGET OpenMP::OpenMP_CXX)
++    add_library(OpenMP::OpenMP_CXX IMPORTED INTERFACE)
++    set_property(TARGET OpenMP::OpenMP_CXX PROPERTY INTERFACE_LINK_LIBRARIES Threads::Threads)
++endif()
+ find_dependency(OpenCV)
+ find_dependency(Eigen3)
+ find_dependency(g2o)
+diff --git a/stella_vslam_examples/CMakeLists.txt b/stella_vslam_examples/CMakeLists.txt
+index c45faec..de315cb 100644
+--- a/stella_vslam_examples/CMakeLists.txt
++++ b/stella_vslam_examples/CMakeLists.txt
+@@ -114,7 +114,7 @@ foreach(EXECUTABLE_TARGET IN LISTS EXECUTABLE_TARGETS)
+                           PRIVATE
+                           stella_vslam::stella_vslam
+                           opencv_imgcodecs
+-                          opencv_videoio)
++                          "$<$<TARGET_EXISTS:opencv_videoio>:opencv_videoio>")  # image runner needs no videoio
+ 
+     # include 3rd party library headers
+     target_include_directories(${EXECUTABLE_TARGET}
