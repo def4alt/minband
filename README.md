@@ -29,6 +29,7 @@ v2 until they are ported. The last main commit with a matching v1 core is `ecfd8
 | `ios/` | ARKit (marker origin, pose, depth) + Vision/CoreML detection + tracker + core FFI + UDP client; opt-in H.264 baseline measurement (VideoToolbox). | Swift |
 | `android/` | ARCore (marker origin, pose, Depth API where it works, else floor plane) + ONNX Runtime YOLO detection + tracker + core via uniffi Kotlin bindings + UDP client. Same wire protocol and ground-truth log as iOS. | Kotlin |
 | `tools/` | Pi 5 link box (`pi-link.sh`, tc netem profiles), golden vectors on aarch64 under qemu, dummynet (macOS), evaluation, baselines and charts. | Shell / TS |
+| `tools/recon3d/` | Drone video -> MASt3R-SLAM reconstruction -> YOLO masks placed in it -> 3D contacts with height through the v2 edge, link and receiver -> 3D page with each object as a textured solid in the reconstructed scene (README there). | Python / TS |
 | `e2e/` | End-to-end tests: real server + WASM core + sim edges over UDP, viewer in headless Chromium, kernel shaping on `lo`, CoT listener; fallback-run recorder. | TypeScript (Node) |
 | `proto/` | Wire protocol spec. | Markdown |
 | `docs/` | Design, prior art, milestones. | Markdown |
