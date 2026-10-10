@@ -7,11 +7,11 @@ plugins {
 
 android {
     namespace = "dev.minband.android"
-    compileSdk = 35
+    compileSdk = 36  // ClikaRT AAR requires compiling against API 36+
 
     defaultConfig {
         applicationId = "dev.minband.android"
-        minSdk = 26
+        minSdk = 28  // ClikaRT AAR's floor (not 26 as docs/CLIKA_PLAN.md assumed)
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
