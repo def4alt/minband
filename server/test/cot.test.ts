@@ -107,6 +107,15 @@ test('CoT event fields: type, how, time/stale, point, ce/le, track, callsign', (
   assert.match(coasting.remarks, /2 sources, coasting/);
   assert.match(coasting.remarks, /ce 2\.40 m/);
 
+  // Footage classes: still a-u-G; the class goes in the callsign and remarks only.
+  const [mover, armour, truck] = cotEvents([ent({ gid: 'g8', class: 100 }), ent({ gid: 'g9', class: 101 }), ent({ gid: 'g10', class: 7 })], SEOUL, T0);
+  assert.deepEqual([mover.type, armour.type, truck.type], ['a-u-G', 'a-u-G', 'a-u-G']);
+  assert.equal(mover.callsign, 'MOVER g8');
+  assert.match(mover.remarks, /mover \(unclassified ground mover: motion only, no appearance class\)/);
+  assert.equal(armour.callsign, 'ARMOURED g9');
+  assert.match(armour.remarks, /tank\/IFV\/APC by appearance, unverified/);
+  assert.equal(truck.callsign, 'TRUCK g10');
+
   const withAlt = cotEvents([ent({ pos: [0, 1.5, -10] })], { ...SEOUL, altM: 38 }, T0)[0];
   assert.ok(Math.abs(withAlt.hae - 39.5) < 0.01, `hae ${withAlt.hae}`);
   assert.equal(withAlt.le, 0.35, 'le = ce: the threshold bounds the 3D error');
