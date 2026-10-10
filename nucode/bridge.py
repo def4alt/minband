@@ -169,6 +169,7 @@ class Bridge:
         self.quiet = quiet
         self.stats = Stats()
         self.serial_write_lock = threading.Lock()
+        self.cumulative = Stats()
 
     def write_frame(self, frame_type: int, payload: bytes):
         with self.serial_write_lock:
@@ -230,15 +231,14 @@ class Bridge:
                 self.stats.udp_to_serial_frames += 1
 
     def stats_ticker_loop(self):
-        cumulative = Stats()
         while True:
             time.sleep(1)
             rates = self.stats.snapshot_and_reset_rates()
-            with cumulative.lock:
-                cumulative.serial_to_udp_bytes += rates["serial_to_udp_bytes"]
-                cumulative.serial_to_udp_frames += rates["serial_to_udp_frames"]
-                cumulative.udp_to_serial_bytes += rates["udp_to_serial_bytes"]
-                cumulative.udp_to_serial_frames += rates["udp_to_serial_frames"]
+            with self.cumulative.lock:
+                self.cumulative.serial_to_udp_bytes += rates["serial_to_udp_bytes"]
+                self.cumulative.serial_to_udp_frames += rates["serial_to_udp_frames"]
+                self.cumulative.udp_to_serial_bytes += rates["udp_to_serial_bytes"]
+                self.cumulative.udp_to_serial_frames += rates["udp_to_serial_frames"]
             if not self.quiet:
                 with self.stats.lock:
                     telem = self.stats.last_telemetry
@@ -266,12 +266,16 @@ class Bridge:
                     self.end_headers()
                     return
                 with bridge.stats.lock:
-                    body = json.dumps({
+                    payload = {
                         "telemetry": bridge.stats.last_telemetry,
                         "crc_errors": bridge.stats.crc_errors,
                         "oversize_drops": bridge.stats.oversize_drops,
                         "unknown_type_drops": bridge.stats.unknown_type_drops,
-                    }).encode("utf-8")
+                    }
+                with bridge.cumulative.lock:
+                    payload["cumulative_serial_to_udp_frames"] = bridge.cumulative.serial_to_udp_frames
+                    payload["cumulative_udp_to_serial_frames"] = bridge.cumulative.udp_to_serial_frames
+                body = json.dumps(payload).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
