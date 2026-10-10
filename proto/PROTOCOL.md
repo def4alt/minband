@@ -1,5 +1,7 @@
 # MinBand wire protocol v1
 
+> **v2 (2026-10-10 pivot): see [`PROTOCOL_V2.md`](PROTOCOL_V2.md). v1 below stays as the fallback demo's wire format.**
+
 Transport: UDP, edge -> server on :7777 (same socket for server -> edge acks). One message per
 datagram, max 1200 bytes payload (safe below typical MTU; a keyframe that doesn't fit is split
 into several `Keyframe` datagrams with `part/of`).
