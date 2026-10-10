@@ -228,3 +228,63 @@ the known-good defaults (Coded PHY, 40 B).
 An actual field (outdoor distance) run with this round-trip rig has
 not been done yet — only the close-range regression above and the
 earlier one-way >10 m result.
+
+Note: the CRC/seq losses documented in this section were a bug in the
+*test rig's* firmware (free-running RX generator racing its own TX
+echo), not the peripheral->central notify HVN-credit starvation
+described in the Coded PHY section above. The two are unrelated root
+causes on different BLE directions (RX->TX echo race here vs
+TX(central)->RX(peripheral) write-without-response in the operational
+path below).
+
+## Operational firmware restored to 2M PHY (2026-10-10)
+
+The range-test detour (Coded PHY) was only ever meant for the field
+rig above. `tx_central.ino`/`rx_peripheral.ino` are back on
+`BLE_GAP_PHY_2MBPS`, verified with one `linktest.py` run each at 40 B
+and 200 B (count 300, rate 50/s): 0% loss, RTT p50 ~40 ms both sizes.
+Tagged `fw-known-good-2m`.
+
+## One-way throughput sweep (2026-10-10)
+
+`oneway_test.py` measures one-way loss/latency through the real link,
+sender and receiver on the same host sharing a wall clock
+(`time.time_ns()`), so no RTT trick needed. Traffic goes
+TX(central)->RX(peripheral) only, via `clientUart.write()` in
+`tx_central.ino` — BLE write-without-response, chunked at MTU-3,
+multiple writes queued by the SoftDevice ("several in flight"). This
+is the direction *without* the notify HVN-credit problem.
+
+```
+python bridge.py --serial <TX_COM> --udp-listen 7788 --http-port 28765
+python bridge.py --serial <RX_COM> --udp-forward 127.0.0.1:7779 --http-port 28766
+python oneway_test.py --to 127.0.0.1:7788 --recv-port 7779 --sweep --duration 15
+```
+
+200 B datagrams, sweep 2/4/8/12/16 kB/s, 15 s per step (pass: loss
+<=0.1%, p95 < 200 ms):
+
+| Rate | Loss | p50 | p95 | Result |
+|---|---|---|---|---|
+| 2 kB/s | 0% | 18.6 ms | 49.0 ms | PASS |
+| 4 kB/s | 0% | 20.6 ms | 50.6 ms | PASS |
+| 8 kB/s | 0% | 149.9 ms | 460.6 ms | FAIL (latency) |
+| 12 kB/s | 28.7% | 2515.8 ms | 5115.8 ms | FAIL |
+| 16 kB/s | 43.7% | 7080.5 ms | 8145.3 ms | FAIL |
+
+8 kB/s already fails on p95 latency with zero loss — not corruption,
+a growing queue (sender outruns actual link throughput, backlog
+builds, latency balloons). 12/16 kB/s then show real loss once
+whatever's buffering the backlog (firmware's 1536 B serial-read
+buffer, most likely) overflows. This points to a real throughput
+ceiling between 4 and 8 kB/s for write-without-response on this 2M
+PHY connection — current firmware only calls
+`requestDataLengthUpdate()`/`requestMtuExchange(247)`, no explicit
+connection-interval request, which may be leaving throughput on the
+table.
+
+**Not yet done:** the 10-minute soak at 8 kB/s from the original task
+(deferred — pointless to run as specified once the 15 s sweep already
+fails at that rate; worth either running anyway to document the
+ceiling precisely, or investigating connection-interval tuning first).
+See handoff plan for next session.
