@@ -11,7 +11,7 @@ const CLS = { dismount: '#ffd60a', vehicle: '#4cc9f0', armour: '#ff4d4d', other:
 const classGroup = (cls) => (cls === 0 ? 'dismount' : cls === 101 ? 'armour' : cls === 100 ? 'other' : 'vehicle');
 const dominant = (mix) => Object.entries(mix || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'other';
 const mixLabel = (mix) => Object.entries(mix || {}).filter(([, v]) => v > 0).map(([k, v]) => `${v}${{ dismount: 'd', vehicle: 'v', armour: 'a', other: 'o' }[k]}`).join(' ');
-const LIVENESS_ALPHA = { fresh: 1, unheard: 0.6, lost: 0.35, departed: 0.3 };
+const LIVENESS_ALPHA = { fresh: 1, unheard: 0.6, lost: 0.35, 'out of view': 0.45, departed: 0.3 };
 
 const state = {
   cam: null, msg: null, prevT: -1, ws: null, dragging: false, lastSeekSent: 0,
@@ -51,8 +51,10 @@ function onMessage(m) {
   updateControls(m);
   drawSpark();
   const w = m.wire || {}, r = m.rx || {};
-  readout.innerHTML = `budget <b>${w.budgetBps ?? '?'} bit/s</b> · <b>${(w.bytesPerS ?? 0).toFixed(1)} B/s</b> · <b>${r.known ?? 0}</b> of <b>${r.of ?? 0}</b> known · <b>${w.profile ?? '?'}</b>${w.up === false ? ' <span class="lost">LINK DOWN</span>' : ''} · ${r.bytesTotal ?? 0} B total · ${w.dropped ?? 0} dropped`;
-  hud.textContent = `t=${m.t.toFixed(1)} s · edge ${m.edge?.tracks?.length ?? 0} tracks / ${m.edge?.contacts?.length ?? 0} contacts · rx ${r.contacts?.length ?? 0} contacts${r.ego ? ` · ego age ${r.ego.ageS.toFixed(1)} s` : ' · no ego yet'}`;
+  const d = w.detail;
+  readout.innerHTML = `budget <b>${w.budgetBps ?? '?'} bit/s</b> · <b>${(w.bytesPerS ?? 0).toFixed(1)} B/s</b> · <b>${r.known ?? 0}</b> of <b>${r.of ?? 0}</b> known · <b>${w.profile ?? '?'}</b>${w.up === false ? ' <span class="lost">LINK DOWN</span>' : ''} · ${r.bytesTotal ?? 0} B total · ${w.dropped ?? 0} dropped`
+    + (d ? `<br>detail <b>L${d.level}</b> · groups at <b>${d.linkM} m</b> · backlog ${d.backlogS.toFixed(1)} s · ${d.changes} change${d.changes === 1 ? '' : 's'}` : '');
+  hud.textContent = `t=${m.t.toFixed(1)} s · edge ${m.edge?.tracks?.length ?? 0} tracks / ${m.edge?.contacts?.length ?? 0} contacts${d ? ` (L${d.level}, ${d.linkM} m)` : ''} · rx ${r.contacts?.length ?? 0} contacts${r.ego ? ` · ego age ${r.ego.ageS.toFixed(1)} s` : ' · no ego yet'}${r.ego?.groupM ? ` · grouped at ${r.ego.groupM} m` : ''}`;
 }
 
 function resetLogs() {
@@ -139,11 +141,30 @@ function drawOverlay() {
   const clipT = video.readyState >= 1 ? video.currentTime : m.clipT;
   const dt = Math.max(-0.3, Math.min(0.3, clipT - m.t)); // dead-reckon tracks between messages
   const P = (e, n) => { const p = cam.projectEN(e, n, clipT); return p ? { x: p.u * sx, y: p.v * sy } : null; };
-  const radiusPx = (e, n, r, c0) => { const p1 = P(e + r, n); return p1 ? Math.max(3, Math.hypot(p1.x - c0.x, p1.y - c0.y)) : 3; };
+  // A ground radius in pixels: the median over four directions, capped at half the frame, so a
+  // point near the camera's horizon (where perspective stretches metres into hundreds of pixels,
+  // or flips them) cannot balloon the ring.
+  const RW = rect.width, RH = rect.height, MARGIN = 12;
+  const radiusPx = (e, n, r, c0) => {
+    const ds = [[r, 0], [-r, 0], [0, r], [0, -r]].map(([de, dn]) => P(e + de, n + dn)).filter(Boolean).map((p) => Math.hypot(p.x - c0.x, p.y - c0.y)).sort((a, b) => a - b);
+    return ds.length ? Math.max(3, Math.min(ds[ds.length >> 1], 0.5 * Math.min(RW, RH))) : 3;
+  };
+  const inFrame = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= -MARGIN && p.x <= RW + MARGIN && p.y >= -MARGIN && p.y <= RH + MARGIN;
+  // Out of the frame: no rings, a small marker on the border pointing to where it went.
+  const offFrame = (p, col, label) => {
+    const cx = RW / 2, cy = RH / 2, dx = p.x - cx, dy = p.y - cy;
+    const k = Math.min(Math.abs((RW / 2 - 8) / (dx || 1e-9)), Math.abs((RH / 2 - 8) / (dy || 1e-9)));
+    const bx = cx + dx * k, by = cy + dy * k, a = Math.atan2(dy, dx);
+    ctx.save(); ctx.globalAlpha = 0.85; ctx.fillStyle = col; ctx.translate(bx, by); ctx.rotate(a);
+    ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, -5); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.globalAlpha = 0.85; ctx.fillStyle = col; ctx.textAlign = bx > RW / 2 ? 'right' : 'left'; ctx.textBaseline = by > RH / 2 ? 'bottom' : 'top';
+    ctx.fillText(label, bx + (bx > RW / 2 ? -10 : 10), by + (by > RH / 2 ? -6 : 6));
+  };
   ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'bottom';
   if ($('showEdgeContacts').checked) {
     for (const c of m.edge?.contacts || []) {
       const p = P(c.e, c.n); if (!p) continue;
+      if (!inFrame(p)) continue; // the receiver's marker below shows where it went
       const r = radiusPx(c.e, c.n, c.radius, p);
       const col = CLS[dominant(c.mix)];
       ctx.globalAlpha = c.lost ? 0.35 : c.confirmed ? 0.9 : 0.5;
@@ -172,10 +193,16 @@ function drawOverlay() {
     for (const c of m.rx?.contacts || []) {
       if (c.departed || c.child) continue;
       const p = P(c.e, c.n); if (!p) continue;
+      if (c.located !== false && !inFrame(p)) { offFrame(p, '#ff7eb6', `rx#${c.id} ${c.liveness === 'fresh' ? 'off frame' : c.liveness}`); continue; }
+      if (c.located === false) {
+        const q = P(c.seenE ?? c.e, c.seenN ?? c.n); if (!q || !inFrame(q)) continue;
+        ctx.globalAlpha = 0.6; ctx.fillStyle = '#ff7eb6'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(`rx#${c.id} last seen here ${c.ageS.toFixed(0)} s ago`, q.x, q.y + 3); continue;
+      }
       ctx.globalAlpha = LIVENESS_ALPHA[c.liveness] ?? 0.6;
       ctx.strokeStyle = '#ff7eb6'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
       ctx.beginPath(); ctx.arc(p.x, p.y, radiusPx(c.e, c.n, c.radius, p), 0, Math.PI * 2); ctx.stroke();
-      if (!c.lost) { // the error radius: only for contacts the edge still tracks
+      { // the 95 % circle (PROTOCOL.md 5.3)
         ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(p.x, p.y, radiusPx(c.e, c.n, c.radius + (c.ceShown ?? c.ce ?? 0), p), 0, Math.PI * 2); ctx.stroke();
       }
@@ -238,6 +265,15 @@ function drawTopdown() {
   ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const c of m.rx?.contacts || []) {
     if (c.departed || c.child) continue; // tombstones stay in the log, children are drawn by their parent's split
+    if (c.located === false) { // the circle would be wider than the camera footprint: show where it was last seen
+      const q = toPx(c.seenE ?? c.e, c.seenN ?? c.n), col = CLS[dominant(c.mix)];
+      ctx.globalAlpha = 0.6; ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(q.x - 5, q.y - 5); ctx.lineTo(q.x + 5, q.y + 5); ctx.moveTo(q.x + 5, q.y - 5); ctx.lineTo(q.x - 5, q.y + 5); ctx.stroke();
+      if (c.motion === 'moving' && c.speed > 0.2) { const a = (c.course * Math.PI) / 180; ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x + Math.sin(a) * 14, q.y - Math.cos(a) * 14); ctx.stroke(); }
+      ctx.fillStyle = col; ctx.font = '10px ui-monospace, Menlo, monospace';
+      ctx.fillText(`#${c.id} last seen ${c.ageS.toFixed(0)} s ago · ${c.liveness === 'fresh' ? 'unlocated' : c.liveness}`, q.x, q.y + 14);
+      ctx.globalAlpha = 1; continue;
+    }
     const p = toPx(c.e, c.n), r = Math.max(4, c.radius * view.ppm), col = CLS[dominant(c.mix)];
     const focused = c.id === state.focusedId;
     ctx.globalAlpha = LIVENESS_ALPHA[c.liveness] ?? 0.7;
@@ -246,8 +282,8 @@ function drawTopdown() {
     ctx.strokeStyle = focused ? '#ffd166' : col; ctx.lineWidth = focused ? 3 : 1.5;
     ctx.setLineDash(c.liveness === 'fresh' ? [] : c.liveness === 'unheard' ? [5, 3] : [2, 4]);
     ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
-    // ce ring: the honest error radius, only while the edge still tracks it
-    if (!c.lost) {
+    // ce ring: where it is with 95 % probability (the receiver's belief, PROTOCOL.md 5.3)
+    {
       ctx.setLineDash([2, 3]); ctx.lineWidth = 1; ctx.strokeStyle = '#ff7eb6';
       ctx.beginPath(); ctx.arc(p.x, p.y, (c.radius + (c.ceShown ?? c.ce ?? 0)) * view.ppm, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }

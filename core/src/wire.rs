@@ -37,7 +37,9 @@ pub const X_PARENT: u8 = 1 << 0;
 pub const X_ALT: u8 = 1 << 1;
 pub const X_THERMAL: u8 = 1 << 2;
 pub const X_MOTION_ONLY: u8 = 1 << 3;
-pub const X_VERIFIED: u8 = 1 << 4;
+/// Lost because it left the camera's view (its last image box touched the frame edge): the
+/// position is where it was last seen, not where it is.
+pub const X_OUT_OF_VIEW: u8 = 1 << 4;
 pub const X_CHILD: u8 = 1 << 5;
 pub const X_RAY: u8 = 1 << 6;
 pub const X_BBOX: u8 = 1 << 7;
@@ -135,8 +137,12 @@ pub struct EgoRec {
     pub dx: i16, pub dy: i16, pub alt_agl: i16, pub heading: u8, pub speed: u8, pub climb: i8, pub nav: u8,
     pub battery: u8, pub pos_ce: u8, pub fp_dx: i16, pub fp_dy: i16, pub fp_radius: u8,
     pub n_contacts: u8, pub n_moving: u8, pub n_dismount: u8, pub n_vehicle: u8, pub n_armour: u8, pub n_other: u8,
+    /// Seconds the oldest never-sent revision has waited for the link (0 = the queue keeps up).
+    pub backlog: u8,
+    /// m8, the vehicle link distance the edge groups at now (its detail level); 0 unknown.
+    pub group_m: u8,
 }
-pub const EGO_LEN: usize = 23;
+pub const EGO_LEN: usize = 25;
 impl EgoRec {
     pub fn nav_byte(mode: u8, gnss: u8, link: u8, video: bool) -> u8 {
         (mode & 7) | ((gnss & 3) << 3) | ((link & 3) << 5) | if video { 0x80 } else { 0 }
@@ -255,7 +261,7 @@ impl Record {
             Record::Ego(e) => {
                 w.i16(e.dx); w.i16(e.dy); w.i16(e.alt_agl); w.u8(e.heading); w.u8(e.speed); w.i8(e.climb); w.u8(e.nav);
                 w.u8(e.battery); w.u8(e.pos_ce); w.i16(e.fp_dx); w.i16(e.fp_dy); w.u8(e.fp_radius);
-                w.u8(e.n_contacts); w.u8(e.n_moving); w.u8(e.n_dismount); w.u8(e.n_vehicle); w.u8(e.n_armour); w.u8(e.n_other);
+                w.u8(e.n_contacts); w.u8(e.n_moving); w.u8(e.n_dismount); w.u8(e.n_vehicle); w.u8(e.n_armour); w.u8(e.n_other); w.u8(e.backlog); w.u8(e.group_m);
             }
             Record::Pose(p) => { w.u32(p.tick); w.i32(p.x); w.i32(p.y); w.i32(p.z); w.i16(p.yaw); w.i16(p.pitch); w.i16(p.roll); }
             Record::Contact(c) => {
@@ -297,7 +303,7 @@ impl Record {
                 climb: r.i8().ok_or(bad)?, nav: r.u8().ok_or(bad)?, battery: r.u8().ok_or(bad)?, pos_ce: r.u8().ok_or(bad)?,
                 fp_dx: r.i16().ok_or(bad)?, fp_dy: r.i16().ok_or(bad)?, fp_radius: r.u8().ok_or(bad)?,
                 n_contacts: r.u8().ok_or(bad)?, n_moving: r.u8().ok_or(bad)?, n_dismount: r.u8().ok_or(bad)?, n_vehicle: r.u8().ok_or(bad)?,
-                n_armour: r.u8().ok_or(bad)?, n_other: r.u8().ok_or(bad)?,
+                n_armour: r.u8().ok_or(bad)?, n_other: r.u8().ok_or(bad)?, backlog: r.u8().ok_or(bad)?, group_m: r.u8().ok_or(bad)?,
             }),
             T_POSE => Record::Pose(PoseRec {
                 tick: r.u32().ok_or(bad)?, x: r.i32().ok_or(bad)?, y: r.i32().ok_or(bad)?, z: r.i32().ok_or(bad)?,
@@ -422,14 +428,14 @@ pub fn describe_record(r: &Record) -> String {
     match r {
         Record::Session(s) => format!("Session nonce={:08x} dev={} origin={:.5},{:.5} res={} caps={:#06x} hfov={:.1} img={}x{} frame0={} fps={:.2}",
             s.nonce, s.device_id, s.origin_lat as f64 * 1e-7, s.origin_lon as f64 * 1e-7, pos_res_m(s.pos_res), s.caps, s.hfov_x10 as f32 / 10.0, s.img_w, s.img_h, s.video_frame0, s.fps_x100 as f32 / 100.0),
-        Record::Ego(e) => format!("Ego pos=({},{}) agl={} hdg={:.0} spd={:.2} nav={} gnss={} link={}{} bat={} ce={:.2} fp=({},{}) r={:.0} n={} moving={} mix={}/{}/{}/{}",
+        Record::Ego(e) => format!("Ego pos=({},{}) agl={} hdg={:.0} spd={:.2} nav={} gnss={} link={}{} bat={} ce={:.2} fp=({},{}) r={:.0} n={} moving={} mix={}/{}/{}/{} backlog={}s group={:.0}",
             e.dx, e.dy, e.alt_agl, u8_to_deg(e.heading), u8_to_speed(e.speed), nav_name(e.nav), gnss_name(e.nav), link_name(e.nav), if e.nav & 0x80 != 0 { " video" } else { "" },
-            e.battery, m8_to_m(e.pos_ce), e.fp_dx, e.fp_dy, m8_to_m(e.fp_radius), e.n_contacts, e.n_moving, e.n_dismount, e.n_vehicle, e.n_armour, e.n_other),
+            e.battery, m8_to_m(e.pos_ce), e.fp_dx, e.fp_dy, m8_to_m(e.fp_radius), e.n_contacts, e.n_moving, e.n_dismount, e.n_vehicle, e.n_armour, e.n_other, e.backlog, m8_to_m(e.group_m)),
         Record::Pose(p) => format!("Pose tick={} xyz=({:.2},{:.2},{:.2}) ypr=({:.2},{:.2},{:.2})", p.tick, p.x as f32 / 100.0, p.y as f32 / 100.0, p.z as f32 / 100.0, p.yaw as f32 / 100.0, p.pitch as f32 / 100.0, p.roll as f32 / 100.0),
         Record::Contact(c) => {
-            let mut s = format!("Contact id={} rev={} {}{}{}{}{}{} pos=({},{}) ce={:.2} r={:.2} mix={}/{}/{}/{} conf={} first={}s since={}s age={}s",
+            let mut s = format!("Contact id={} rev={} {}{}{}{}{}{}{} pos=({},{}) ce={:.2} r={:.2} mix={}/{}/{}/{} conf={} first={}s since={}s age={}s",
                 c.id, c.rev, motion_name(c.flags), if c.has(F_CONFIRMED) { " confirmed" } else { "" }, if c.has(F_LOST) { " lost" } else { "" },
-                if c.has(F_DEPARTED) { " departed" } else { "" }, if c.has(F_FOCUSED) { " focused" } else { "" }, if c.has(F_GROUP) { " group" } else { "" },
+                if c.has(F_DEPARTED) { " departed" } else { "" }, if c.has(F_FOCUSED) { " focused" } else { "" }, if c.has(F_GROUP) { " group" } else { "" }, if c.ext_has(X_OUT_OF_VIEW) { " out-of-view" } else { "" },
                 c.dx, c.dy, m8_to_m(c.ce), m8_to_m(c.radius), c.n_dismount, c.n_vehicle, c.n_armour, c.n_other, c.conf, c.first_seen, c.since, c.age);
             if c.has(F_VELOCITY) { s += &format!(" crs={:.0} spd={:.2}", u8_to_deg(c.course), u8_to_speed(c.speed)); }
             if c.ext_has(X_PARENT) { s += &format!(" parent={}", c.parent); }
@@ -472,8 +478,8 @@ mod tests {
     fn sizes_match_the_spec() {
         let s = Record::Session(SessionRec { nonce: 1, device_id: 2, origin_lat: 0, origin_lon: 0, origin_alt: 0, pos_res: 2, caps: 0, utc_at_tick0: 0, hfov_x10: 850, img_w: 3840, img_h: 2160, video_frame0: 450, fps_x100: 2997 });
         assert_eq!(s.wire_len(), 37);
-        let e = Record::Ego(EgoRec { dx: 0, dy: 0, alt_agl: 80, heading: 0, speed: 0, climb: 0, nav: 0, battery: 90, pos_ce: 0, fp_dx: 0, fp_dy: 0, fp_radius: 0, n_contacts: 0, n_moving: 0, n_dismount: 0, n_vehicle: 0, n_armour: 0, n_other: 0 });
-        assert_eq!(e.wire_len(), 25);
+        let e = Record::Ego(EgoRec { dx: 0, dy: 0, alt_agl: 80, heading: 0, speed: 0, climb: 0, nav: 0, battery: 90, pos_ce: 0, fp_dx: 0, fp_dy: 0, fp_radius: 0, n_contacts: 0, n_moving: 0, n_dismount: 0, n_vehicle: 0, n_armour: 0, n_other: 0, backlog: 0, group_m: m_to_m8(15.0) });
+        assert_eq!(e.wire_len(), 27);
         assert_eq!(Record::Pose(PoseRec { tick: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 }).wire_len(), 24);
         let plain = ContactRec { flags: MOTION_STATIC, ..Default::default() };
         assert_eq!(Record::Contact(plain).wire_len(), 23);
@@ -488,7 +494,7 @@ mod tests {
     fn frame_round_trips_with_and_without_crc() {
         let f = Frame { session: 0xBEEF, seq: 65535, tick: 123456, uplink: false, cycle_end: true, records: vec![
             Record::Session(SessionRec { nonce: 0xDEADBEEF, device_id: 7, origin_lat: 393500000, origin_lon: -857000000, origin_alt: 200, pos_res: 2, caps: CAP_GNSS | CAP_VIDEO, utc_at_tick0: 1_800_000_000, hfov_x10: 850, img_w: 3840, img_h: 2160, video_frame0: 450, fps_x100: 2997 }),
-            Record::Ego(EgoRec { dx: 23, dy: -16, alt_agl: 80, heading: 0, speed: 2, climb: -1, nav: EgoRec::nav_byte(2, 2, 0, true), battery: 83, pos_ce: m_to_m8(3.0), fp_dx: 0, fp_dy: 0, fp_radius: m_to_m8(60.0), n_contacts: 9, n_moving: 2, n_dismount: 3, n_vehicle: 10, n_armour: 0, n_other: 1 }),
+            Record::Ego(EgoRec { dx: 23, dy: -16, alt_agl: 80, heading: 0, speed: 2, climb: -1, nav: EgoRec::nav_byte(2, 2, 0, true), battery: 83, pos_ce: m_to_m8(3.0), fp_dx: 0, fp_dy: 0, fp_radius: m_to_m8(60.0), n_contacts: 9, n_moving: 2, n_dismount: 3, n_vehicle: 10, n_armour: 0, n_other: 1, backlog: 0, group_m: m_to_m8(30.0) }),
             Record::Pose(PoseRec { tick: 123450, x: 2326, y: -1614, z: 8001, yaw: 0, pitch: -8309, roll: 12 }),
             Record::Contact(sample_contact()),
             Record::Contact(ContactRec { id: 9, rev: 250, flags: MOTION_STATIC | F_DEPARTED, ext: X_PARENT | X_ALT | X_CHILD, parent: 7, dz: -3, ..Default::default() }),

@@ -1,13 +1,13 @@
 //! The edge: tracks and own state in, frames out. Owns the contact manager, the schedule of every
 //! record, the pose queue, the token bucket for the budget, and the frame builder.
 
-use crate::contacts::{Contact, ContactConfig, ContactManager, Track};
+use crate::contacts::{Contact, ContactConfig, ContactManager, Detail, Track, DETAIL_LEVELS};
 use crate::geo::{ce_m, ray_az_el};
 use crate::scheduler::{target_frame_bytes, timing, Entry, Regime, Timing, LADDER_LEN};
 use crate::wire::*;
 use crate::TICK_HZ;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -36,12 +36,22 @@ pub struct EdgeConfig {
     pub sigma_px: f32,
     pub f_px: f32,
     pub contacts: ContactConfig,
+    /// A fixed detail level (`contacts::DETAIL`); None = the edge picks it from the load it measures.
+    pub detail: Option<u8>,
+    /// The radio paces the edge: the host reports what the link drained (`link_credit`) instead of
+    /// the edge filling its token bucket from `budget_bps` (flow control, as RTS/CTS or a modem's
+    /// free-buffer report). The budget then only sets the starting estimate and the timing.
+    pub paced: bool,
+    /// Backlog (seconds of link time) that coarsens the detail level (`COARSEN_S`). Lower keeps a
+    /// busy picture fresher; higher keeps a quiet one precise (docs/PROTOCOL_EVAL.md 11).
+    pub coarsen_s: f32,
 }
 impl Default for EdgeConfig {
     fn default() -> Self {
         EdgeConfig { device_id: 1, nonce: 1, origin_lat_e7: 0, origin_lon_e7: 0, origin_alt: 0x7FFF, pos_res: 2, caps: CAP_GNSS | CAP_BARO | CAP_MAG | CAP_IMU,
             utc_at_tick0: 0, hfov_x10: 850, img_w: 1920, img_h: 1080, video_frame0: 0xFFFF_FFFF, fps_x100: 0, budget_bps: 800, max_frame: 1200, crc: false,
-            carrier_overhead: UDP_IP_OVERHEAD, sigma_own: 3.0, sigma_att_deg: 1.5, sigma_h: 2.0, sigma_px: 2.0, f_px: 2000.0, contacts: ContactConfig::default() }
+            carrier_overhead: UDP_IP_OVERHEAD, sigma_own: 3.0, sigma_att_deg: 1.5, sigma_h: 2.0, sigma_px: 2.0, f_px: 2000.0, contacts: ContactConfig::default(),
+            detail: None, paced: false, coarsen_s: COARSEN_S }
     }
 }
 
@@ -54,9 +64,12 @@ pub struct EgoInput {
     pub nav_mode: u8, pub gnss: u8, pub battery: u8, pub pos_ce: f32,
     pub fp_e: f32, pub fp_n: f32, pub fp_radius: f32,
     pub video: bool,
+    /// The camera is delivering frames. When it stops (gimbal away, feed lost, end of a replay)
+    /// what goes lost afterwards has left the view, it was not lost in it.
+    pub looking: bool,
 }
 impl Default for EgoInput {
-    fn default() -> Self { EgoInput { e: 0.0, n: 0.0, alt_agl: 0.0, heading_deg: 0.0, speed: 0.0, climb: 0.0, nav_mode: 2, gnss: 2, battery: 255, pos_ce: 3.0, fp_e: 0.0, fp_n: 0.0, fp_radius: 0.0, video: false } }
+    fn default() -> Self { EgoInput { e: 0.0, n: 0.0, alt_agl: 0.0, heading_deg: 0.0, speed: 0.0, climb: 0.0, nav_mode: 2, gnss: 2, battery: 255, pos_ce: 3.0, fp_e: 0.0, fp_n: 0.0, fp_radius: 0.0, video: false, looking: true } }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -64,6 +77,161 @@ pub struct EdgeStats {
     pub seq: u16, pub frames: u64, pub bytes: u64, pub bytes_wire: u64,
     pub contacts_sent: u64, pub ego_sent: u64, pub session_sent: u64, pub pose_sent: u64,
     pub budget_bps: u32, pub regime: Option<Regime>, pub digests: u64, pub focus_cmds: u64, pub tokens: f32,
+    /// Detail level, its vehicle link distance, and the load that set it (see `Load`).
+    pub level: u8, pub link_m: f32, pub level_changes: u32,
+    pub backlog_s: f32, pub backlog_b: u32, pub oldest_s: f32, pub drain_bps: f32, pub link_bps: f32,
+}
+
+/// Coarsen one level when the smoothed backlog stays above `COARSEN_S` seconds of link time (the
+/// default of `EdgeConfig::coarsen_s`) for `COARSEN_FOR` and is not draining (a faster average,
+/// `TREND_TAU_S`, down by `DRAINING` over that time: a burst of births, or the queue a change
+/// leaves behind, is not a reason for a change). Refine one level when it stays below `REFINE_S`
+/// for `REFINE_FOR`, the uplink is heard, and the finer level is predicted to fit within
+/// `REFINE_HEADROOM` of what the link carries: the larger of first-copy demand scaled by the
+/// contacts it would make and the change-threshold ratio, and the demand per contact last measured
+/// at that level times its contacts; plus the births, `REC_B` each, drained within
+/// `REFINE_BURST_S`. Hold `LEVEL_HOLD` after any change (longer than the split patience, so
+/// regrouping settles). A refine undone by a coarsen within `REFINE_UNDONE` doubles the refine
+/// wait, up to `REFINE_FOR_MAX`; one that holds halves it back (PROTOCOL.md 6.4).
+pub const COARSEN_S: f32 = 2.0;
+pub const COARSEN_FOR: u32 = 3 * TICK_HZ;
+pub const DRAINING: f32 = 0.8;
+pub const TREND_TAU_S: f32 = 0.5;
+pub const REFINE_S: f32 = 0.3;
+pub const REFINE_FOR: u32 = 15 * TICK_HZ;
+pub const REFINE_FOR_MAX: u32 = 120 * TICK_HZ;
+pub const REFINE_UNDONE: u32 = 30 * TICK_HZ;
+pub const REFINE_HEADROOM: f32 = 0.5;
+pub const REFINE_BURST_S: f32 = 10.0;
+pub const REC_B: f32 = 25.0;
+pub const LEVEL_HOLD: u32 = 10 * TICK_HZ;
+/// What the link drained is counted over this window, first-copy demand over the longer one; the
+/// backlog is smoothed with this time constant.
+pub const DRAIN_WINDOW: u32 = 5 * TICK_HZ;
+pub const DEMAND_WINDOW: u32 = 10 * TICK_HZ;
+pub const BACKLOG_TAU_S: f32 = 2.0;
+
+/// The starting level from the advertised budget: 0 in the video regime, 1 on wide and thin links,
+/// 2 at the floor. A busy scene coarsens within seconds; a quiet one on a thin link is best at 1
+/// (docs/PROTOCOL_EVAL.md 11).
+pub fn seed_level(budget_bps: u32) -> u8 {
+    match timing(budget_bps).regime { Regime::Video => 0, Regime::Wide | Regime::Thin => 1, Regime::Floor => 2 }
+}
+
+/// The finest level the controller refines to: 0 only on links of 8 kbit/s or more (video and wide
+/// regimes); on thinner ones its extra revisions cost more than its tighter groups give.
+pub fn finest_level(link_bps: u32) -> u8 {
+    match timing(link_bps).regime { Regime::Video | Regime::Wide => 0, _ => 1 }
+}
+
+/// The load signal and the level controller. Backlog = bytes of contact records due on the ladder
+/// (first copies and repeats) and not sent after the frame builder ran (focused records and merge
+/// tombstones excluded), over what the link drained in the last `DRAIN_WINDOW`: seconds of link
+/// time. It does not depend on the budget being right.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Load {
+    pub level: u8,
+    pub fixed: bool,
+    pub coarsen_s: f32,
+    pub backlog_b: u32,
+    pub oldest_s: f32,
+    pub drain_bps: f32,
+    pub backlog_s: f32,
+    pub smooth_s: f32,
+    pub fast_s: f32,
+    /// First copies of revisions entering the queue, bit/s, and what the last refine check predicted.
+    pub demand_bps: f32,
+    pub predicted_bps: f32,
+    pub changes: u32,
+    pub changed_at: Option<u32>,
+    pub refine_for: u32,
+    /// First-copy demand per reported contact (bit/s) last measured while each level was held.
+    pub per_contact: [Option<f32>; 5],
+    probe: Option<u32>,
+    above_since: Option<u32>,
+    below_since: Option<u32>,
+    #[serde(skip)] sent: VecDeque<(u32, u32)>,
+    #[serde(skip)] credits: VecDeque<(u32, u32)>,
+    #[serde(skip)] demand: VecDeque<(u32, u32)>,
+    #[serde(skip)] trend: VecDeque<(u32, f32)>,
+    first: Option<u32>,
+    last: Option<u32>,
+}
+
+/// What the edge knows about the link at one step.
+pub struct LinkView<'a> {
+    pub backlog_b: u32,
+    pub oldest: u32,
+    pub hears: bool,
+    /// Application bit/s the link carries (budget or radio credits); None = unlimited.
+    pub capacity_bps: Option<f32>,
+    /// The finest level allowed on this link (`finest_level`).
+    pub finest: u8,
+    /// Reported top-level contacts now.
+    pub contacts: usize,
+    /// For a refine: contacts the tracks make at this level and at the next finer one, and the ratio
+    /// of their change thresholds.
+    pub finer: &'a dyn Fn() -> (usize, usize, f32),
+}
+
+impl Load {
+    fn new(level: u8, fixed: bool) -> Self { Load { level, fixed, coarsen_s: COARSEN_S, refine_for: REFINE_FOR, ..Default::default() } }
+    fn window(q: &mut VecDeque<(u32, u32)>, now: u32, w: u32) -> u32 {
+        while q.front().map_or(false, |&(t, _)| now.saturating_sub(t) >= w) { q.pop_front(); }
+        q.iter().map(|&(_, b)| b).sum()
+    }
+    fn span_s(&self, now: u32, w: u32) -> f32 { (now.saturating_sub(self.first.unwrap_or(now)).min(w).max(TICK_HZ)) as f32 / TICK_HZ as f32 }
+    /// Bit/s the radio's credits allowed (paced mode), if any.
+    fn credit_bps(&mut self, now: u32) -> Option<f32> {
+        if self.credits.is_empty() { return None; }
+        let b = Self::window(&mut self.credits, now, DRAIN_WINDOW);
+        Some(b as f32 * 8.0 / self.span_s(now, DRAIN_WINDOW))
+    }
+    /// One measurement after the frame builder ran; returns the new level when it changes.
+    fn step(&mut self, m: LinkView, now: u32) -> Option<u8> {
+        self.first.get_or_insert(now);
+        let dt = self.last.map_or(0, |l| now.saturating_sub(l)) as f32 / TICK_HZ as f32;
+        self.last = Some(now);
+        let drained = Self::window(&mut self.sent, now, DRAIN_WINDOW) as f32 / self.span_s(now, DRAIN_WINDOW);
+        self.drain_bps = drained * 8.0;
+        self.demand_bps = Self::window(&mut self.demand, now, DEMAND_WINDOW) as f32 * 8.0 / self.span_s(now, DEMAND_WINDOW);
+        self.backlog_b = m.backlog_b; self.oldest_s = m.oldest as f32 / TICK_HZ as f32;
+        self.backlog_s = if m.backlog_b == 0 { 0.0 } else if drained <= 0.0 { 60.0 } else { (m.backlog_b as f32 / drained).min(60.0) };
+        self.smooth_s += (self.backlog_s - self.smooth_s) * (1.0 - (-dt / BACKLOG_TAU_S).exp());
+        self.fast_s += (self.backlog_s - self.fast_s) * (1.0 - (-dt / TREND_TAU_S).exp());
+        self.trend.push_back((now, self.fast_s));
+        while self.trend.len() > 1 && now.saturating_sub(self.trend[1].0) >= COARSEN_FOR { self.trend.pop_front(); }
+        if let Some(p) = self.probe { if now.saturating_sub(p) > REFINE_UNDONE { self.probe = None; self.refine_for = (self.refine_for / 2).max(REFINE_FOR); } }
+        // Once the demand window holds this level only, remember what a contact costs at it.
+        if now.saturating_sub(self.changed_at.or(self.first).unwrap_or(now)) >= DEMAND_WINDOW {
+            let r = self.demand_bps / m.contacts.max(1) as f32;
+            let pc = &mut self.per_contact[self.level as usize];
+            *pc = Some(pc.map_or(r, |x| x + (r - x) * 0.05));
+        }
+        if self.fixed { return None; }
+        if self.smooth_s > self.coarsen_s { self.above_since.get_or_insert(now); } else { self.above_since = None; }
+        // A silent uplink means jamming or trouble: never refine on it.
+        if self.smooth_s < REFINE_S && m.hears { self.below_since.get_or_insert(now); } else { self.below_since = None; }
+        if self.changed_at.map_or(false, |t| now.saturating_sub(t) < LEVEL_HOLD) { return None; }
+        let held = |s: Option<u32>, d: u32| s.map_or(false, |t| now.saturating_sub(t) >= d);
+        let draining = self.trend.front().map_or(false, |&(t, v)| now.saturating_sub(t) >= COARSEN_FOR && self.fast_s < DRAINING * v);
+        let next = if self.level + 1 < DETAIL_LEVELS && held(self.above_since, COARSEN_FOR) && !draining {
+            if self.probe.take().is_some() { self.refine_for = (self.refine_for * 2).min(REFINE_FOR_MAX); }
+            self.level + 1
+        } else if self.level > m.finest && held(self.below_since, self.refine_for) {
+            let (n_now, n_fine, dev) = (m.finer)();
+            let scaled = self.demand_bps * n_fine as f32 / n_now.max(1) as f32 * dev;
+            let known = self.per_contact[self.level as usize - 1].map_or(0.0, |r| r * n_fine as f32);
+            let births = n_fine.saturating_sub(n_now) as f32 * REC_B * 8.0 / REFINE_BURST_S;
+            self.predicted_bps = scaled.max(known) + births;
+            if m.capacity_bps.map_or(false, |c| self.predicted_bps > REFINE_HEADROOM * c) { return None; }
+            self.probe = Some(now);
+            self.level - 1
+        } else { return None };
+        self.level = next; self.changes += 1; self.changed_at = Some(now);
+        self.above_since = None; self.below_since = None;
+        Some(next)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -87,16 +255,42 @@ pub struct Edge {
     pub stats: EdgeStats,
     last_ego: Option<EgoRec>,
     uplink_heard: Option<u32>,
+    pub load: Load,
 }
 
 impl Edge {
     pub fn new(cfg: EdgeConfig) -> Self {
         let t = timing(cfg.budget_bps);
-        let cm = ContactManager::new(cfg.contacts, pos_res_m(cfg.pos_res));
+        let mut cm = ContactManager::new(cfg.contacts, pos_res_m(cfg.pos_res));
+        let level = cfg.detail.unwrap_or_else(|| seed_level(cfg.budget_bps)).min(DETAIL_LEVELS - 1);
+        cm.set_level(level);
         Edge { timing: t, cm, entries: BTreeMap::new(), ego_due: 0, last_nav: None, session_due: 0, session_sends: 0, poses: Vec::new(), last_pose_tick: None,
             focus: BTreeMap::new(), tokens: 0.0, last_tick: None, last_frame_tick: None, stats: EdgeStats { budget_bps: cfg.budget_bps, regime: Some(t.regime), ..Default::default() },
-            last_ego: None, uplink_heard: None, cfg }
+            last_ego: None, uplink_heard: None, load: Load { coarsen_s: cfg.coarsen_s, ..Load::new(level, cfg.detail.is_some()) }, cfg }
     }
+
+    /// Paced mode: the radio drained `bytes` (or has that much more room) since the last call.
+    pub fn link_credit(&mut self, bytes: u32, now: u32) {
+        self.tokens += bytes as f32;
+        self.load.credits.push_back((now, bytes));
+    }
+
+    /// The link's rate as the edge knows it: measured from the radio's credits when paced, else
+    /// the budget (0 = unlimited).
+    fn link_bps(&mut self, now: u32) -> u32 {
+        if self.cfg.paced { if let Some(b) = self.load.credit_bps(now) { return (b.round() as u32).max(1); } }
+        self.cfg.budget_bps
+    }
+    fn frame_target(&mut self, now: u32) -> usize { target_frame_bytes(self.link_bps(now), self.cfg.max_frame) }
+
+    /// Moves to a detail level (fixed, or from the controller).
+    pub fn set_level(&mut self, n: u8, now: u32) {
+        let n = n.min(DETAIL_LEVELS - 1);
+        if n == self.cm.level { return; }
+        if self.load.level != n { self.load.level = n; self.load.changes += 1; self.load.changed_at = Some(now); }
+        self.cm.set_level(n);
+    }
+    pub fn detail(&self) -> Detail { self.cm.detail() }
 
     pub fn timing(&self) -> &Timing { &self.timing }
 
@@ -180,20 +374,32 @@ impl Edge {
         let expired: Vec<u16> = self.focus.iter().filter(|(_, f)| now >= f.until).map(|(k, _)| *k).collect();
         for id in expired { self.focus.remove(&id); self.cm.set_focus(id, false, false); if let Some(e) = self.entries.get_mut(&id) { e.changed(now); } }
 
+        if self.cm.looking && !ego.looking { self.cm.blind_since = Some(now); }
+        if ego.looking { self.cm.blind_since = None; }
+        self.cm.looking = ego.looking;
         let changed = self.cm.update(&filled, now);
         // A focused revision goes out as soon as the focus share allows: at once on a fast link,
         // after `focus_share_gap` on a thin one. Under focus the change threshold is halved, and a
         // split group of walking people would otherwise revise every step and starve the picture.
-        let gap = self.focus_share_gap();
+        let gap = self.focus_share_gap(now);
         for id in changed {
-            let fast = self.cm.contacts.get(&id).map_or(false, |c| c.fast() && !c.departed && !c.lost);
+            let Some(c) = self.cm.contacts.get(&id) else { continue };
+            if !self.cm.reportable(c) { continue; }
+            if !c.fast() && !self.merge_tombstone(c) { self.load.demand.push_back((now, Record::Contact(self.contact_rec(c, ego, now)).wire_len() as u32)); }
+            let fast = c.fast() && !c.departed && !c.lost;
             let e = self.entries.entry(id).or_insert_with(Entry::default);
             match (fast, e.last_sent) {
                 (true, Some(last)) => { e.step = 0; e.due = e.due.min(now.max(last + gap)); }
                 _ => e.changed(now),
             }
         }
-        for id in self.cm.contacts.keys() { self.entries.entry(*id).or_insert_with(|| { let mut e = Entry::default(); e.changed(now); e }); }
+        // Below the detail level's report-age gate a contact has no schedule entry and costs nothing;
+        // one that departs before it was ever reported just goes.
+        let gate: Vec<(u16, bool, bool)> = self.cm.contacts.values().map(|c| (c.id, self.cm.reportable(c), c.departed)).collect();
+        for (id, ok, departed) in gate {
+            if ok { self.entries.entry(id).or_insert_with(|| { let mut e = Entry::default(); e.changed(now); e }); }
+            else { self.entries.remove(&id); if departed { self.cm.remove(id); } }
+        }
         // Tombstones past their life leave the rotation.
         let t = self.timing;
         let drop: Vec<u16> = self.cm.contacts.values().filter(|c| c.departed && c.departed_at.map_or(false, |d| now.saturating_sub(d) > 2 * t.floor) && !c.dirty).map(|c| c.id).collect();
@@ -207,13 +413,14 @@ impl Edge {
         // Token bucket for the budget.
         let dt = self.last_tick.map_or(0, |l| now.saturating_sub(l)) as f32 / TICK_HZ as f32;
         self.last_tick = Some(now);
-        let target = target_frame_bytes(self.cfg.budget_bps, self.cfg.max_frame);
-        if self.cfg.budget_bps > 0 {
+        let target = self.frame_target(now);
+        if self.cfg.paced { self.tokens = self.tokens.min(2.0 * target as f32); }
+        else if self.cfg.budget_bps > 0 {
             self.tokens = (self.tokens + dt * self.cfg.budget_bps as f32 / 8.0).min(2.0 * target as f32);
         }
         let mut out = Vec::new();
         loop {
-            let unlimited = self.cfg.budget_bps == 0;
+            let unlimited = self.cfg.budget_bps == 0 && !self.cfg.paced;
             if unlimited { if self.last_frame_tick.map_or(false, |l| now.saturating_sub(l) < TICK_HZ / 10) { break; } }
             else if self.tokens < target as f32 { break; }
             let Some(frame) = self.build_frame(ego, nav, now, target) else { break };
@@ -221,11 +428,55 @@ impl Edge {
             self.tokens -= (bytes.len() + self.cfg.carrier_overhead) as f32;
             self.stats.frames += 1; self.stats.bytes += bytes.len() as u64; self.stats.bytes_wire += (bytes.len() + self.cfg.carrier_overhead) as u64;
             self.last_frame_tick = Some(now);
+            self.load.sent.push_back((now, bytes.len() as u32));
             out.push(bytes);
             if unlimited { break; }
         }
         self.stats.tokens = self.tokens;
+        // The load after this tick's frames, and the level it asks for.
+        let (backlog_b, oldest) = self.backlog(ego, now);
+        let hears = self.link_state(now) == 0;
+        let link_bps = self.link_bps(now) as f32;
+        let capacity_bps = if link_bps <= 0.0 { None } else {
+            let target = self.frame_target(now) as f32;
+            Some(link_bps * target / (target + self.cfg.carrier_overhead as f32))
+        };
+        let cm = &self.cm;
+        let contacts = cm.contacts.values().filter(|c| !c.departed && !c.is_child() && cm.reportable(c)).count();
+        let finer = || {
+            if cm.level == 0 { return (1, 1, 1.0); }
+            (cm.clusters_at(cm.level, now), cm.clusters_at(cm.level - 1, now), cm.ladder(cm.level).dev_factor / cm.ladder(cm.level - 1).dev_factor)
+        };
+        let finest = finest_level(link_bps as u32);
+        if let Some(n) = self.load.step(LinkView { backlog_b, oldest, hears, capacity_bps, finest, contacts, finer: &finer }, now) { self.cm.set_level(n); }
+        let (l, st) = (&self.load, &mut self.stats);
+        st.level = self.cm.level; st.link_m = self.cm.cfg.link_m; st.level_changes = l.changes;
+        st.backlog_s = l.smooth_s; st.backlog_b = l.backlog_b; st.oldest_s = l.oldest_s; st.drain_bps = l.drain_bps; st.link_bps = link_bps;
         out
+    }
+
+    /// Bytes of ladder records (first copies and repeats) due now, and how long the oldest has
+    /// waited. Floor repeats are housekeeping; focused records have their own share; merge
+    /// tombstones ride at the floor class and would otherwise make one coarsening ask for the next.
+    fn backlog(&self, ego: &EgoInput, now: u32) -> (u32, u32) {
+        let (mut b, mut oldest) = (0u32, 0u32);
+        for (id, e) in &self.entries {
+            if e.due > now || e.step >= LADDER_LEN { continue; }
+            let Some(c) = self.cm.contacts.get(id) else { continue };
+            if c.fast() || self.merge_tombstone(c) { continue; }
+            b += Record::Contact(self.contact_rec(c, ego, now)).wire_len() as u32;
+            oldest = oldest.max(now - e.due);
+        }
+        (b, oldest)
+    }
+
+    /// A tombstone of a contact absorbed by a merge within `LEVEL_HOLD` + the split patience of a
+    /// level change: the merged group already carries its members.
+    fn merge_tombstone(&self, c: &Contact) -> bool {
+        c.departed && c.absorbed && match (self.load.changed_at, c.departed_at) {
+            (Some(t), Some(d)) => d >= t && d - t <= LEVEL_HOLD + self.cm.cfg.t_split,
+            _ => false,
+        }
     }
 
     fn link_state(&self, now: u32) -> u8 {
@@ -236,23 +487,24 @@ impl Edge {
     /// T_focus for this frame. Focused records take at most `FOCUS_SHARE` of the link: when more
     /// are focused (a split group of four, say) the period stretches so the rest of the picture keeps
     /// the other half. One focused contact never stretches it on the thin profiles (PROTOCOL.md 6.2).
-    fn focus_period(&self) -> u32 { self.timing.focus.max(self.focus_share_gap()) }
+    fn focus_period(&mut self, now: u32) -> u32 { self.timing.focus.max(self.focus_share_gap(now)) }
 
     /// The shortest gap between two sends of one focused record that keeps all focused records
     /// within `FOCUS_SHARE` of the link (0 on an unlimited link).
-    fn focus_share_gap(&self) -> u32 {
-        if self.cfg.budget_bps == 0 { return 0; }
+    fn focus_share_gap(&mut self, now: u32) -> u32 {
+        let bps = self.link_bps(now);
+        if bps == 0 { return 0; }
         let n = self.cm.contacts.values().filter(|c| c.fast() && !c.departed).count() as f32;
         if n == 0.0 { return 0; }
-        let target = target_frame_bytes(self.cfg.budget_bps, self.cfg.max_frame) as f32;
-        let app_bytes_per_s = self.cfg.budget_bps as f32 / 8.0 * target / (target + self.cfg.carrier_overhead as f32);
+        let target = target_frame_bytes(bps, self.cfg.max_frame) as f32;
+        let app_bytes_per_s = bps as f32 / 8.0 * target / (target + self.cfg.carrier_overhead as f32);
         let gap_s = n * FOCUS_RECORD_B / (FOCUS_SHARE * app_bytes_per_s);
         (gap_s * TICK_HZ as f32).ceil() as u32
     }
 
     fn build_frame(&mut self, ego: &EgoInput, nav: u8, now: u32, target: usize) -> Option<Frame> {
         let mut t = self.timing;
-        t.focus = self.focus_period();
+        t.focus = self.focus_period(now);
         let header = HEADER_LEN + if self.cfg.crc { CRC_LEN } else { 0 };
         let room = target.max(header + 1).min(self.cfg.max_frame);
         // Candidates: (class rank, ladder step, -overdue, kind). Within the ladder class the step
@@ -264,7 +516,7 @@ impl Edge {
         for (id, e) in &self.entries {
             if e.due > now { continue; }
             let Some(c) = self.cm.contacts.get(id) else { continue };
-            let rank = if c.fast() { 0 } else if e.step < LADDER_LEN { 2 } else if c.departed { 6 } else { 5 };
+            let rank = if c.fast() { 0 } else if self.merge_tombstone(c) { 6 } else if e.step < LADDER_LEN { 2 } else if c.departed { 6 } else { 5 };
             cands.push((rank, e.step, -e.overdue(now), K::Contact(*id)));
         }
         if now >= self.ego_due { cands.push((1, 0, -(now as i64 - self.ego_due as i64), K::Ego)); }
@@ -276,6 +528,7 @@ impl Edge {
         let mut records: Vec<Record> = Vec::new();
         let mut len = header;
         let mut sent_ids: Vec<u16> = Vec::new();
+        let mut sent_recs: Vec<ContactRec> = Vec::new();
         let mut sent_ego = false; let mut sent_session = false;
         for (_, _, _, k) in cands {
             match k {
@@ -285,10 +538,10 @@ impl Edge {
                     let n = Record::Contact(rec).wire_len();
                     if len + n > room && !records.is_empty() { continue; }
                     if len + n > self.cfg.max_frame { continue; }
-                    records.push(Record::Contact(rec)); len += n; sent_ids.push(id);
+                    records.push(Record::Contact(rec)); len += n; sent_ids.push(id); sent_recs.push(rec);
                 }
                 K::Ego => {
-                    let rec = self.ego_rec(ego, nav);
+                    let rec = self.ego_rec(ego, nav, now);
                     let n = Record::Ego(rec).wire_len();
                     if len + n > room && !records.is_empty() { continue; }
                     records.push(Record::Ego(rec)); len += n; sent_ego = true;
@@ -310,10 +563,12 @@ impl Edge {
             }
         }
         if records.is_empty() { return None; }
-        for id in &sent_ids {
+        for (id, rec) in sent_ids.iter().zip(&sent_recs) {
             let fast = self.cm.contacts[id].fast();
             self.entries.get_mut(id).unwrap().sent(now, &t, fast);
             self.cm.mark_sent(*id, now);
+            let observed = now.saturating_sub(rec.age as u32 * TICK_HZ);
+            if let Some(c) = self.cm.contacts.get_mut(id) { c.sent_pred = Some(crate::geo::SentPred::from_rec(rec, self.cfg.pos_res, observed)); }
             self.stats.contacts_sent += 1;
         }
         if sent_ego { self.ego_due = now + t.ego; self.stats.ego_sent += 1; }
@@ -333,13 +588,19 @@ impl Edge {
             caps: c.caps, utc_at_tick0: c.utc_at_tick0, hfov_x10: c.hfov_x10, img_w: c.img_w, img_h: c.img_h, video_frame0: c.video_frame0, fps_x100: c.fps_x100 }
     }
 
-    fn ego_rec(&mut self, ego: &EgoInput, nav: u8) -> EgoRec {
+    /// Seconds the oldest never-sent revision has waited (Ego.backlog): how late fresh news is.
+    fn backlog_s(&self, now: u32) -> u8 {
+        let w = self.entries.values().filter(|e| e.step == 0 && e.due <= now).map(|e| now - e.due).max().unwrap_or(0);
+        ((w + TICK_HZ - 1) / TICK_HZ).min(255) as u8
+    }
+
+    fn ego_rec(&mut self, ego: &EgoInput, nav: u8, now: u32) -> EgoRec {
         let (n, moving, mix) = self.cm.summary();
         let r = self.cfg.pos_res;
         let rec = EgoRec { dx: m_to_pos(ego.e, r), dy: m_to_pos(ego.n, r), alt_agl: if ego.alt_agl.is_finite() { ego.alt_agl.round().clamp(-32768.0, 32766.0) as i16 } else { 0x7FFF },
             heading: deg_to_u8(ego.heading_deg), speed: speed_to_u8(ego.speed), climb: climb_to_i8(ego.climb), nav, battery: ego.battery, pos_ce: m_to_m8(ego.pos_ce),
             fp_dx: m_to_pos(ego.fp_e, r), fp_dy: m_to_pos(ego.fp_n, r), fp_radius: m_to_m8(ego.fp_radius),
-            n_contacts: n, n_moving: moving, n_dismount: mix[0], n_vehicle: mix[1], n_armour: mix[2], n_other: mix[3] };
+            n_contacts: n, n_moving: moving, n_dismount: mix[0], n_vehicle: mix[1], n_armour: mix[2], n_other: mix[3], backlog: self.backlog_s(now), group_m: m_to_m8(self.cm.cfg.link_m) };
         self.last_ego = Some(rec);
         rec
     }
@@ -356,6 +617,7 @@ impl Edge {
         if has_vel { flags |= F_VELOCITY; }
         let mut ext = 0u8;
         if c.parent.is_some() { ext |= X_PARENT | X_CHILD; }
+        if c.out_of_view && c.lost && !c.departed { ext |= X_OUT_OF_VIEW; }
         let regime = self.timing.regime;
         let want_ray = !c.departed && matches!(regime, Regime::Video | Regime::Wide | Regime::Thin);
         let want_bbox = !c.departed && matches!(regime, Regime::Video | Regime::Wide) && c.bbox.is_some();
@@ -363,7 +625,7 @@ impl Edge {
         if want_bbox { ext |= X_BBOX; }
         let (az, el) = ray_az_el(ego.e, ego.n, ego.alt_agl, c.e, c.n, 0.0);
         let bb = c.bbox.unwrap_or([0.0; 4]);
-        ContactRec { id: c.id, rev: c.rev, flags, ext, dx: m_to_pos(c.e, r), dy: m_to_pos(c.n, r), ce: m_to_m8(c.ce), radius: m_to_m8(c.radius),
+        ContactRec { id: c.id, rev: c.rev, flags, ext, dx: m_to_pos(c.e, r), dy: m_to_pos(c.n, r), ce: m_to_m8(self.cm.declared_ce(c)), radius: m_to_m8(c.radius),
             n_dismount: c.mix[0], n_vehicle: c.mix[1], n_armour: c.mix[2], n_other: c.mix[3], conf: c.conf,
             first_seen: secs_u16(c.first_seen), since: secs_u16(c.since), age: age_u8(now.saturating_sub(c.last_seen)),
             course: deg_to_u8(c.course), speed: speed_to_u8(c.speed), parent: c.parent.unwrap_or(0), dz: 0,
@@ -374,7 +636,8 @@ impl Edge {
     pub fn snapshot(&self, now: u32) -> EdgeSnapshot {
         let contacts = self.cm.contacts.values().map(|c| ContactView::from_contact(c, now, self.entries.get(&c.id))).collect();
         EdgeSnapshot { contacts, tracks: self.cm.tracks.values().map(|t| TrackView { id: t.id, class: t.class, e: t.e, n: t.n, ve: t.ve, vn: t.vn, conf: t.conf, ce: t.ce, lost: t.lost, contact: t.contact, motion: motion_name(t.motion) }).collect(),
-            timing: self.timing, tokens: self.tokens, focus: self.focus.keys().copied().collect(), stats: self.cm.stats.clone() }
+            timing: self.timing, tokens: self.tokens, focus: self.focus.keys().copied().collect(), stats: self.cm.stats.clone(),
+            detail: DetailView { level: self.cm.level, detail: self.cm.detail(), link_m: self.cm.cfg.link_m, link_dismount_m: self.cm.cfg.link_dismount_m, dev_factor: self.cm.cfg.dev_factor, load: self.load.clone(), ladder: self.cm.cfg.ladder } }
     }
 }
 
@@ -387,18 +650,28 @@ pub struct ContactView {
     pub motion: &'static str, pub confirmed: bool, pub lost: bool, pub departed: bool, pub focused: bool, pub split: bool,
     pub course: f32, pub speed: f32, pub members: Vec<u32>, pub first_seen: f32, pub since: f32, pub parent: Option<u16>,
     pub dirty: bool, pub step: u8, pub due_in: f32, pub sends: u32, pub bbox: Option<[f32; 4]>,
+    /// The edge's estimate carried to `now`: `e, n` were measured `silent_s` ago; a moving contact
+    /// has moved on at its velocity since (what the edge believes now, for evaluation).
+    pub now_e: f32, pub now_n: f32, pub silent_s: f32,
 }
 impl ContactView {
     pub fn from_contact(c: &Contact, now: u32, e: Option<&Entry>) -> Self {
         let s = |t: u32| t as f32 / TICK_HZ as f32;
         ContactView { id: c.id, rev: c.rev, e: c.e, n: c.n, ce: c.ce, radius: c.radius, count: c.count(), mix: c.mix, motion: motion_name(c.motion), confirmed: c.confirmed,
             lost: c.lost, departed: c.departed, focused: c.focused, split: c.split, course: c.course, speed: c.speed, members: c.members.clone(), first_seen: s(c.first_seen),
-            since: s(c.since), parent: c.parent, dirty: c.dirty, step: e.map_or(0, |e| e.step), due_in: e.map_or(0.0, |e| (e.due as i64 - now as i64) as f32 / TICK_HZ as f32), sends: e.map_or(0, |e| e.sends), bbox: c.bbox }
+            since: s(c.since), parent: c.parent, dirty: c.dirty, step: e.map_or(0, |e| e.step), due_in: e.map_or(0.0, |e| (e.due as i64 - now as i64) as f32 / TICK_HZ as f32), sends: e.map_or(0, |e| e.sends), bbox: c.bbox,
+            now_e: c.e + if c.motion == MOTION_MOVING { c.ve * s(now.saturating_sub(c.last_seen)) } else { 0.0 },
+            now_n: c.n + if c.motion == MOTION_MOVING { c.vn * s(now.saturating_sub(c.last_seen)) } else { 0.0 },
+            silent_s: s(now.saturating_sub(c.last_seen)) }
     }
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct EdgeSnapshot { pub contacts: Vec<ContactView>, pub tracks: Vec<TrackView>, pub timing: Timing, pub tokens: f32, pub focus: Vec<u16>, pub stats: crate::contacts::ContactStats }
+pub struct EdgeSnapshot { pub contacts: Vec<ContactView>, pub tracks: Vec<TrackView>, pub timing: Timing, pub tokens: f32, pub focus: Vec<u16>, pub stats: crate::contacts::ContactStats, pub detail: DetailView }
+
+/// The detail level as applied (link distances and threshold from the configured ones) and the load.
+#[derive(Clone, Debug, Serialize)]
+pub struct DetailView { pub level: u8, pub detail: Detail, pub link_m: f32, pub link_dismount_m: f32, pub dev_factor: f32, pub load: Load, pub ladder: [Detail; 5] }
 
 /// Share of the link focused records may take, and the size assumed for one (a moving child with
 /// its ray, framing included).
@@ -488,6 +761,179 @@ mod tests {
         assert!(!edge.cm.contacts[&gid].focused);
     }
 
+    /// Forty people walking a zig-zag together, 20 m apart (individuals at levels 0-2, one file of
+    /// groups at 3), every one revising on each turn.
+    fn crowd(t: u32) -> Vec<Track> {
+        let s = t as f32 / TICK_HZ as f32;
+        let leg = (s / 4.0) as u32; let along = s - leg as f32 * 4.0;
+        let (ve, vn) = if leg % 2 == 0 { (1.2, 0.6) } else { (1.2, -0.6) };
+        let (e0, n0) = (1.2 * 4.0 * leg as f32, 0.0);
+        (0..40).map(|i| Track { id: i + 1, class: 0, e: e0 + ve * along + 20.0 * (i % 8) as f32, n: n0 + vn * along + 20.0 * (i / 8) as f32, ve, vn, conf: 200, ce: Some(3.0), bbox: None }).collect()
+    }
+    fn digest(edge: &mut Edge, rx: &mut crate::receiver::Receiver, now: u32) {
+        if rx.session.is_some() { let d = rx.make_digest(edge.cfg.budget_bps, 0, now); edge.on_uplink(&d, now).unwrap(); }
+    }
+
+    #[test]
+    fn a_busy_scene_on_a_thin_link_coarsens() {
+        let mut edge = Edge::new(EdgeConfig { budget_bps: 600, ..Default::default() });
+        assert_eq!(edge.cm.level, 1, "600 bit/s starts at level 1");
+        let mut rx = crate::receiver::Receiver::new(600);
+        let mut now = 0; let mut levels = Vec::new();
+        while now <= 90 * TICK_HZ {
+            for b in edge.tick(&crowd(now), &EgoInput::default(), now) { rx.on_frame(&b).unwrap(); }
+            if now % (5 * TICK_HZ) == 0 { digest(&mut edge, &mut rx, now); }
+            if now % TICK_HZ == 0 { levels.push((now / TICK_HZ, edge.cm.level, edge.load.smooth_s)); }
+            now += 12;
+        }
+        assert!(edge.cm.level >= 3, "coarsened: {levels:?}");
+        let live = edge.cm.contacts.values().filter(|c| !c.departed && !c.is_child()).count();
+        assert!(live <= 10, "forty walkers in at most ten contacts at level {}: {live}", edge.cm.level);
+        assert!(edge.load.changes <= 2, "the merge tombstones do not ask for a second coarsening: {levels:?}");
+        assert!(edge.load.smooth_s < COARSEN_S, "the backlog drained: {levels:?}");
+    }
+
+    #[test]
+    fn a_quiet_scene_refines_only_while_the_uplink_is_heard() {
+        let cars = |_t: u32| (1..=3).map(|i| track(i, i as f32 * 100.0)).collect::<Vec<_>>();
+        for heard in [false, true] {
+            let mut edge = Edge::new(EdgeConfig { budget_bps: 2000, ..Default::default() });
+            edge.set_level(3, 0);
+            let mut rx = crate::receiver::Receiver::new(2000);
+            let mut now = 0;
+            while now <= 120 * TICK_HZ {
+                for b in edge.tick(&cars(now), &EgoInput::default(), now) { rx.on_frame(&b).unwrap(); }
+                if heard && now % (5 * TICK_HZ) == 0 { digest(&mut edge, &mut rx, now); }
+                now += 12;
+            }
+            if heard { assert_eq!(edge.cm.level, 1, "refined to the finest level a thin link allows"); assert_eq!(edge.load.changes, 3); }
+            else { assert_eq!(edge.cm.level, 3, "never refines on a silent uplink"); }
+        }
+    }
+
+    #[test]
+    fn the_level_holds_after_a_change_and_refines_only_what_fits() {
+        let one = || (1usize, 1usize, 1.0f32);
+        let view = |b: u32| LinkView { backlog_b: b, oldest: 0, hears: true, capacity_bps: Some(1000.0), finest: 0, contacts: 1, finer: &one };
+        let mut l = Load::new(1, false);
+        // Saturated: 2000 B due, 100 B/s drained: one level per hold, never faster.
+        let (mut now, mut changes) = (0u32, Vec::new());
+        while now <= 60 * TICK_HZ {
+            l.sent.push_back((now, 10));
+            if let Some(n) = l.step(view(2000), now) { changes.push((now, n)); }
+            now += 12;
+        }
+        assert_eq!(changes.iter().map(|c| c.1).collect::<Vec<_>>(), vec![2, 3, 4]);
+        for w in changes.windows(2) { assert!(w[1].0 - w[0].0 >= LEVEL_HOLD, "{changes:?}"); }
+        // Quiet: one refine after REFINE_FOR (plus the backlog's decay); the load comes back at once,
+        // the refine is undone, and the next one waits twice as long.
+        // Steps until the first change (or `secs`).
+        let run = |l: &mut Load, from: &mut u32, secs: u32, backlog: u32| -> Vec<(u32, u8)> {
+            let end = *from + secs * TICK_HZ;
+            while *from <= end { l.sent.push_back((*from, 10)); let r = l.step(view(backlog), *from); *from += 12; if let Some(n) = r { return vec![(*from - 12, n)]; } }
+            vec![]
+        };
+        let t0 = now;
+        let c = run(&mut l, &mut now, 60, 0);
+        assert_eq!(c[0].1, 3); assert!(c[0].0 - t0 >= REFINE_FOR, "{c:?}");
+        let c = run(&mut l, &mut now, 15, 2000);
+        assert_eq!(c.iter().map(|c| c.1).collect::<Vec<_>>(), vec![4], "undone after the hold: {c:?}");
+        assert_eq!(l.refine_for, 2 * REFINE_FOR);
+        let t2 = now;
+        let c = run(&mut l, &mut now, 120, 0);
+        assert!(c[0].0 - t2 >= 2 * REFINE_FOR, "the second refine waited longer: {c:?}");
+        run(&mut l, &mut now, REFINE_UNDONE / TICK_HZ + 1, 0);
+        assert_eq!(l.refine_for, REFINE_FOR, "a refine that holds halves the wait back");
+        // A finer level that would not fit is not tried: demand 4 kbit/s on a 1 kbit/s link.
+        let mut l = Load::new(3, false);
+        let mut now = 0;
+        while now <= 120 * TICK_HZ {
+            l.sent.push_back((now, 10)); l.demand.push_back((now, 50));
+            assert_eq!(l.step(view(0), now), None, "refined into a level that cannot fit");
+            now += 12;
+        }
+        assert!(l.predicted_bps > 3000.0);
+    }
+
+    #[test]
+    fn focus_stays_individual_at_level_4() {
+        let mut edge = Edge::new(EdgeConfig { budget_bps: 2000, carrier_overhead: 0, detail: Some(4), ..Default::default() });
+        let ego = EgoInput::default();
+        // Car 1 parked; car 2 parked 200 m away, then 50 m away (one group at level 4).
+        let scene = |near: bool| move |_t: u32| vec![track(1, 0.0), track(2, if near { 50.0 } else { 200.0 })];
+        let mut now = 0;
+        while now <= 12 * TICK_HZ { edge.tick(&scene(false)(now), &ego, now); now += 12; }
+        let c1 = edge.cm.tracks[&1].contact.unwrap();
+        let up = |id: u16, mode: u8, now: u32| Frame { session: 0, seq: 0, tick: now, uplink: true, cycle_end: false,
+            records: vec![Record::Focus(FocusRec { id, mode, ttl: 60, chip_px: 0 })] }.encode(false);
+        edge.on_uplink(&up(c1, FOCUS_TRACK, now), now).unwrap();
+        let mut sends = 0;
+        let from = now;
+        while now <= from + 20 * TICK_HZ {
+            for b in edge.tick(&scene(true)(now), &ego, now) {
+                for r in Frame::decode(&b).unwrap().records { if let Record::Contact(c) = r { if c.id == c1 { sends += 1; } } }
+            }
+            now += 12;
+        }
+        assert_eq!(edge.cm.level, 4);
+        assert_eq!(edge.cm.contacts[&c1].members, vec![1], "the focused car is not absorbed at 120 m");
+        assert!(sends >= 18, "on the focus schedule: {sends} in 20 s");
+        // A split group at level 4: three people 40 m apart are one group, each child goes out.
+        let mut edge = Edge::new(EdgeConfig { budget_bps: 2000, carrier_overhead: 0, detail: Some(4), ..Default::default() });
+        let people: Vec<Track> = (1..=3).map(|i| Track { class: 0, ..track(i, i as f32 * 40.0) }).collect();
+        let mut now = 0;
+        while now <= 15 * TICK_HZ { edge.tick(&people, &ego, now); now += 12; }
+        let gid = edge.cm.tracks[&1].contact.unwrap();
+        assert_eq!(edge.cm.contacts[&gid].count(), 3);
+        edge.on_uplink(&up(gid, FOCUS_TRACK | FOCUS_SPLIT, now), now).unwrap();
+        let mut sends: BTreeMap<u16, u32> = BTreeMap::new();
+        let from = now + 2 * TICK_HZ;
+        while now <= from + 20 * TICK_HZ {
+            for b in edge.tick(&people, &ego, now) {
+                if now < from { continue; }
+                for r in Frame::decode(&b).unwrap().records { if let Record::Contact(c) = r { if c.has(F_FOCUSED) && c.parent == gid { *sends.entry(c.id).or_default() += 1; } } }
+            }
+            now += 12;
+        }
+        assert_eq!(sends.len(), 3, "{sends:?}");
+        assert!(sends.values().all(|&n| n >= 18), "children at the focus rate: {sends:?}");
+    }
+
+    #[test]
+    fn a_ghost_below_the_age_gate_costs_nothing() {
+        let mut edge = Edge::new(EdgeConfig { budget_bps: 0, detail: Some(3), ..Default::default() });
+        let mut ids = std::collections::BTreeSet::new();
+        let mut now = 0;
+        while now <= 80 * TICK_HZ {
+            let tracks = if now < 2 * TICK_HZ { vec![track(1, 0.0), track(2, 300.0)] } else { vec![track(2, 300.0)] };
+            for b in edge.tick(&tracks, &EgoInput::default(), now) {
+                for r in Frame::decode(&b).unwrap().records { if let Record::Contact(c) = r { ids.insert(c.id); } }
+            }
+            now += 12;
+        }
+        assert_eq!(ids.len(), 1, "only the car that stayed is ever on the wire: {ids:?}");
+        assert!(edge.cm.contacts.len() == 1, "the ghost's contact is gone from the edge too");
+        assert_eq!(edge.last_ego.unwrap().group_m, m_to_m8(60.0));
+    }
+
+    #[test]
+    fn paced_by_the_radio_the_edge_follows_the_link_not_the_budget() {
+        // Told 9600 bit/s, the radio drains 600: frames shrink to the drained rate, and the crowd
+        // coarsens just as it does when the budget is right.
+        let mut edge = Edge::new(EdgeConfig { budget_bps: 9600, paced: true, ..Default::default() });
+        assert_eq!(edge.cm.level, 1);
+        let mut rx = crate::receiver::Receiver::new(9600);
+        let (mut now, mut bytes) = (0, 0usize);
+        while now <= 120 * TICK_HZ {
+            edge.link_credit(75 * 12 / TICK_HZ, now);
+            for b in edge.tick(&crowd(now), &EgoInput::default(), now) { bytes += b.len() + edge.cfg.carrier_overhead; rx.on_frame(&b).unwrap(); }
+            if now % (5 * TICK_HZ) == 0 { digest(&mut edge, &mut rx, now); }
+            now += 12;
+        }
+        assert!(bytes as f32 / 120.0 <= 80.0, "never more than the radio took: {} B/s", bytes as f32 / 120.0);
+        assert!(edge.cm.level >= 3, "coarsened on the measured load: level {}", edge.cm.level);
+    }
+
     #[test]
     fn focused_records_take_at_most_half_the_link() {
         let mut edge = Edge::new(EdgeConfig { budget_bps: 600, ..Default::default() });
@@ -495,13 +941,13 @@ mod tests {
         let mut now = 0;
         while now <= 10 * TICK_HZ { edge.tick(&tracks, &EgoInput::default(), now); now += 12; }
         let base = edge.timing.focus;
-        assert_eq!(edge.focus_period(), base, "nothing focused");
+        assert_eq!(edge.focus_period(now), base, "nothing focused");
         let gid = edge.cm.tracks[&1].contact.unwrap();
         edge.cm.set_focus(gid, true, false);
-        assert_eq!(edge.focus_period(), base, "one focused contact keeps T_focus at 600 bit/s");
+        assert_eq!(edge.focus_period(now), base, "one focused contact keeps T_focus at 600 bit/s");
         edge.cm.set_focus(gid, true, true);
         edge.tick(&tracks, &EgoInput::default(), now);
-        let p = edge.focus_period() as f32 / TICK_HZ as f32;
+        let p = edge.focus_period(now) as f32 / TICK_HZ as f32;
         assert!(p > 3.0 && p < 5.0, "four children at 600 bit/s share half the link: {p} s");
     }
 }

@@ -88,7 +88,7 @@
         <span>→ line</span><span>the contact's velocity: course and speed as the edge measures it (map) or as last reported (receiver).</span>
         <span><span style="color:var(--rx)">◌ magenta dashes</span></span><span>what the <b>receiver believes</b> from the wire, drawn back onto the video (toggle): position dead-reckoned from the last record.</span>
         <span><span style="color:var(--rx)">⋯ dotted ring</span></span><span>the receiver's <b>error radius</b> (ce): the edge's declared uncertainty, growing with silence while the link is down.</span>
-        <span>grey / dashed</span><span>liveness: <b>unheard</b> = the link went quiet (edge may still see it), <b>lost</b> = the edge said it lost it, <b>departed</b> = tombstone.</span>
+        <span>grey / dashed</span><span>liveness: <b>unheard</b> = the link went quiet (edge may still see it), <b>lost</b> = the edge lost it in view, <b>out of view</b> = it left the frame or the camera stopped, <b>departed</b> = tombstone. The pink dotted circle holds it with 95 % probability: it grows only for time the link cannot vouch for, and for lost contacts as fast as such things were seen to move. Wider than the camera footprint it no longer locates anything: then a cross marks where it was last seen, with its heading. On the video, something outside the frame is a pink arrow on the border.</span>
         <span>▲ glyph, ring</span><span>the drone as last heard (heading) and its camera footprint on the ground (where it was looking).</span>
       </div>
     </details>

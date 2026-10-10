@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 // @ts-ignore plain ESM helper shared with the check scripts
 import { loadMeta } from '../scripts/meta.mjs';
+import { loadBoxes } from '../scripts/boxes.mjs';
 
 const require = createRequire(import.meta.url);
 const core = require('../../../core/pkg-node/minband_core.js');
@@ -51,6 +52,8 @@ for (const line of fs.readFileSync(path.join(RUN_DIR, 'tracks.csv'), 'utf8').spl
 }
 const ticks = [...byTick.keys()].sort((a, b) => a - b);
 const DURATION_S = Number(process.env.DURATION_S) || Math.ceil((ticks[ticks.length - 1] + 60) / TICK_HZ);
+const LAST_S = ticks[ticks.length - 1] / TICK_HZ; // the footage ends here: the camera stops looking
+const boxAt = loadBoxes(RUN_DIR) as (id: number, tick: number) => number[] | null;
 console.log(`tracks: ${ticks.length} ticks, ${[...byTick.values()].reduce((s, v) => s + v.length, 0)} rows, ticks ${ticks[0]}..${ticks[ticks.length - 1]}`);
 function tracksAt(t: number): Track[] {
   const tick = Math.round(t * TICK_HZ);
@@ -136,7 +139,7 @@ class Replay {
 
   ego(t: number, P: (typeof PROFILES)[Profile]) {
     return { e: CAM_E, n: CAM_N, alt_agl: CAM_ALT, heading_deg: 0, speed: 0, climb: 0, nav_mode: 2, gnss: 2, battery: Math.max(0, Math.round(83 - t / 30)),
-      pos_ce: 3.0, fp_e: CAM_E, fp_n: FP_N, fp_radius: FP_R, video: P.video && this.linkUp(t) };
+      pos_ce: 3.0, fp_e: CAM_E, fp_n: FP_N, fp_radius: FP_R, video: P.video && this.linkUp(t), looking: t <= LAST_S + 0.2 };
   }
 
   step(): any {
@@ -148,7 +151,7 @@ class Replay {
     const frames: WireFrame[] = [];
     if (this.playing) {
       this.edge.pose(tick, CAM_E, CAM_N, CAM_ALT, 0, CAM_PITCH, 0);
-      const tj = JSON.stringify(tracks.map((x) => ({ id: x.id, class: x.cls, e: x.e, n: x.n, ve: x.ve, vn: x.vn, conf: Math.max(0, Math.min(255, Math.round(x.conf))) })));
+      const tj = JSON.stringify(tracks.map((x) => ({ id: x.id, class: x.cls, e: x.e, n: x.n, ve: x.ve, vn: x.vn, conf: Math.max(0, Math.min(255, Math.round(x.conf))), bbox: boxAt(x.id, tick) ?? undefined })));
       const out: Uint8Array = this.edge.tick(tj, JSON.stringify(ego), tick);
       for (const b of unpack(out)) {
         const bytes = new Uint8Array(b);
@@ -195,7 +198,7 @@ class Replay {
       id: c.id, rev: c.rev, e: c.e, n: c.n, ce: r1(c.ce), ceShown: r1(c.ce_shown), radius: r1(c.radius), count: c.count, mix: mixObj(c.mix), motion: c.motion,
       confirmed: c.confirmed, lost: c.lost, departed: c.departed, focused: c.focused, group: c.group, course: Math.round(c.course), speed: r1(c.speed), members: [],
       firstSeen: c.first_seen, since: c.since, ageS: r1(c.silence_s), liveness: c.liveness, parent: c.parent, child: c.child, ray: c.ray, copies: c.copies,
-      lat: c.lat, lon: c.lon }));
+      lat: c.lat, lon: c.lon, located: c.located, seenE: c.seen_e, seenN: c.seen_n, pMiss: r1(c.p_miss), unassuredS: r1(c.unassured_s) }));
     for (const [id, f] of this.focus) if (!f.acked && rxContacts.some((c: any) => c.focused && !c.departed && (c.id === id || c.parent === id))) f.acked = true;
     // A contact picked as one object that has since become a group (a neighbour joined before the
     // Focus arrived) is split, so the picked object shows up as an individual to click again.
@@ -204,7 +207,7 @@ class Replay {
     const rxEgo = rawEgo ? {
       e: rawEgo.rec.dx, n: rawEgo.rec.dy, altAgl: rawEgo.rec.alt_agl, heading: Math.round(rawEgo.rec.heading * 360 / 256), speed: rawEgo.rec.speed / 4,
       nav: NAV[rawEgo.rec.nav & 7], gnss: GNSS[(rawEgo.rec.nav >> 3) & 3], link: LINK[(rawEgo.rec.nav >> 5) & 3], video: !!(rawEgo.rec.nav & 0x80), battery: rawEgo.rec.battery,
-      fpE: rawEgo.rec.fp_dx, fpN: rawEgo.rec.fp_dy, fpRadius: m8(rawEgo.rec.fp_radius), nContacts: rawEgo.rec.n_contacts, nMoving: rawEgo.rec.n_moving,
+      fpE: rawEgo.rec.fp_dx, fpN: rawEgo.rec.fp_dy, fpRadius: m8(rawEgo.rec.fp_radius), nContacts: rawEgo.rec.n_contacts, nMoving: rawEgo.rec.n_moving, groupM: m8(rawEgo.rec.group_m),
       ageS: r1((tick - rawEgo.tick) / TICK_HZ) } : null;
     const events = JSON.parse(this.rx.events_json()).map((e: any) => ({
       t: r1(e.tick / TICK_HZ), kind: e.kind, id: e.id, text: e.text + (Math.abs(e.heard - e.tick) > 2 * TICK_HZ ? ` (heard at ${r1(e.heard / TICK_HZ)} s)` : '') }));
@@ -217,7 +220,8 @@ class Replay {
       edge: { tracks: edgeTracks, contacts: edgeContacts,
         ego: { e: CAM_E, n: CAM_N, altAgl: Math.round(CAM_ALT), heading: 0, speed: 0, nav: 'loiter', gnss: 'fix', link: up ? 'hears' : 'silent', battery: ego.battery, fpE: CAM_E, fpN: FP_N, fpRadius: FP_R, video: ego.video } },
       wire: { frames, budgetBps: P.budgetBps, profile: this.profile, up, bytesPerS: r1(bytesPerS), wireBytesPerS: r1(wirePerS), dropped: this.dropped, regime: timing.regime, f: timing.f,
-        floorS: r1(timing.floor / TICK_HZ), stats: JSON.parse(this.edge.stats_json()) },
+        floorS: r1(timing.floor / TICK_HZ), stats: JSON.parse(this.edge.stats_json()),
+        detail: { level: es.detail.level, linkM: r1(es.detail.link_m), backlogS: r1(es.detail.load.smooth_s), changes: es.detail.load.changes } },
       rx: { contacts: rxContacts, ego: rxEgo, events, known: this.rx.known(), of: of < 0 ? null : of, bytesTotal: this.bytesTotal, unheard: this.rx.device_unheard(tick), stats: JSON.parse(this.rx.stats_json()) },
     };
   }

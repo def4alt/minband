@@ -102,7 +102,7 @@ u32  video_frame0   video frame index at tick 0 ; 0xFFFFFFFF unknown
 u16  fps_x100       video frame rate × 100 (29.97 = 2997) ; 0 unknown
 ```
 
-### 3.2 `Ego` (type 0x02, body 23 B)
+### 3.2 `Ego` (type 0x02, body 25 B)
 
 The drone's own state, the sensor footprint, and a one-line scene summary. Repeated every
 `T_ego`; sent at once when `nav`, GNSS state or link state changes.
@@ -128,10 +128,17 @@ u8   n_dismount     dismounts in all contacts (sum of counts)
 u8   n_vehicle      vehicles (car, truck, bus, motorcycle, bicycle, armoured)
 u8   n_armour       of which armoured (class 101, only from an appearance model)
 u8   n_other        motion-only movers and anything else
+u8   backlog        seconds the oldest never-sent revision has waited for the link (0 = the queue
+                    keeps up); the receiver expects news that much later (5.3)
+u8   group_m        m8, the vehicle link distance the edge groups at now (its detail level, §6.4) ;
+                    0 unknown
 ```
 
 `n_*` is the integrity check: a receiver knowing fewer live contacts than `n_contacts` shows
-"k of n contacts known" instead of pretending the picture is complete.
+"k of n contacts known" instead of pretending the picture is complete. `n_*` counts only contacts
+the edge reports (§6.4: a contact younger than the level's report age is held back), with exact
+member counts even where a coarse level lets a group's own `count` lag. `group_m` lets the receiver
+label groups honestly ("grouped at 30 m") and shows the commander why the picture got coarser.
 
 ### 3.3 `Pose` (type 0x03, body 22 B): the camera pose for the 3D server
 
@@ -166,10 +173,11 @@ u8   flags          bits 0-1 motion: 0 unknown, 1 static, 2 moving, 3 stopped (w
                     bit7 has velocity (course, speed follow)
 u8   ext            bit0 has parent (u16) ; bit1 has altitude (i16, metres above origin) ;
                     bit2 thermal-only sighting ; bit3 motion-only (no appearance class) ;
-                    bit4 operator verified ; bit5 child record (individual within a group) ;
+                    bit4 out of view (with lost: it left the camera's view, see 5.3) ; bit5 child record (individual within a group) ;
                     bit6 has ray (az, el) ; bit7 has bbox (u, v, w, h)
 i16  dx, dy         pos, centroid of the contact's ground footprint
-u8   ce             m8, horizontal error radius of `pos` (1 sigma): geometry + own position error
+u8   ce             m8, horizontal error radius of `pos` (1 sigma): geometry + own position error ;
+                    at a coarse detail level at least the level's position threshold (§6.4)
 u8   radius         m8, extent of the group around the centroid ; 0 for a single
 u8   n_dismount     counts by coarse class ; count = the sum (1..255)
 u8   n_vehicle
@@ -297,30 +305,49 @@ a live record cannot resurrect it. `Pose` records are kept in a ring by tick, ne
 Event time comes from the record, not from arrival, so a receiver that was in a blackout gets the
 right timeline when the link returns. Delta's "first detected at" is `first_seen` + `utc_at_tick0`.
 
-### 5.3 Dead reckoning and the error radius
+### 5.3 Prediction and the error radius
 
-A moving contact (motion = 2, has velocity) is extrapolated along `course` at `speed`, capped by
-the class prior's max speed (core `classes.rs`), with the same deterministic predictor both ends
-share. The shown error radius is
+**Prediction.** From a record the receiver predicts the contact's position: `pos`, and when it
+moves with a velocity (`motion = 2`, `flags.bit7`, not departed) dead-reckoned along `course` at
+`speed`, capped by the class's maximum speed, from the observation tick (`frame tick - age`), with
+the deterministic sin/cos (core `geo::SentPred`). The edge keeps the same prediction of the last
+record it sent, from the same bytes, and revises against it (6.3). A lost mover is predicted along
+its course too; a lost contact is never revised for position (the edge has nothing new about it).
+
+**The radius.** `ce_shown` holds the edge's estimate with probability `COVERAGE` = 0.95. It is
 
 ```
-moving (has velocity):  ce_shown = ce + speed x silence + class_max_speed x overdue
-static:                 ce_shown = ce + min(class_lo x silence, ce)
-stopped, unknown, or moving without a velocity:
-                        ce_shown = ce + class_hi x silence + class_max_speed x overdue
-overdue = max(0, silence - T_ladder_last)
+ce_shown = sqrt(ce^2 + dev^2)
+
+tracked:  dev = quantum + band + extra
+lost:     dev = quantum + drift_q95(state, class, now - observed)
+
+quantum = 0.71 x pos_res                       (rounding of pos)
+band    = drift quantile 0.95 at lag (now - observed), given it stayed below thr
+thr     = max(ce, 2 x pos_res), half under focus for a single   (the edge's revision band, 6.3)
+extra   = the smallest r with P(missed news and drift since > r) <= 0.05
 ```
 
-where `silence` is the time since the record's observation (`frame tick - age`), and `class_lo` /
-`class_hi` are the motion thresholds of the dominant coarse class (core `classes.rs`: 0.2 / 0.5 m/s
-for dismounts, 0.3 / 0.7 m/s otherwise). A moving contact's circle grows with its own speed at once
-(a stop is covered) and at the class cap once it is overdue on the ladder (the edge would have told
-us it moved). A static contact is below `class_lo` by definition and the edge revises it once it
-drifts past `ce`, so the receiver can be wrong by that creep plus one more `ce`: the circle creeps
-at `class_lo` and stops at `2 x ce`. A stopped or not-yet-classified contact may be walking off
-since the last look: its circle grows at `class_hi` at once and at the cap once overdue. Measured on
-footage (`docs/PROTOCOL_EVAL.md`) this keeps >= 84 % of held contacts inside `ce_shown` on every
-profile, against 70 % with a flat static circle.
+`drift` is how far the edge's estimate wanders from a stale prediction, measured on real footage
+per motion state and coarse class (docs/PROTOCOL_EVAL.md 10): log-normal at each lag, with median
+and 95th percentile power laws of the lag, never faster than the class cap. `extra` comes from the
+link: the receiver knows the frames it missed (sequence gaps), the measured loss rate `p`, the last
+frame whose `cycle_end` said the edge's queue was empty, the edge's `backlog` (3.2), and when it
+last heard any frame. Up to the last empty-queue frame with no gap after the held copy nothing can
+have been missed. After that, revisions arrive at the measured revision rate of the state and
+class, and one issued `x` seconds ago is still missing with probability `p ^ k(x)`, `k` the copies
+(ladder, then floor) that would have arrived, after `backlog`, before the last frame heard. The first
+missing revision starts the drift: `P(dev > r) = sum over x of density(first missing at x) x
+P(drift(x) > r)`. A parked car on a link that keeps vouching for it keeps a circle of about its own
+`ce`; it grows only for time the link cannot vouch for, and as fast as such things were seen to
+move.
+
+**Located.** A radius wider than the camera footprint (`Ego.fp_radius`, else 100 m) no longer says
+where the contact is: the receiver marks it unlocated and a display shows where it was last seen
+(`pos`, the record's position), its heading and how long ago, instead of a circle.
+
+Measured (docs/PROTOCOL_EVAL.md 10): 95.9-100 % of tracked contacts inside `ce_shown` on every
+footage run and link profile, saturated ones included.
 
 ### 5.4 Liveness
 
@@ -381,13 +408,19 @@ symbols take the remaining bytes only, and never more than half the budget over 
 A contact's `rev` increments (and its ladder restarts) when any of these happens:
 
 - motion state changes (static <-> moving <-> stopped), `lost`, `departed`, `confirmed`;
-- its centroid deviates from the receiver's dead reckoning of the last *sent* record by more than
-  `max(ce, 2 x pos_res)` (half that under focus; a focused revision goes out as soon as the
-  half-link share allows, at once on a fast link, never ahead of it on a thin one);
-- `count` changes, or the class mix changes;
+- its centroid, at the time it was last observed, deviates from the receiver's prediction of the
+  last *sent* record at that time (5.3) by more than
+  `max(ce, 2 x pos_res)` (half that under focus; the prediction is the receiver's own, from the
+  bytes of the last record sent; a lost contact is not revised for position; a focused revision
+  goes out as soon as the
+  half-link share allows, at once on a fast link, never ahead of it on a thin one); at a coarse
+  detail level the threshold of §6.4 instead;
+- `count` changes, or the class mix changes (at a coarse level: by more than the level's
+  tolerance, §6.4);
 - `ce` changes by more than 50 % (GNSS lost or regained changes every contact's ce at once: the
   edge then spreads the revisions over one `T_ego` instead of bursting);
-- course changes by more than 30° or speed by more than 25 % while moving.
+- course changes by more than 30° or speed by more than 25 % while moving (both times the
+  level's `dev_factor` ratio at a coarse level, course at most 90°).
 
 Nothing else moves `rev`: a static contact in a stable scene is sent at `T_floor` only. In the
 video regime the ray and bbox of an *unchanged* contact are refreshed with its floor repeat, not
@@ -399,6 +432,71 @@ budget, stretches `f` (never below the ladder's first repeat) before dropping an
 the first thing starved, `Pose` the second, floor repeats the third, `Ego` and changed contacts
 never.
 
+### 6.4 Detail levels
+
+The edge picks how much detail to send from the load it measures, not from a configured budget:
+the budget may be wrong, change at any time, or be unknown. With more throughput it sends tighter
+groups, smaller revision thresholds and every contact; with less, wider groups, bigger thresholds,
+and only contacts that have been seen long enough to matter. Focused contacts, and the children
+of a split focused group, are exempt at every level: they stay individual, keep the level-1
+thresholds (halved) and the focus schedule, and a split group's members link only among
+themselves.
+
+| level | vehicle link | dismount link | `dev_factor` | position floor | of group radius | count tolerance | reported after |
+|---|---|---|---|---|---|---|---|
+| 0 fine | 8 m | 4 m | 0.75 | - | - | - | confirmation |
+| 1 | 15 m | 8 m | 1.0 | - | - | - | confirmation |
+| 2 | 30 m | 15 m | 1.5 | 10 m | 0.25 | 10 % | 3 s seen |
+| 3 | 60 m | 30 m | 2.0 | 20 m | 0.5 | 20 % | 6 s seen |
+| 4 sector | 120 m | 60 m | 3.0 | 40 m | 0.5 | 34 % | 10 s seen, or moving |
+
+Level 1 is the behaviour without adaptation; the link distances and `dev_factor` scale the
+configured ones by the table's ratios. At level `L` the position threshold is
+`max(max(ce, 2 x pos_res) x dev_factor, floor, radius_frac x radius)`: the floor is the level's
+spatial resolution (a third of the vehicle link), and a group's centre is not worth revising more
+finely than a share of its own extent. A count or mix change smaller than the tolerance times
+the count last sent is not a revision (a group turning into a single, or back, always is); `Ego.n_*`
+carries the exact totals. "Seen" is first to last look: a 2 s ghost that is then lost never ages
+into a report. A contact below the gate has no schedule entry and costs nothing; one that departs
+before it was reported just goes; once reported it stays reported.
+
+The declared `ce` of a contact at a coarse level is at least its position threshold. The edge does
+not revise inside that band, so the receiver's circle (§5.3) must start there to stay honest.
+
+**Load.** After each frame-builder pass the edge sums the bytes of contact records that are due
+on the ladder and not sent (first copies and ladder repeats; floor repeats, focused records and
+merge tombstones excluded) and divides by what the link drained over the last 5 s, counted in
+frames actually sent: the backlog in seconds of link time, smoothed with a 2 s time constant. It
+is the same whether the budget is right, wrong, changing or unknown. (Not `Ego.backlog`, 3.2,
+which tells the receiver how long the oldest never-sent revision has waited.) A paced edge (the radio's
+flow control reports what it drained) also takes its frame size and focus share from the drained
+rate instead of the budget.
+
+**Controller.**
+
+- Coarsen one level when the backlog stays above `COARSEN_S` = 2 s for 3 s and is not draining
+  (a 0.5 s average down by 20 % over those 3 s: a burst of births, or the queue a change leaves
+  behind, is not a reason for another change).
+- Refine one level when the backlog stays below 0.3 s for `T_refine` = 15 s, only while the
+  uplink is heard (`nav.link` = 0: a silent uplink means jamming or trouble), and only if the finer
+  level is predicted to fit in half of what the link carries: first-copy demand scaled by the
+  contacts the finer level would make and the change-threshold ratio, or the demand per contact
+  last measured at that level, plus the births drained within 10 s.
+- Hold at least 10 s after any change, longer than the 3 s split patience, so regrouping settles.
+- A refine undone by a coarsen within 30 s doubles `T_refine` (up to 120 s); a refine that holds
+  halves it back.
+- Level 0 only on links of 8 kbit/s or more (video and wide regimes); start at 0 in the video
+  regime, 1 on wide and thin links, 2 at the floor.
+
+A coarsening merges groups, and every absorbed contact departs. Its tombstone goes at the floor
+class (with the floor repeats) for `LEVEL_HOLD` + the split patience after a change, so the burst
+does not ask for a second coarsening; until it arrives the receiver may hold the absorbed contact
+beside the group that absorbed it ("k of n" can read above n).
+
+On a simplex link the controller only coarsens: it never hears the uplink, so it never refines.
+The backlog cannot see frames that are sent but lost; with an uplink, digest delivery could be a
+second signal (not implemented).
+
 ## 7. Sizes
 
 Checked by the `sizes_match_the_spec` test in `core/src/wire.rs`.
@@ -407,7 +505,7 @@ Checked by the `sizes_match_the_spec` test in `core/src/wire.rs`.
 |---|---|
 | frame header | 10 (12 with CRC) |
 | `Session` | 37 |
-| `Ego` | 25 |
+| `Ego` | 27 |
 | `Pose` | 24 |
 | `Contact`, static single, floor regime | 23 |
 | `Contact`, moving group, thin regime (ray) | 27 |
@@ -418,8 +516,8 @@ Checked by the `sizes_match_the_spec` test in `core/src/wire.rs`.
 | `Focus` | 7 |
 
 Worked floor at 100 B/s (f = 1, thin regime), 20 static contacts: contacts 20 x 25 B / 60 s =
-8.3 B/s, `Ego` 25 B / 5 s = 5 B/s, `Session` 37 B / 30 s = 1.2 B/s, frame headers about
-12 x 10 B / 60 s = 2 B/s: **about 16.5 B/s, 17 % of the link.** The remaining 83 B/s carries about
+8.3 B/s, `Ego` 27 B / 5 s = 5.4 B/s, `Session` 37 B / 30 s = 1.2 B/s, frame headers about
+12 x 10 B / 60 s = 2 B/s: **about 16.9 B/s, 17 % of the link.** The remaining 83 B/s carries about
 3 contact revisions per second, or one focused contact at 1 Hz plus two revisions per second. At
 12.5 B/s (f = 8, floor regime) the same scene floors at 2 B/s with `T_floor` = 8 min and `Ego`
 every 40 s: usable for "what is there", not for following movement. In the video regime the

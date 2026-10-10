@@ -21,13 +21,15 @@ node tools/sidebyside/scripts/eval.mjs --clip busy --profile lora --focus auto -
 | flag | default | meaning |
 |---|---|---|
 | `--clip cons2\|busy\|all\|<dir>` | cons2 | `cons2` = `runs/footage/meva-uav-0307-1720/cons2` (35 tracks, 8-35 s, about 2 live contacts); `busy` = `runs/footage/meva-2018-03-13.16-00-14-bf` (206 tracks, 80 entities per frame, about 17 live contacts after grouping) |
-| `--profile a,b\|all` | lora | the driver's profiles: clean (unlimited), hf 9600, lora 2000 / 10 % / 0.3 s, telemetry 600 / 5 % / 0.05 s, contested (lora + 1-5 s bursts every 3-8 s), blackout |
+| `--profile a,b\|all` | lora | the driver's profiles: clean (unlimited), hf 9600, lora 2000 / 10 % / 0.3 s, telemetry 600 / 5 % / 0.05 s, contested (lora + 1-5 s bursts every 3-8 s), blackout, dynamic (11) |
 | `--blackout s:len[,s:len]` | none | scripted blackouts |
 | `--budget`, `--loss`, `--delay`, `--uplink-loss`, `--no-uplink` | profile | overrides |
 | `--duration` | clip end + 75 s | long enough for the 60 s depart timer and the tombstone ladder |
 | `--seed` | 1 | loss and nonce |
 | `--focus auto\|<id>` | off | runs the same replay twice, once with one contact focused (track mode, renewed every 5 s), and reports the delta |
 | `--dev-factor k` | 1 | experiment knob: the edge's position change threshold becomes `k x max(ce, 2 pos_res)` |
+| `--level n` | adaptive | pin the detail level (PROTOCOL.md 6.4); 1 = grouping and thresholds as before adaptation |
+| `--ladder '<json>'`, `--coarsen-s s` | built in, 2 | replace the detail ladder; the backlog that coarsens |
 | `--debug` | | per-state honesty breakdown, revision reasons, unmatched transitions |
 | `--json path` | | every number, plus a 1 Hz series of completeness |
 
@@ -49,6 +51,8 @@ receiver's snapshot at the same edge tick (dead-reckoned, with `ce_shown` and li
 | **k/n** | mean of `known / Ego.n_contacts` as the receiver would display it |
 | **bytes** | B/s emitted by the edge by record type (TLV included), frame headers, carrier overhead (28 B UDP/IP per frame); delivered B/s separately; uplink B/s |
 | **focus cost** | B/s with one focused contact minus without, and that contact's own comp@rev, error and honesty |
+| **level, changes** | the edge's detail level over the replay (time mean, range), how many times it changed, and flaps (a change undone within 30 s) |
+| **trk shown, trk err** | every 0.5 s, for each footage track an edge contact holds: whether the receiver shows that contact, and the distance from the track to the receiver's centroid (median / p90). The cost of grouping, next to completeness |
 
 ## 3. Before and after
 
@@ -338,3 +342,307 @@ Caveat: the ground scale comes from box sizes (no camera metadata in these clips
 civilian vehicle sizes, so metres here are low by an unknown factor (heights fit at 9-20 m where
 the drone is clearly higher). Ratios between runs hold; absolute metres do not.
 
+## 9. Busy versus quiet
+
+`tools/sidebyside/scripts/collapse.mjs` replays three real runs at seven link rates (loss 5 %,
+delay 0.3 s, two seeds, measured while the footage runs): the busy 4K parking lot (206 tracks,
+about 80 objects per frame, 27 live contacts after grouping), a thermal road (91 tracks, 5 live
+contacts) and the quiet 1080p lot (24 tracks, mostly parked, 3 live contacts). Position is sent in
+1 m steps, so about half a metre is as exact as the receiver can get.
+
+```
+node tools/sidebyside/scripts/collapse.mjs [--clips busy,thermal,best2] [--budgets 600,...,64000] [--json out.json]
+```
+
+**Busy: where it breaks.** "Current" is the share of live contacts the receiver holds at the
+edge's latest revision, "known" the share it holds at all.
+
+| link | busy lot current / known | busy lot error med / p90 | new contact shown after | thermal current / known | quiet lot current / known |
+|---|---|---|---|---|---|
+| 600 bit/s | 7 % / 38 % | 2.3 / 9.6 m | 19.6 s | 8 % / 44 % | 64 % / 89 % |
+| 1.2 kbit/s | 18 % / 60 % | 1.8 / 9.7 m | 9.9 s | 29 % / 76 % | 80 % / 93 % |
+| 2 kbit/s | 30 % / 76 % | 1.1 / 7.4 m | 4.7 s | 49 % / 90 % | 86 % / 96 % |
+| 4.8 kbit/s | 54 % / 92 % | 0.7 / 4.7 m | 1.3 s | 70 % / 96 % | 87 % / 96 % |
+| 9.6 kbit/s | 68 % / 96 % | 0.6 / 3.5 m | 0.5 s | 77 % / 97 % | 88 % / 96 % |
+| 19.2 kbit/s | 79 % / 98 % | 0.5 / 2.7 m | 0.3 s | 77 % / 97 % | 86 % / 96 % |
+| 64 kbit/s | 81 % / 98 % | 0.5 / 2.6 m | 0.3 s | 76 % / 97 % | 88 % / 96 % |
+
+The quiet lot is saturated at 1.2-2 kbit/s; the busy lot needs about 5-10 kbit/s for the same
+picture, roughly in proportion to its live contacts (27 against 3). Below that the circle still
+holds the truth 86-92 % of the time and the k-of-n readout shows what is missing.
+
+**Quiet: how far it collapses.** Static and stopped objects, by how long the edge has held them
+unchanged (busy lot; the quiet lot is the same within a few points):
+
+| link | unchanged for | error med / p90 | within 1 m | circle / edge ce |
+|---|---|---|---|---|
+| 2 kbit/s | 0-1 s | 1.6 / 5.6 m | 37 % | 1.35 |
+| 2 kbit/s | 3-10 s | 0.6 / 5.0 m | 59 % | 1.36 |
+| 2 kbit/s | 10-30 s | 0.5 / 1.0 m | 90 % | 1.90 |
+| 9.6 kbit/s | 1-3 s | 0.4 / 1.3 m | 87 % | 1.12 |
+| 9.6 kbit/s | 10-30 s | 0.5 / 1.0 m | 90 % | 1.68 |
+| 9.6 kbit/s | 30+ s | 0.4 / 1.2 m | 79 % | 1.92 |
+
+The position collapses to the 1 m quantum: once an object has been quiet for 10 s, nine in ten
+are within a metre of the edge's estimate, at 2 kbit/s as at 9.6. The circle does not collapse:
+it creeps from the edge's `ce` towards `2 x ce` (5.3) between floor repeats. That is the static
+rule doing what it says (a missed revision could hide one more `ce` of drift), but on a link that
+keeps delivering frames a quiet object's circle could shrink back to `ce` instead; not changed.
+
+**Circles that inflated for nothing, fixed.**
+
+| receiver contacts not fresh (lora, through 60 s after the clip) | before | after |
+|---|---|---|
+| left the view, busy lot | lost, circle med 146 m, p90 1000 m | out of view, med 4 m, max 5 m |
+| left the view, thermal road | lost, med 159 m, p90 1000 m | out of view, med 19 m, max 28 m |
+| left the view, quiet lot | lost, med 58 m, p90 1000 m | out of view, med 5 m, max 6 m |
+| convoy (camera stopped at the end) | lost, med 738 m | out of view, med 9 m, max 14 m |
+| stopped vehicle, thermal, 9.6 kbit/s, quiet 10-30 s | 185 m | 10 m |
+
+- **Out of view** (PROTOCOL.md 3.4 ext bit4): the edge marks a lost contact that left the frame
+  (last box within 2 % of the edge) or that it stopped seeing because the camera stopped. The
+  harness and page feed the tracker's image boxes to the edge (`scripts/boxes.mjs` reads
+  `detlog.npy`); before, the edge had no boxes.
+- The freeze at the last sighting and the ack horizon of this round were patches; section 10
+  replaces them and the old growth rules with a calibrated model.
+- **On the video**, a ring was projected through the homography; for a point off the frame, near
+  the camera's horizon, a few metres became hundreds of pixels. The overlay now draws a contact
+  outside the frame as an arrow on the border and takes a ring's radius as the median of four
+  directions, capped at half the frame.
+
+Lost-in-view contacts kept growing to the 1000 m cap here; section 10 handles them too.
+
+## 10. The error circle as a calibrated belief
+
+The circle used to grow by hand-set rules (a creep for static things, a class-speed term once a
+record was "overdue", a 1000 m cap), and the fixes of section 9 patched two of its failures. It is
+now one model (PROTOCOL.md 5.3, core `belief.rs`): the circle holds the edge's estimate with
+probability 0.95, and it is built from three things the receiver actually knows.
+
+1. **The edge's guarantee.** The edge revises a contact as soon as its estimate leaves the band
+   `thr` around the receiver's prediction. That prediction is now computed from the bytes of the
+   last record sent, by the same function on both ends (`geo::SentPred`): before, the edge
+   predicted from unrounded values and from the send tick, the receiver from rounded ones and the
+   observation tick, so "within the band" was not exactly true. A lost contact is no longer revised
+   for position (only its prediction moved, the edge had nothing new).
+2. **The link's evidence.** Sequence gaps, the measured loss rate, frames saying the queue was
+   empty (`cycle_end`), the last frame heard, and the edge's new `Ego.backlog` byte (how long fresh
+   news waits for the link). Without `backlog` the saturated busy lot at 600 bit/s held only 76 %
+   for contacts the link could not vouch for over 15 s: revisions there are not lost, they queue.
+3. **Measured drift.** How far the edge's estimate wanders from a stale prediction, on the footage
+   runs (`tools/sidebyside/scripts/drift.mjs`, every revision of every contact followed for 0.5-45 s while
+   ignoring later revisions), 95th percentile:
+
+| state / class | 1 s | 5 s | 20 s | fitted p95 | revisions per s |
+|---|---|---|---|---|---|
+| moving vehicle | 12 m | 40 m | 227 m | 10.8 t^0.93 | 0.85 |
+| moving dismount | 5 m | 17 m | 50 m | 5.0 t^0.78 | 0.85 |
+| static vehicle | 5.5 m | 9 m | 13 m | 4.7 t^0.40 | 0.25 |
+| static dismount | 5 m | 17 m | 25 m | 5.8 t^0.51 | 0.30 |
+| stopped / unknown | 4-8 m | 11-30 m | 7-21 m | see belief.rs | 0.2-0.55 |
+
+A tracked contact's circle is its `ce` combined with: the rounding of `pos`, the drift since its
+copy was observed capped by the band, and what a missed revision could add (the first missing
+revision starts the drift; how likely it is missing comes from the loss rate, the ladder's copies,
+the backlog and the last frame heard). A lost contact drifts from its last look. A circle wider than
+the camera footprint marks the contact unlocated; the page then shows where it was last seen, its
+heading and how long ago.
+
+**Calibration** (`tools/sidebyside/scripts/calibrate.mjs`, two seeds, while the footage runs plus
+30 s): "holds edge" is the share of steps with the edge's estimate inside the circle; "seen again
+inside" is, for lost contacts the edge later sees again, whether the reappearance was inside the
+circle shown just before.
+
+| scene   | link      | samples | holds edge | circle med/p90 m | err med/p90 m | lost circle med m | lost located | seen again inside |
+|---------|-----------|---------|------------|------------------|---------------|-------------------|--------------|-------------------|
+| busy    | hf        | 49142   | 98.1%      | 5.9/7.8          | 0.5/2.6       | 69.4              | 52.1%        | 87.5% of 16       |
+| busy    | lora      | 43524   | 98.3%      | 9.9/18.1         | 0.7/4.8       | 72.0              | 50.9%        | 83.3% of 12       |
+| busy    | telemetry | 19700   | 98.6%      | 21.6/62.2        | 1.9/9.8       | 102.0             | 35.6%        | 100.0% of 4       |
+| busy    | contested | 39517   | 97.4%      | 12.0/25.8        | 1.2/6.3       | 66.6              | 54.1%        | 87.5% of 8        |
+| thermal | hf        | 14463   | 96.6%      | 11.1/25.8        | 0.8/4.7       | 83.8              | 0.0%         | 60.0% of 10       |
+| thermal | lora      | 14129   | 96.1%      | 11.9/26.5        | 0.9/6.1       | 85.2              | 0.0%         | 55.6% of 9        |
+| thermal | telemetry | 9787    | 96.5%      | 17.1/37.0        | 2.4/14.6      | 88.0              | 0.0%         | 40.0% of 5        |
+| thermal | contested | 12798   | 95.9%      | 14.1/30.3        | 1.3/9.1       | 88.1              | 0.0%         | 50.0% of 8        |
+| best2   | hf        | 2486    | 98.0%      | 6.6/8.7          | 0.6/1.5       | 33.7              | 48.0%        | -                 |
+| best2   | lora      | 2504    | 98.4%      | 6.8/9.4          | 0.6/2.1       | 33.8              | 47.7%        | -                 |
+| best2   | telemetry | 2313    | 99.3%      | 8.3/15.4         | 0.9/4.2       | 35.5              | 46.1%        | -                 |
+| best2   | contested | 2343    | 99.1%      | 8.4/12.4         | 0.7/2.5       | 37.7              | 44.4%        | -                 |
+| convoy1 | hf        | 722     | 100.0%     | 12.3/19.6        | 1.2/2.0       | 153.6             | 0.0%         | -                 |
+| convoy1 | lora      | 730     | 99.7%      | 13.6/20.8        | 1.1/2.4       | 155.2             | 0.0%         | -                 |
+| convoy1 | telemetry | 746     | 99.6%      | 12.2/25.9        | 1.2/4.2       | 154.6             | 0.0%         | -                 |
+| convoy1 | contested | 689     | 99.7%      | 19.0/33.1        | 1.2/4.9       | 155.5             | 0.0%         | -                 |
+
+Every scene and link is at 95.9-100 %. "Holds edge" scores against the edge's estimate at that
+step, carried forward at its velocity from its last observation when the contact moves (the edge's
+own belief; `ContactView.now_e`): scoring against the last observation instead penalised the
+receiver for predicting a vehicle the edge had stopped seeing. By time the link could not vouch for
+the copy, every bucket is at 95 % or above except on the thermal road when it could not vouch for
+2-15 s (69-90 %, a few hundred of 14 000 samples per link): fast road traffic drifts faster than the
+drift pooled over all runs. Against the old rules: the busy lot at 2 kbit/s held 92 % with a 5.4 m
+median circle; now 98 % with 9.9 m, the size the evidence supports. The quiet lot holds 98-99 % at
+6.6-8.4 m, and parked cars stay at their `ce` for as long as the link vouches for them instead of
+creeping to twice it.
+
+Two edge fixes came out of this, and they also lifted the picture: revisions are checked against
+the receiver's prediction *at the time of the latest observation*, not at `now` (comparing a frozen
+estimate with a moving prediction revised every unseen vehicle several times a second until it was
+declared lost), and lost contacts are never revised for position. The busy lot at 2 kbit/s went
+from 30 % to 42 % current and 75 % to 86 % known; the convoy from 85 % to 89-91 % current.
+
+Lost contacts: a parked car out of view stays within about 25 m for a minute (a person 50 m), a moving vehicle
+reaches the footprint within seconds and is then shown unlocated at its last sighting. Few lost
+contacts are seen again in these clips (4-16 per run), and on the thermal road only about half of
+them reappeared inside the circle: reappearances there are mostly group centroids that changed
+membership while lost, which the drift of a tracked contact does not cover. Too few samples to fit
+a separate lost-contact drift; the open item for a longer clip.
+
+## 11. Adaptive detail
+
+The edge picks its detail level (PROTOCOL.md 6.4) from the backlog it measures: tighter groups,
+smaller thresholds and every contact when the link keeps up; wider groups, bigger thresholds and
+only contacts seen for a while when it does not. Focused contacts are exempt.
+
+```
+node tools/sidebyside/scripts/eval.mjs --clip busy,best2 --profile hf,lora,telemetry,dynamic
+node tools/sidebyside/scripts/tune-detail.mjs --clips busy,best2 --profiles lora,telemetry --levels 0,1,2,3,4,auto [--seeds 3] [--coarsen-s 1] [--set 4.pos_floor_m=30]
+node tools/sidebyside/scripts/probe-revs.mjs --clip busy --profile hf --level 4
+```
+
+`tune-detail.mjs` runs each level pinned and the adaptive edge; `probe-revs.mjs` lists which
+contacts revise at a pinned level, and why. The `dynamic` profile steps the link through 9.6k,
+2k, 600, 2k and 9.6k bit/s over five equal parts of the replay. The edge is told 9600 and is
+never told otherwise: it runs paced, taking what the radio drained (`link_credit`) as its token
+bucket, as it would behind a modem's flow control.
+
+**Grouping alone does not buy much.** The handoff's first ladder changed only the link distances,
+the position factor and a report-age gate. Pinned on the busy lot at 2 kbit/s, level 4 (120 m
+groups) cut revisions only from 1132 to 939 and left the picture 35 % up to date, while the
+per-track error grew from 5.7 to 35 m. Two causes, from `probe-revs.mjs`:
+
+- a group's centroid jumps whenever a member joins or leaves, and a 120 m group gains and loses
+  members all the time (count changes and position revisions of the big groups);
+- moving singles stay singles at any distance (cars driving through the lot do not share a course),
+  and each revises every 2-3 s on the 30° course, 25 % speed and `ce`-sized position bands.
+
+So each coarse level is also a spatial resolution: a position floor of a third of its link
+distance (10, 20, 40 m), at least a share of the group's own radius, a count tolerance (10 %, 20 %,
+34 %), and course and speed bands scaled by `dev_factor`. With that, level 4 on the same link
+makes 315 revisions and is 82 % up to date. The declared `ce` of a coarse contact is at least its
+threshold, so the receiver's circle starts where the edge's tolerance does: honesty at levels 3-4
+went from 66-86 % (thresholds raised, `ce` not) to 94-100 %.
+
+The tuning below was done before the calibrated circle of section 10 landed (the edge revising
+against the receiver's exact prediction, never for position once lost); the adaptive and
+acceptance tables further down are measured after it, on the merged code.
+
+**Pinned levels** (seed 1, before section 10; `trk err` = footage track to the receiver's centroid):
+
+| clip | link | level | up to date | known | k/n | honest | trk err med / p90 | revisions | contacts |
+|---|---|---|---|---|---|---|---|---|---|
+| busy | 2 kbit/s | 0 | 33.1 % | 75.0 % | 91.5 % | 92.6 % | 3.0 / 9.3 m | 1113 | 20.7 |
+| busy | 2 kbit/s | 1 | 30.3 % | 76.1 % | 89.7 % | 91.7 % | 5.7 / 16.0 m | 1132 | 15.5 |
+| busy | 2 kbit/s | 2 | 45.7 % | 81.7 % | 95.0 % | 98.0 % | 14.5 / 57.7 m | 886 | 7.3 |
+| busy | 2 kbit/s | 3 | 64.4 % | 82.8 % | 91.9 % | 99.8 % | 32.1 / 62.3 m | 515 | 4.9 |
+| busy | 2 kbit/s | 4 | 82.2 % | 92.8 % | 96.3 % | 100.0 % | 34.2 / 61.1 m | 315 | 3.7 |
+| busy | 600 bit/s | 1 | 7.5 % | 38.4 % | 63.3 % | 84.0 % | 7.8 / 19.5 m | 178 | 15.5 |
+| busy | 600 bit/s | 3 | 21.3 % | 49.0 % | 70.5 % | 98.1 % | 35.2 / 63.7 m | 164 | 4.9 |
+| busy | 600 bit/s | 4 | 46.3 % | 68.2 % | 83.6 % | 99.8 % | 35.8 / 62.5 m | 162 | 3.7 |
+| best2 | 2 kbit/s | 0 | 86.5 % | 96.3 % | 96.4 % | 99.8 % | 4.2 / 7.2 m | 179 | 1.4 |
+| best2 | 2 kbit/s | 1 | 85.9 % | 96.6 % | 96.9 % | 99.3 % | 4.7 / 8.2 m | 104 | 1.2 |
+| best2 | 2 kbit/s | 2 | 70.0 % | 77.1 % | 86.8 % | 99.5 % | 21.3 / 31.5 m | 43 | 0.7 |
+| best2 | 600 bit/s | 0 | 67.2 % | 86.2 % | 92.4 % | 99.8 % | 4.3 / 8.1 m | 109 | 1.4 |
+| best2 | 600 bit/s | 1 | 75.3 % | 92.4 % | 95.0 % | 98.0 % | 5.0 / 9.4 m | 96 | 1.2 |
+| best2 | 600 bit/s | 2 | 69.3 % | 77.9 % | 76.7 % | 95.2 % | 20.8 / 33.3 m | 59 | 0.7 |
+
+The cost is in the last columns: once the busy lot groups at 30 m and up, the receiver's centroid
+is 15-35 m from a typical object. Levels 3 and 4 cost about the same per track (the 60 m groups
+already span the lot), so between them level 4 is nearly free. On the quiet lot every coarse level
+is worse; level 0 helps on a fat link and hurts on a thin one, so the controller only refines to
+0 at 8 kbit/s and up. Level 0's factor is 0.75, not the 0.5 first proposed: at 0.5 the quiet lot
+on 9.6 kbit/s fell from 83.3 to 80.9 % up to date; at 0.75 it is 84.0 % with a better per-track
+error (4.0 / 7.3 m against 4.8 / 8.2 m at level 1).
+
+**The adaptive edge** (three loss seeds, with section 10; "today" is level 1 pinned):
+
+| clip | link | up to date: today / adaptive | k/n | trk err med / p90 | level (range) | changes |
+|---|---|---|---|---|---|---|
+| busy | 9.6 kbit/s | 70.3 / 70.1 % | 98.7 / 98.7 % | 4.7 / 15.2 m | 0.5 (0-1) | 1 |
+| busy | 2 kbit/s | 46.1 / 63.7 % | 97.2 / 97.7 % | 22.2 / 56.9 m | 2.1 (1-2) | 2 |
+| busy | 600 bit/s | 7.2 / 46.7 % | 60.6 / 92.0 % | 32.1 / 65.6 m | 3.7 (1-4) | 3 |
+| busy | dynamic | 40.6 / 52.2 % | 97.8 / 96.6 % | 8.3 / 49.3 m | 2.6 (1-4) | 6 |
+| best2 | 9.6 kbit/s | 83.7 / 83.7 % | 96.6 / 97.0 % | 4.2 / 7.4 m | 0.2 (0-1) | 1 |
+| best2 | 2 kbit/s | 85.8 / 85.8 % | 96.2 / 96.2 % | 4.7 / 8.2 m | 1.0 | 0 |
+| best2 | 600 bit/s | 72.4 / 72.4 % | 95.8 / 95.8 % | 5.1 / 9.6 m | 1.0 | 0 |
+| best2 | dynamic | 88.0 / 88.5 % | 97.1 / 97.9 % | 4.0 / 7.3 m | 0.2 (0-1) | 1 |
+
+Honesty is 98-99 % in every cell. Section 10 already took a third off the busy lot's revisions,
+so at 2 kbit/s the controller now stops at level 2 (before it: level 3 and about 62 %), and the
+quiet lot at 600 bit/s no longer coarsens at all. On the dynamic profile (48 s per step) the busy
+lot goes to 2 at 42 s (it saturates even 9.6 kbit/s), to 3 and 4 within 25 s of the drop to 2k,
+holds 4 through 600 bit/s, and comes back down once the footage ends (95 s) and the scene empties:
+6 changes in 238 s, no flaps. Operator focus (`focus.mjs`, five seeds, against the numbers before
+both changes): "others up to date" around the walker goes from 26 to 59 % at 2 kbit/s and from 10
+to 49 % at 600 bit/s with nobody selected (24 -> 60 % and 6 -> 18 % with one object drilled to); the selected object keeps its update rate and median
+error everywhere, its p90 error rises in a few cells (the walker at 600 bit/s 0.9 -> 1.4 m, the
+moving car on the contested link 6.6 -> 8.5 m; in the whole-group flow at 600 bit/s 15.8 -> 24.3 m).
+
+Against the proposed acceptance:
+
+| proposal | result |
+|---|---|
+| busy, 2 kbit/s: up to date 26 % -> >= 70 %, k/n not below today | 63.7 % (today, with section 10: 46.1 %); k/n 97.7 % (97.2 %). Not met at the default `coarsen_s` 2 s; 1 s reached 71 % before section 10 |
+| busy, 600 bit/s: 10 % -> >= 60 % | 46.7 %. Not met: see below |
+| best2 on hf no worse in up to date or per-track error, level 0 or 1 | 83.7 % vs 83.7 %, 4.2 / 7.4 m vs 4.8 / 8.2 m, levels 0-1 |
+| dynamic: <= 6 changes a minute, no flapping | 1.5 a minute, no flap |
+| focus.mjs selected object does not regress; core tests pass | update rate and median error unchanged; small p90 rises in a few cells (above); 42 tests pass |
+
+**Why 600 bit/s stops near 45 %.** At level 4 the busy lot still needs about 2.6 revisions a
+second (431 in 165 s on an unconstrained link), mostly cars driving through and contacts going
+lost; 600 bit/s carries about 1.6 records a second, repeats and `Ego` included. A 40 m floor and
+three times the course band are already in; a 60 m floor with six times the bands bought four more
+points. The remaining lever is
+the 28 B of carrier overhead on every 75 B frame at that rate, not the ladder.
+
+**The threshold is a trade** (before section 10). `coarsen_s` 1 s reaches the 70 % on the busy lot at 2 kbit/s, but
+the quiet lot at 600 bit/s then coarsens on a few seconds of confirmations at the start and its
+per-track error goes from 5.0 / 9.4 m to 19.3 / 32.2 m (k/n 86 %). At 2 s it stays at 5.5 / 16.2 m.
+The default keeps the quiet picture precise; `EdgeConfig::coarsen_s` (`--coarsen-s`) moves it.
+
+**Choices made against the first proposal, from the data:**
+
+- The backlog counts ladder repeats as well as first copies (floor repeats, focused records and
+  merge tombstones excluded), as the handoff's "records that are due" says. First copies alone
+  said the busy lot at level 3 kept up (0.2-0.8 s) while its repeats starved under 10 % loss; at
+  `coarsen_s` 1 s the busy lot at 2 kbit/s was 61.8 % up to date with first copies only (seed 1)
+  and 71.2 % with repeats (three seeds).
+- Coarsening waits until the backlog stops draining: in the unit-test crowd (40 walkers, 600
+  bit/s) the queue the old level left after 2 -> 3 took longer than the hold to drain, and asked
+  for 3 -> 4.
+- Refining is predicted, not probed. Without the prediction the same crowd went 3 -> 2 -> 3 within
+  10 s: at level 3 the one big group hardly revised, so measured demand said anything fits. The
+  prediction counts the groups the finer level would make, the births they cost, and the demand
+  per contact last seen at that level; a refine undone within 30 s still doubles the wait.
+- Start at level 1 on thin links, not 2: the quiet lot at 600 bit/s is best at level 1 (75 %
+  against 69 % at 2), and the busy lot coarsens within 5 s anyway.
+- A split-focused group's members link only among themselves. Without that, at 30 m the selected
+  moving car was folded into a 41-member parked group and its child departed (as an individual
+  91 % -> 45 % of the time at 2 kbit/s; 93 % with the rule).
+
+Held-out footage, run once after tuning (FOOTAGE_FINDINGS.md split): convoy2 and amphib are quiet
+(one live contact) and the adaptive edge stays at level 1 with identical numbers on every link.
+The thermal road (dev, not used for tuning) at 600 bit/s: 9.9 -> 38.4 % up to date, k/n 65.6 ->
+87.8 %, per-track error 11.0 / 32.4 -> 13.0 / 43.1 m.
+
+Open:
+
+- **Merge tombstones lag.** They ride at the floor class so a coarsening does not ask for the
+  next; until one arrives the receiver holds the absorbed contact beside its new group, and the
+  page reads "10 of 7 known" for a while. The receiver could drop a contact whose centroid lies
+  inside a newer group from the same edge, or the group record could name what it absorbed.
+- **The group centre at levels 3-4** is a poor position (15-35 m from a typical member). The
+  receiver draws the radius; the CoT export should carry `max(ce, radius)` as its ce.
+- **Lost frames are invisible to the backlog.** With an uplink, digest delivery would be a second
+  signal; on simplex the blind spot stays. Without flow control (`paced` off) a link slower than
+  the budget looks like loss, not load, and the level does not move.
+- **Tuning:** the ladder was tuned on the busy lot and the quiet lot only; the held-out clips are
+  too quiet to exercise it.

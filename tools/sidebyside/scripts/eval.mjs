@@ -9,7 +9,7 @@
 //
 // Flags (defaults in brackets):
 //   --clip cons2|busy|all|<run dir>   [cons2]      cons2 = meva-uav-0307-1720/cons2 (35 tracks), busy = meva-2018-03-13 (206 tracks)
-//   --profile a,b|all                 [lora]       clean hf lora telemetry contested blackout
+//   --profile a,b|all                 [lora]       clean hf lora telemetry contested blackout dynamic
 //   --blackout s:len[,s:len]          [none]       scripted blackouts (seconds from the start, length); both directions down
 //   --budget bps                      [profile]    override the edge budget
 //   --loss p  --delay s               [profile]    random loss (downlink and uplink) and one-way delay
@@ -17,6 +17,9 @@
 //   --duration s                      [clip + 60]  replay length
 //   --seed n                          [1]          deterministic loss and nonce
 //   --dev-factor k                    [1]          edge position change threshold = k x max(ce, 2 pos_res) (experiment knob)
+//   --level n                         [adaptive]   pin the edge's detail level (1 = grouping and thresholds as before adaptation)
+//   --ladder '[{...} x5]'             [built in]   replace the detail ladder (contacts::DETAIL fields, all five levels)
+//   --coarsen-s s                     [2]          backlog (seconds of link time) that coarsens the detail level
 //   --focus auto|<edge id>            [off]        also run the same replay with one contact focused and report the delta
 //   --tail-contacts                   [off]        print the per-contact table (edge vs receiver) at the end
 //   --json path                       [off]        write every number to a JSON file
@@ -26,6 +29,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { loadMeta } from './meta.mjs';
+import { loadBoxes } from './boxes.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +42,7 @@ const ORIGIN_LAT = 39.0466, ORIGIN_LON = -85.5207;
 const CLIPS = {
   cons2: 'runs/footage/meva-uav-0307-1720/cons2',
   best2: 'runs/footage/meva-uav-0307-1720/best2',
+  thermal: 'runs/footage/hituav-60m-30_1',
   convoy1: 'runs/footage/dev-amad-test1/mil',
   convoy2: 'runs/footage/amad-test2/mil',
   amphib: 'runs/footage/mvt-test10/mil',
@@ -50,6 +55,9 @@ const PROFILES = {
   telemetry: { budgetBps: 600, loss: 0.05, delayS: 0.05, up: true, video: false },
   contested: { budgetBps: 2000, loss: 0.1, delayS: 0.3, up: true, video: false, bursts: true },
   blackout: { budgetBps: 2000, loss: 1, delayS: 0.3, up: false, video: false },
+  // The link's rate steps through these over five equal parts of the replay; the edge is told
+  // 9600 (and the receiver advertises 9600) and learns the rest only from the radio's flow control.
+  dynamic: { budgetBps: 9600, loss: 0.05, delayS: 0.3, up: true, video: false, steps: [9600, 2000, 600, 2000, 9600] },
 };
 const EVENT_KINDS = ['new', 'confirmed', 'moving', 'stopped', 'static', 'lost', 'reacquired', 'departed', 'grew', 'shrank'];
 const REC_NAMES = { 1: 'session', 2: 'ego', 3: 'pose', 4: 'contact', 5: 'chiphead', 6: 'chipsym', 7: 'note', 0x81: 'digest', 0x82: 'focus', 0x83: 'clock', 0x84: 'chipack' };
@@ -72,6 +80,9 @@ function parseArgs(argv) {
       case '--duration': a.duration = Number(next()); break;
       case '--seed': a.seed = Number(next()); break;
       case '--dev-factor': a.devFactor = Number(next()); break;
+      case '--level': a.level = Number(next()); break;
+      case '--ladder': a.ladder = JSON.parse(next()); break;
+      case '--coarsen-s': a.coarsenS = Number(next()); break;
       case '--focus': a.focus = next(); break;
       case '--json': a.json = next(); break;
       case '--quiet': a.quiet = true; break;
@@ -94,6 +105,7 @@ function rng(seed) {
 function loadClip(runDir) {
   const meta = loadMeta(runDir);
   const byTick = new Map();
+  const boxAt = loadBoxes(runDir);
   const spans = new Map();
   for (const line of fs.readFileSync(path.join(runDir, 'tracks.csv'), 'utf8').split('\n').slice(1)) {
     if (!line) continue;
@@ -109,7 +121,7 @@ function loadClip(runDir) {
     let lo = 0, hi = ticks.length - 1, best = -1;
     while (lo <= hi) { const m = (lo + hi) >> 1; if (ticks[m] <= tick) { best = m; lo = m + 1; } else hi = m - 1; }
     if (best < 0 || tick - ticks[best] > 60) return [];
-    return byTick.get(ticks[best]);
+    return byTick.get(ticks[best]).map((tr) => ({ ...tr, bbox: boxAt(tr.id, tick) ?? undefined }));
   };
   const pitch = (meta.ground.pitch_deg * Math.PI) / 180;
   const cam = { e: meta.camera_m[0], n: -meta.camera_m[2], alt: meta.ground.height_m, pitchDeg: -meta.ground.pitch_deg };
@@ -131,8 +143,12 @@ function replay(clip, P, opt) {
     caps: 1 | 2 | 4 | 8 | (opt.uplink ? 0x400 : 0) | 0x800, hfov_x10: Math.round(meta.ground.hfov_deg * 10), img_w: meta.width, img_h: meta.height,
     video_frame0: meta.start_frame, fps_x100: Math.round(meta.fps * 100), budget_bps: P.budgetBps, max_frame: 1200,
     sigma_own: 3.0, sigma_att_deg: 1.0, sigma_h: 2.0, sigma_px: 2.0, f_px: meta.ground.f_px,
-    contacts: opt.devFactor ? { dev_factor: opt.devFactor } : undefined,
+    contacts: opt.devFactor || opt.ladder ? { ...(opt.devFactor ? { dev_factor: opt.devFactor } : {}), ...(opt.ladder ? { ladder: opt.ladder } : {}) } : undefined,
+    detail: opt.level ?? null, paced: !!P.steps, ...(opt.coarsenS ? { coarsen_s: opt.coarsenS } : {}),
   }));
+  // Dynamic profile: the radio drains at the step's rate; the edge only sees what it drained.
+  const rateAt = (t) => (P.steps ? P.steps[Math.min(P.steps.length - 1, Math.floor((t / opt.duration) * P.steps.length))] : P.budgetBps);
+  let creditFrac = 0;
   const rx = new WasmReceiver(P.budgetBps);
   const pending = [];
   const blackouts = opt.blackouts.map((b) => ({ start: b.start, end: b.start + b.len, recoveredRev: null, recoveredAny: null, compAtEnd: null, maxAfter: 0 }));
@@ -167,6 +183,11 @@ function replay(clip, P, opt) {
   const W = opt.watch ? { ...opt.watch, id: null, mode: 0, lastSend: -1e9, sends: 0, ackT: null, indivT: null, steps: 0, known: 0, indiv: 0, inside: 0,
     errs: [], ages: [], spdErr: [], arrivals: 0, prev: new Map(), ids: new Set(), byId: new Map() } : null;
   const others = { n: 0, compRev: 0, hn: 0, hin: 0, err: 0 };
+  // Per footage track: distance from the track to the receiver's copy of the contact holding it
+  // (the cost of grouping), and the share of held tracks the receiver shows at all.
+  const perTrack = { errs: [], held: 0, shown: 0 };
+  const levels = []; // [t, level] at every change, from the edge snapshot
+  let levelSum = 0;
   let lastEdgeAll = [], lastRxAll = [];
 
   for (let step = 0; step * STEP_S < duration; step++) {
@@ -174,8 +195,9 @@ function replay(clip, P, opt) {
     const up = linkUp(t);
     const tracks = clip.tracksAt(t);
     const ego = { e: cam.e, n: cam.n, alt_agl: cam.alt, heading_deg: 0, speed: 0, climb: 0, nav_mode: 2, gnss: 2, battery: Math.max(0, Math.round(83 - t / 30)),
-      pos_ce: 3.0, fp_e: cam.e, fp_n: cam.fpN, fp_radius: cam.fpR, video: P.video && up };
+      pos_ce: 3.0, fp_e: cam.e, fp_n: cam.fpN, fp_radius: cam.fpR, video: P.video && up, looking: t <= clip.lastS + 0.2 };
     edge.pose(tick, cam.e, cam.n, cam.alt, 0, cam.pitchDeg, 0);
+    if (P.steps) { creditFrac += (rateAt(t) / 8) * STEP_S; const whole = Math.floor(creditFrac); creditFrac -= whole; edge.link_credit(whole, tick); }
     const out = edge.tick(JSON.stringify(tracks), JSON.stringify(ego), tick);
     for (const b of unpack(out)) {
       const fb = new Uint8Array(b);
@@ -210,7 +232,22 @@ function replay(clip, P, opt) {
     const rxAll = JSON.parse(rx.snapshot_json(tick));
     const rxMap = new Map(rxAll.filter((c) => !c.departed && !c.child).map((c) => [c.id, c]));
     const edgeMap = new Map(edgeAll.map((c) => [c.id, c]));
+    const level = es.detail.level;
+    levelSum += level;
+    if (!levels.length || levels[levels.length - 1][1] !== level) levels.push([+t.toFixed(1), level]);
+    if (step % 5 === 0) {
+      const holder = new Map();
+      for (const c of edgeAll) if (!c.departed) for (const m of c.members) holder.set(m, c.id);
+      for (const tr of tracks) {
+        const cid = holder.get(tr.id); if (cid == null) continue;
+        perTrack.held++;
+        const r = rxMap.get(cid); if (!r) continue;
+        perTrack.shown++; perTrack.errs.push(Math.hypot(tr.e - r.e, tr.n - r.n));
+      }
+    }
     lastEdgeAll = edgeAll; lastRxAll = rxAll;
+    if (opt.edgeSampler) opt.edgeSampler(es, t, rxAll);
+    if (opt.rxSampler && step % 10 === 0) for (const c of rxAll) if (!c.departed && !c.child && c.liveness !== 'fresh') opt.rxSampler.push({ t, liveness: c.liveness, ce_shown: c.ce_shown });
     const excluded = new Set();
     if (W && t >= W.at) {
       const tr = W.until != null && t >= W.until ? null : tracks.find((x) => x.id === W.track);
@@ -278,12 +315,16 @@ function replay(clip, P, opt) {
       if (r.lost) continue;
       const c = edgeMap.get(r.id);
       if (!c || c.departed || c.lost) continue;
-      const d = Math.hypot(c.e - r.e, c.n - r.n);
+      // Against the edge's estimate at this step (coasted from its last observation when moving).
+      const d = Math.hypot((c.now_e ?? c.e) - r.e, (c.now_n ?? c.n) - r.n);
       honest.all++; honest.errSum += d; if (d <= r.ce_shown) honest.in++;
       { const key = `${r.motion}${r.rev === c.rev ? '' : '/stale'}${c.motion !== r.motion ? '->' + c.motion : ''}`; const h = honest.by[key] || (honest.by[key] = { n: 0, in: 0, err: 0, ce: 0 }); h.n++; h.err += d; h.ce += r.ce_shown; if (d <= r.ce_shown) h.in++; }
       if (bo) { honest.allBlackout++; if (d <= r.ce_shown) honest.inBlackout++; }
       honest.ghostSum += r.ce_shown; honest.ghostN++;
       if (W && t >= W.at && !excluded.has(r.id)) { others.hn++; others.err += d; if (d <= r.ce_shown) others.hin++; }
+      // Per-object samples (scripts/collapse.mjs): error to the edge, the circle shown, the edge's
+      // own ce, how long the edge has held this revision, motion, group, and the scene load.
+      if (opt.samples) { const since = revTick.get(`${c.id}:${c.rev}`); opt.samples.push({ t, quiet: since == null ? 0 : t - since, d, ceShown: r.ce_shown, ce: c.ce, motion: c.motion, group: c.count > 1, live: live.length, stale: r.rev !== c.rev, up: !bo }); }
       if (focusTarget.id === r.id && focusTarget.steps) { focusTarget.n++; focusTarget.errSum += d; if (d <= r.ce_shown) focusTarget.in++; if (r.rev === c.rev) focusTarget.compRev++; }
     }
     for (const b of blackouts) {
@@ -319,7 +360,8 @@ function replay(clip, P, opt) {
       const p = pendingEdge.splice(i, 1)[0];
       L.matched++; L.samples.push(t - p.t); // arrival step at the receiver, not the frame tick
     }
-    if (step % 10 === 0) series.push({ t: +t.toFixed(1), live: live.length, rx: rxMap.size, compRev: compRev == null ? null : +compRev.toFixed(3), compAny: compAny == null ? null : +compAny.toFixed(3), up, known, of });
+    if (step % 10 === 0) series.push({ t: +t.toFixed(1), live: live.length, rx: rxMap.size, compRev: compRev == null ? null : +compRev.toFixed(3), compAny: compAny == null ? null : +compAny.toFixed(3), up, known, of,
+      level, linkM: es.detail.link_m, backlogS: +es.detail.load.smooth_s.toFixed(2), rateBps: rateAt(t) });
   }
 
   function sendUp(b, tNow, linkUp = true) {
@@ -352,9 +394,19 @@ function replay(clip, P, opt) {
     watch: W ? { track: W.track, at: W.at, select: !!W.select, flow: W.flow, drillT: W.drillT ?? null, id: W.id, mode: W.mode, sends: W.sends, ackT: W.ackT, indivT: W.indivT, steps: W.steps, known: W.known, indiv: W.indiv, inside: W.inside,
       log: W.log, errs: W.errs, ages: W.ages, spdErr: W.spdErr, arrivals: W.arrivals, bytes: [...W.ids].reduce((s, id) => s + (W.byId.get(id) || 0), 0), ids: [...W.ids], byId: Object.fromEntries(W.byId) } : null,
     others: { compRev: others.n ? others.compRev / others.n : null, honesty: others.hn ? others.hin / others.hn : null, meanErr: others.hn ? others.err / others.hn : null },
+    perTrack: { shown: perTrack.held ? perTrack.shown / perTrack.held : null, med: q(perTrack.errs, 0.5), p90: q(perTrack.errs, 0.9), mean: perTrack.errs.length ? perTrack.errs.reduce((a, b) => a + b, 0) / perTrack.errs.length : null },
+    detail: levelStats(levels, levelSum / steps.n, duration),
     edgeStats, rxStats, cmStats, timing, series,
     contacts: opt.tailContacts ? { edge: lastEdgeAll, rx: lastRxAll } : undefined,
   };
+}
+
+// Level changes over the replay: how many, per minute, and flaps (a change undone within 30 s).
+function levelStats(levels, mean, duration) {
+  const changes = levels.slice(1);
+  let flaps = 0;
+  for (let i = 2; i < levels.length; i++) if (levels[i][1] === levels[i - 2][1] && levels[i][0] - levels[i - 1][0] <= 30) flaps++;
+  return { levels, mean, changes: changes.length, perMin: changes.length / (duration / 60), flaps, min: Math.min(...levels.map((l) => l[1])), max: Math.max(...levels.map((l) => l[1])) };
 }
 
 function unpack(buf) {
@@ -380,6 +432,8 @@ function summaryRow(clipName, profName, P, r) {
   return {
     clip: clipName, profile: profName, 'bit/s': P.budgetBps, loss: P.loss, 'comp@rev': pct(r.completeness.rev), 'comp@any': pct(r.completeness.any),
     honest: pct(r.honesty.frac), 'err m': f1(r.honesty.meanErr), 'ce_shown m': f1(r.honesty.meanCeShown), 'k/n': pct(r.integrity.kOfN),
+    level: `${f1(r.detail.mean)} (${r.detail.min}-${r.detail.max})`, changes: `${r.detail.changes}${r.detail.flaps ? ` (${r.detail.flaps} flap)` : ''}`,
+    'trk shown': pct(r.perTrack.shown), 'trk err m': `${f1(r.perTrack.med)}/${f1(r.perTrack.p90)}`,
     'new s': lat('new'), 'moving s': lat('moving'), 'stopped s': lat('stopped'), 'lost s': lat('lost'), 'departed s': lat('departed'),
     'app B/s': f1(r.bytes.appPerS), 'wire B/s': f1(r.bytes.wirePerS), 'contact B/s': f1(r.bytes.perS.contact || 0), 'ego B/s': f1(r.bytes.perS.ego || 0), 'hdr B/s': f1(r.bytes.headerPerS),
     'frame B': `${f1(r.bytes.meanFrame)}/${r.bytes.maxFrame}`,
@@ -409,7 +463,7 @@ for (const clipName of clipNames) {
     if (args.budget != null) P.budgetBps = args.budget;
     if (args.loss != null) P.loss = args.loss;
     if (args.delay != null) P.delayS = args.delay;
-    const opt = { seed: args.seed, devFactor: args.devFactor, blackouts, duration, uplink: !args.noUplink && P.up, uplinkLoss: args.uplinkLoss ?? P.loss, focus: '', tailContacts: args.tailContacts };
+    const opt = { seed: args.seed, devFactor: args.devFactor, level: args.level, ladder: args.ladder, coarsenS: args.coarsenS, blackouts, duration, uplink: !args.noUplink && P.up, uplinkLoss: args.uplinkLoss ?? P.loss, focus: '', tailContacts: args.tailContacts };
     const t0 = Date.now();
     const r = replay(clip, P, opt);
     const ms = Date.now() - t0;
@@ -423,6 +477,7 @@ for (const clipName of clipNames) {
     if (!args.quiet) {
       console.log(`  ${profName}: ${r.steps} steps in ${ms} ms; regime ${r.timing.regime} f=${r.timing.f.toFixed(2)} floor ${(r.timing.floor / TICK_HZ).toFixed(0)} s; frames ${r.bytes.frames} (${r.bytes.delivered} delivered), digests ${r.bytes.digests} (${r.bytes.upDelivered} up delivered); rx rejected ${r.rxStats.rejected} stale ${r.rxStats.stale_copies}; contact sends ${r.edgeStats.contacts_sent}; revisions ${r.cmStats.revisions} by reason [first ${r.cmStats.rev_why[0]}, state ${r.cmStats.rev_why[1]}, position ${r.cmStats.rev_why[2]}, ce ${r.cmStats.rev_why[3]}, course ${r.cmStats.rev_why[4]}, speed ${r.cmStats.rev_why[5]}]`);
       if (focused) console.log(`  ${profName} focus ${focused.focus?.id ?? '-'}: +${f1(focused.costPerS)} B/s (${f1(r.bytes.appPerS)} -> ${f1(focused.bytes.appPerS)}), target comp@rev ${pct(focused.focus?.compRev)}, err ${f1(focused.focus?.meanErr)} m, honest ${pct(focused.focus?.honesty)}; overall comp@rev ${pct(focused.completeness.rev)} honest ${pct(focused.honesty.frac)}`);
+      if (r.detail.changes) console.log(`  ${profName} detail levels: ${r.detail.levels.map(([t, l]) => `${l}@${f1(t)}`).join(' ')}`);
       if (r.blackouts.length) for (const b of r.blackouts) console.log(`  ${profName} blackout ${b.start}+${b.len}s: comp@rev at end ${pct(b.compAtEnd)}, back to 95% after ${b.recoveredRev == null ? 'never' : f1(b.recoveredRev) + ' s'} (any rev: ${b.recoveredAny == null ? 'never' : f1(b.recoveredAny) + ' s'}); honesty during ${pct(r.honesty.blackout)}`);
       if (args.debug) {
         console.log(`  ${profName} unmatched edge transitions: ${r.unmatchedEdge.join(' ') || 'none'}`);
