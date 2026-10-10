@@ -491,7 +491,9 @@ def fuse_frame(app, mti, foot_xy, mti_xy, a):
     kept = []
     for d in app:
         dup = next((e for e in kept if e['src'] != d['src'] and overlap(e['box'], d['box']) > 0.5), None)
-        if dup is not None: dup['agree'].add(d['src']); dup['members'].append(d); d['merged_into'] = dup; continue
+        if dup is not None:
+            dup['agree'].add(d['src']); dup['members'].append(d); d['merged_into'] = dup
+            dup['agreed'] = dup.get('agreed', True) or d.get('agreed', True); continue
         d['agree'] = {d['src']}; d['members'] = [d]; kept.append(d)
     out = list(kept)
     for m in mti:
@@ -550,6 +552,8 @@ class Track:
         self.g = group(k)
         self.kf = KF(xy, SIGMA_A[self.g], SIGMA_Z[self.g])
         self.hits, self.last, self.born = 1, t, (t if born is None else born)
+        self.need = self.birth_hits = 3          # hits before confirmed (cmd_track sets them at birth)
+        self.last_sure = t                       # last detection both models agreed on (--sure-hold)
         self.classes = {} if k == MOVER else {int(k): 1}
         self.conf = conf
         self.hist = [(t, xy[0], xy[1])]  # measurements, for the static test
@@ -603,7 +607,7 @@ class Track:
         vx = np.linalg.lstsq(A, X, rcond=None)[0][0]; vy = np.linalg.lstsq(A, Y, rcond=None)[0][0]
         return vx, vy
 
-    def update(self, xy, k, conf, t, a=None):
+    def update(self, xy, k, conf, t, a=None, agreed=True):
         gk = group(k)
         if gk != MOVER_G:
             if self.g == MOVER_G:  # promotion: the appearance detector has classified the mover
@@ -612,6 +616,8 @@ class Track:
         innov = math.hypot(xy[0] - self.kf.x[0], xy[1] - self.kf.x[1])
         self.kf.update(xy, SIGMA_Z[gk])
         self.hits += 1; self.last = t; self.conf = 0.8 * self.conf + 0.2 * conf
+        if agreed: self.last_sure = t
+        if agreed and self.need > self.birth_hits: self.need = self.birth_hits  # both models now agree: a normal birth
         self.hist.append((t, xy[0], xy[1]))
         if a is None or not a.static_mode: return
         self.hist = [p for p in self.hist if t - p[0] <= a.static_window]
@@ -656,8 +662,11 @@ def cmd_track(a):
     meta = caches_h
     homs = {int(k): v for k, v in meta['homographies'].items()}
     W, Hh, fps = meta['width'], meta['height'], meta['fps']
-    app_rows = np.concatenate([np.column_stack([caches[s][0], np.full(len(caches[s][0]), i)])
-                               for i, s in enumerate(sources) if s != 'mti'] or [np.zeros((0, 8))])
+    # Rows: the 7 cache columns, the source index, and the birth flag (an 8th cache column written by
+    # consensus.py --keep: 1 where two models agreed; 1 everywhere for a plain detector cache).
+    app_rows = np.concatenate([np.column_stack([caches[s][0][:, :7], np.full(len(caches[s][0]), i),
+                                                caches[s][0][:, 7] if caches[s][0].shape[1] > 7 else np.ones(len(caches[s][0]))])
+                               for i, s in enumerate(sources) if s != 'mti'] or [np.zeros((0, 9))])
     f = (W / 2) / math.tan(math.radians(a.hfov / 2))
     pitch, h, fitinfo = fit_ground(app_rows[:, :7], homs, f, W / 2, Hh / 2, a)
     g = Ground(f, W / 2, Hh / 2, pitch, h)
@@ -709,7 +718,7 @@ def cmd_track(a):
     for r in mti_rows:
         if int(r[0]) in homs: mti_by.setdefault(int(r[0]), []).append(r)
     for n in sorted(homs):
-        app = [{'src': sources[int(r[7])], 'box': r[1:5], 'conf': float(r[5]), 'cls': int(r[6]), 'n': n} for r in app_by.get(n, [])]
+        app = [{'src': sources[int(r[7])], 'box': r[1:5], 'conf': float(r[5]), 'cls': int(r[6]), 'n': n, 'agreed': bool(r[8])} for r in app_by.get(n, [])]
         mti = [{'src': 'mti', 'box': r[1:5], 'conf': float(r[5]), 'cls': MOVER, 'n': n,
                 't0': float(r[7]) - meta['start_frame'] / fps, 'hits0': int(r[8])} for r in mti_by.get(n, [])]
         for d in app: d['xy'] = ground_of((d['box'][0] + d['box'][2]) / 2, d['box'][3], n)  # feet / tyres
@@ -754,7 +763,7 @@ def cmd_track(a):
                 for i, j in zip(ri, ci):
                     if C[i, j] >= 1e6: continue
                     tr = tracks[unmatched[i]]; d = grp[j]
-                    tr.update(d['xy'], d['cls'], d['conf'], t, a); tr.add_size(d['size'], d['cls']); d['tid'] = tr.id
+                    tr.update(d['xy'], d['cls'], d['conf'], t, a, d.get('agreed', True)); tr.add_size(d['size'], d['cls']); d['tid'] = tr.id
                     used.add(i); grp[j] = None
                 unmatched = [ti for i, ti in enumerate(unmatched) if i not in used]
             rest = [d for d in hi if d is not None]
@@ -784,15 +793,22 @@ def cmd_track(a):
                 lost = [tr for i, tr in enumerate(lost) if i not in back]
             for d in rest:  # births from unmatched high-confidence detections
                 if d is None: continue
+                # With --birth-agreed a track is born only where both models agreed (consensus.py --keep);
+                # a box one model alone saw may still start one if --solo-hits > 0, and that track must
+                # then be seen --solo-hits times in a row before it is confirmed (a parked object the
+                # second model never learned, e.g. a museum tank; a roof vent rarely lasts that long).
+                agreed = d.get('agreed', True) or d['src'] == 'mti'
+                if a.birth_agreed and not agreed and not a.solo_hits: continue
                 tr = Track(next_id, d['xy'], d['cls'], d['conf'], t, born=d.get('t0')); tr.add_size(d['size'], d['cls'])
+                tr.birth_hits = a.birth_hits; tr.need = a.birth_hits if agreed or not a.birth_agreed else max(a.birth_hits, a.solo_hits)
                 if d.get('hits0'): tr.hits = max(tr.hits, min(3, d['hits0']))  # a persistent motion tracklet
                 d['tid'] = next_id; tracks.append(tr); alltracks[next_id] = tr; next_id += 1
             # Tentative tracks that missed die at once; confirmed ones coast up to `coast` s, then wait
             # `reacquire` s in the lost pool.
             keep = []
             for tr in tracks:
-                if (t - tr.last) <= (coast_of(tr) if tr.hits >= 3 else 0.0): keep.append(tr)
-                elif tr.hits >= 3 and a.reacquire > 0: tr.lost_at = t; lost.append(tr)
+                if (t - tr.last) <= (coast_of(tr) if tr.hits >= tr.need else 0.0): keep.append(tr)
+                elif tr.hits >= tr.need and a.reacquire > 0: tr.lost_at = t; lost.append(tr)
             tracks = keep
             lost = [tr for tr in lost if t - tr.lost_at <= (a.long_reacquire if established(tr) else a.reacquire)]
             # Companions: a motion-only track that keeps a constant offset from a confirmed track and is
@@ -804,7 +820,7 @@ def cmd_track(a):
             # boxes. While a mover has been near a larger partner too briefly for the lockstep test it is
             # held back (pending), and a found companion stays one for `companion_hold` s, so a shadow
             # does not reach the link before or between the windows that recognise it.
-            conf_tr = [tr for tr in tracks if tr.hits >= 3]
+            conf_tr = [tr for tr in tracks if tr.hits >= tr.need]
             for tr in conf_tr:
                 if tr.classes or a.companion_dist <= 0: tr.companion = False; continue
                 ts = tr.size()
@@ -845,7 +861,10 @@ def cmd_track(a):
                 if tr.parallax: tr.companion = True
         for tr in tracks:
             # Reported once confirmed (3 hits) and `min_age` s old: short spurious tracks never reach the link.
-            if tr.hits < 3 or t - tr.last > coast_of(tr) or t - tr.born < a.min_age or tr.companion: continue
+            if tr.hits < tr.need or t - tr.last > coast_of(tr) or t - tr.born < a.min_age or tr.companion: continue
+            # With --sure-hold a track that only one model has seen for that long is held, not reported:
+            # a roof vent the aerial model keeps calling a car at 0.5 while the COCO model never does.
+            if a.sure_hold > 0 and t - tr.last_sure > max(a.sure_hold, coast_of(tr)): continue
             x, y, vx, vy = tr.state()
             # MinBand frame: x right, y up, z toward the camera; forward on the ground is -z.
             out.append((round(t * TICK_HZ), tr.id, tr.cls(), x - origin[0], 0.0, -(y - origin[1]), vx, 0.0, -vy, int(min(255, tr.conf * 255))))
@@ -890,7 +909,7 @@ def cmd_track(a):
         'moving_vehicle_median_speed_mps': float(np.median(movers)) if movers else None, 'moving_vehicles': len(movers),
         'mover_median_speed_mps': float(np.median(mover_cls)) if mover_cls else None,
         'mti': mti_counts, 'overlay_dropped_appearance': ov_dropped, 'reacquired': reacquired,
-        'tracker': {k: getattr(a, k) for k in ('coast', 'reacquire', 'min_age', 'static_mode', 'gate_growth', 'gate_person', 'gate_vehicle', 'high', 'low', 'companion_dist', 'companion_size', 'companion_hold', 'companion_pending', 'parallax_k', 'parallax_cos', 'parallax_vcam', 'long_reacquire', 'established', 'stop_gate', 'static_coast', 'riders')},
+        'tracker': {k: getattr(a, k) for k in ('coast', 'reacquire', 'min_age', 'static_mode', 'gate_growth', 'gate_person', 'gate_vehicle', 'high', 'low', 'companion_dist', 'companion_size', 'companion_hold', 'companion_pending', 'parallax_k', 'parallax_cos', 'parallax_vcam', 'long_reacquire', 'established', 'stop_gate', 'static_coast', 'riders', 'birth_agreed', 'solo_hits', 'birth_hits', 'sure_hold')},
         'extent_m': [float(np.ptp(arr[:, 3])), float(np.ptp(arr[:, 5]))] if len(arr) else [0, 0],
         'duration_s': (f1 - f0 + 1) / fps, 'rows': len(arr),
         # Where the drone was in the log's frame (its nadir is the ground model's origin): TRACKS_CAMERA for the sim.
@@ -959,6 +978,10 @@ def main():
     t.add_argument('--static-coast', type=float, default=4.0, help='s a static track coasts (reported) without a detection (at least --coast)')
     t.add_argument('--no-riders', dest='riders', action='store_false', help='a dismount track and a two-wheeler detection never associate')
     t.add_argument('--no-overlay', dest='overlay', action='store_false', help='ignore overlay-mask.png for appearance boxes')
+    t.add_argument('--birth-agreed', action='store_true', help='a track is born only from a box flagged agreed (consensus.py --keep); any box continues it')
+    t.add_argument('--solo-hits', type=int, default=0, help='with --birth-agreed: a box one model alone saw starts a track that needs this many hits in a row (0: never)')
+    t.add_argument('--birth-hits', type=int, default=3, help='detections in a row before a track is confirmed')
+    t.add_argument('--sure-hold', type=float, default=0.0, help='s without an agreed box after which a track is tracked but not reported (0: off)')
     t.add_argument('--legacy-tracker', action='store_true', help='the original tracker: coast 1 s, fixed gates, no re-acquisition, no min age, no static mode')
     t.add_argument('--fuse-gate-person', type=float, default=1.5); t.add_argument('--fuse-gate-vehicle', type=float, default=4.0)
     t.add_argument('--confirm-sources', default='mil', help='sources that only label: their boxes need motion or another model to be tracked')

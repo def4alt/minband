@@ -39,31 +39,72 @@ scripts/draw-check.py` paints the tracks of that tick on the matching 720p frame
 
 ## Precision: the consensus tracks
 
-The default run is `runs/footage/meva-uav-0307-1720/cons2`: the MEVA 1080p pass at 24-28 m (a car
-is ~190 px long), tracked from the detections **two independently trained detectors agree on**
-(VisDrone `aerial-guardian` and COCO `yolo11n`, IoU >= 0.3, any class), or that the VisDrone model
-alone scores >= 0.7, with a 0.5 birth threshold and a 2 s minimum age. On this clip that removed
-every roof vent and roof segment the single detector tracked as "person", "car" or "truck" (none
-of those scored above 0.52) and kept the parked cars, the museum tank and six real pedestrians:
+The run to show is `runs/footage/meva-uav-0307-1720/best` (the page driver still defaults to
+`cons2` until it is pointed there): the MEVA 1080p pass at 24-28 m (a car
+is ~190 px long), tracked with **track-level consensus** of two independently trained detectors
+(VisDrone `aerial-guardian` and COCO `yolo11n`). A track is *born* only from a box the two models
+agree on (IoU >= 0.3, the COCO box at >= 0.4; for a person the COCO box must be a person), or that
+the VisDrone model alone scores >= 0.85 (vehicle) / >= 0.7 (person; COCO from 25 m almost never
+sees a pedestrian). Once born, a track *continues* on any VisDrone box at >= 0.3, so one model
+blinking no longer cuts a parked car's track, and a car that only one model sees at the frame edge
+keeps its id. Births need 3 hits in a row and a track is reported from 3 s of age.
 
 ```
 cd tools/footage
 .venv/bin/python -I track.py detect clips/battlefield/meva-uav-0307-1720.mp4 --model models/yolo11n.onnx --tag coco --out ../../runs/footage/meva-uav-0307-1720
-.venv/bin/python -I consensus.py ../../runs/footage/meva-uav-0307-1720 --a det --b coco --out cons2 --iou 0.3 --solo 0.7 --b-conf 0.15
-.venv/bin/python -I track.py track ../../runs/footage/meva-uav-0307-1720 --sources cons2 --high 0.5 --low 0.3 --min-age 2.0 --out ../../runs/footage/meva-uav-0307-1720/cons2
-cp ../../runs/footage/meva-uav-0307-1720/detect.json ../../runs/footage/meva-uav-0307-1720/cons2/
+.venv/bin/python -I consensus.py ../../runs/footage/meva-uav-0307-1720 --a det --b coco --out cons3 --iou 0.3 --b-conf 0.4 --solo-vehicle 0.85 --solo-person 0.7 --class-aware-person --keep 0.3
+.venv/bin/python -I track.py track ../../runs/footage/meva-uav-0307-1720 --sources cons3 --high 0.5 --low 0.3 --min-age 3.0 --birth-agreed --out ../../runs/footage/meva-uav-0307-1720/best
+cp ../../runs/footage/meva-uav-0307-1720/detect.json ../../runs/footage/meva-uav-0307-1720/best/
 ffmpeg -i clips/battlefield/meva-uav-0307-1720.mp4 -vf scale=1280:-2 -c:v libx264 -preset veryfast -crf 21 -an -movflags +faststart ../../runs/sidebyside/meva1080-720p.mp4
 ```
 
-| run | tracks | < 3 s | median track | entities/frame | false objects in the audit frames |
-|---|---:|---:|---:|---:|---|
-| frozen pipeline (det + MTI) | 77 | 17 | 8.2 s | 22.6 | roof vents as persons, roof segments as trucks, roof objects as cars |
-| det only, 0.5/0.3, 2 s | 46 | 7 | 11.0 s | 17.6 | fewer, still vents at 0.4-0.5 |
-| consensus `cons2` | 35 | 9 | 5.2 s | 10.7 | none seen (frames 150, 600, 900; `runs/sidebyside/audit/`) |
+`consensus.py --keep C` writes every VisDrone box at >= C with an 8th column, 1 where the models
+agreed (or VisDrone alone was sure); without `--keep` the cache keeps the 7-column detector layout
+and the old per-detection filter (`cons2` reproduces byte for byte). `track.py --birth-agreed`
+reads that column (a 7-column cache counts as all agreed). Also new, off by default: `--solo-hits N`
+(a box one model alone saw may start a track that then needs N hits in a row), `--birth-hits`
+(the 3), `--sure-hold S` (stop reporting a track no agreed box has touched for S s).
 
-The price is recall at the frame edge and on the tank when only one model sees it. The ground fit
-now picks the method with the most boxes (`track.py fit_ground`), because a consensus run keeps few
-pedestrians and 69 person boxes must not outvote 1276 vehicles.
+What the clip taught (`runs/sidebyside/audit/`, `*-tiles.jpg` is one thumbnail per track at its
+median frame, `best-<frame>.jpg` draws every box the tracker saw, green with a track id, red
+without):
+
+- The per-detection filter `cons2` looked clean on three frames but the whole-clip tile sheet
+  shows six false or duplicate tracks (a roof fan, a roof object, an AC rack twice, a car
+  fragment, a box on nothing) and fragments: 35 tracks for 27 objects.
+- "VisDrone alone at >= 0.7 is safe for vehicles" is false here: the roof fans and AC racks the
+  VisDrone model calls `car` at 0.5-0.8 never get a COCO box above 0.32, while every real car gets
+  COCO >= 0.4 on most frames. Hence `--b-conf 0.4` and the 0.85 solo bar.
+- Temporal persistence as a birth condition (`--solo-hits 10`) lets exactly that roof clutter in:
+  it is static and detected every frame. Dropped. The museum tank never needed it: COCO calls it
+  `truck`/`bus` at 0.52 on 66 of its 67 frames.
+- Continuing on single-model boxes without the stricter birth stretched the clutter from 0.4 s to
+  14 s (`tl1`, not kept). Birth strictness is what matters; continuation can be loose.
+
+| run | tracks | < 3 s | median track | births/min | entities/frame | false tracks (whole-clip tile audit) |
+|---|---:|---:|---:|---:|---:|---|
+| frozen pipeline (det + MTI) | 77 | 17 | 8.2 s | | 22.6 | roof vents as persons, roof segments as trucks, roof objects as cars |
+| det only, 0.5/0.3, 2 s | 46 | 7 | 11.0 s | 79 | 17.6 | fewer, still vents at 0.4-0.5 |
+| consensus `cons2` (per detection) | 35 | 14 | 4.7 s | 60 | 10.7 | 6 (roof fan, roof object, AC rack x2, car fragment, empty box) + 1 duplicate |
+| track-level consensus `best` | 27 | 6 | 6.5 s | 46 | 10.5 | none (27 of 27 thumbnails are a car, a pedestrian or the tank) |
+
+"< 3 s" counts reported durations under 3 s (the same script for every row; the three short
+`best` tracks are real cars at the top frame edge). Per frame, true / false, counted by eye
+(`best-<frame>.jpg` against `cons2-<frame>.jpg`):
+
+| frame | objects visible | `cons2` tracked / false | `best` tracked / false | not tracked |
+|---:|---:|---|---|---|
+| 150 | lot not yet in view long enough | 0 / 0 | 0 / 0 | nothing has reached its minimum age |
+| 390 | 10 | 10 / 0 | 10 / 0 | tank at the right edge: no detection from either model |
+| 600 | 10 | 8 / 0 | 8 / 0 | dark SUV top right and the tank: no detection from either model |
+| 900 | 12 | 10 / 0 | 10 / 0 | dark SUV (no detection); one of the two white vans at the bottom edge (VisDrone only, 0.78) |
+| 1020 | 10 | 10 / 0 | 10 / 0 | |
+
+Recall per frame is the detectors' ceiling, not the tracker's: the objects `best` misses have no box
+from either model, or a VisDrone-only box under the solo bar at the frame edge. What would move it
+is a second model that sees those (a larger COCO model, or tiling at the edges), not more tracker
+tuning. The ground fit picks the method with the most boxes (`track.py fit_ground`), because a
+consensus run keeps few pedestrians and 68 person boxes must not outvote 1059 vehicles.
 
 ## What is real and what is not
 
