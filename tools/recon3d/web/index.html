@@ -31,6 +31,8 @@
   #note { margin-top: 10px; font-size: 11px; color: var(--ink-2); line-height: 1.45; }
   .tag { font: 400 10px/1 "IBM Plex Mono", ui-monospace, monospace; color: var(--ink); background: rgba(7,8,9,.7); padding: 2px 4px; white-space: nowrap; pointer-events: none; }
   .tag.dim { color: var(--ink-2); }
+  /* ?rec=1 (scripts/record.mjs): the top bar and the simulation only */
+  body.rec #videoBox, body.rec #side { display: none; }
 </style>
 <script type="importmap">{ "imports": { "three": "/three/build/three.module.js", "three/addons/": "/three/examples/jsm/" } }</script>
 </head>
@@ -39,7 +41,7 @@
 <div id="top">
   <h1>MINBAND</h1>
   <div class="pair"><span class="lbl">Scene</span><span class="group" id="scenes"></span></div>
-  <div class="pair"><span class="lbl">Map</span><span class="val" id="vMap">-</span></div>
+  <div class="pair"><span class="lbl">Ground</span><span class="val" id="vGround">flat sim · objects at sent height</span></div>
   <div class="pair"><span class="lbl">Link</span><span class="group" id="profiles"></span></div>
   <div class="pair"><span class="lbl">Wire</span><span class="val" id="vWire">-</span></div>
   <div class="pair"><span class="lbl">Twin</span><span class="val" id="vTwin">-</span></div>

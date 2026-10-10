@@ -64,6 +64,8 @@ pub fn enu_to_latlon(origin_lat: f64, origin_lon: f64, e: f64, n: f64) -> (f64, 
 /// `course` at `speed` (capped by the class) from the observation tick when it moves with a
 /// velocity. The edge keeps the prediction of the last record it sent and revises against it
 /// (`contacts::Contact::ghost`), so both ends predict exactly the same thing from the same bytes.
+/// A static record may carry the velocity pair too, speed 0 and the object's heading as the course:
+/// it is not moving (`moving` needs `MOTION_MOVING`), so the pair never shifts the prediction.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct SentPred { pub e: f32, pub n: f32, pub course: f32, pub speed: f32, pub moving: bool, pub observed: u32 }
 

@@ -3,7 +3,8 @@
 #   tools/recon3d/run.sh <frames dir (*.jpg) | video.mp4> <run dir, e.g. runs/recon3d/vd263> [fps=30]
 # Stages (README.md): clip -> SLAM export (mast3r-slam env) -> YOLO seg + ByteTrack (YOLO-CUDA-13 env) ->
 # lift to 3D, tracks, chips, static map -> browser video. Env names and the MASt3R-SLAM checkout are
-# overridable: SLAM_DIR, SLAM_ENV, YOLO_ENV.
+# overridable: SLAM_DIR, SLAM_ENV, YOLO_ENV. FOCAL=<px> runs the SLAM calibrated (one focal length for every
+# frame, README "Calibrated SLAM"). Detection and lifting use tools/recon3d/.venv (ultralytics 8.4, YOLO26) when it exists.
 set -eo pipefail   # no -u: conda activate scripts read unset variables
 src=$1; run=$(realpath -m "$2"); fps=${3:-30}
 here=$(cd "$(dirname "$0")" && pwd)
@@ -19,13 +20,15 @@ else
   ffmpeg -loglevel error -y -i "$src" -r "$fps" -vf "crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0" -c:v libx264 -preset slow -crf 12 -pix_fmt yuv420p -an "$run/clip.mp4"
 fi
 echo "[1/4] SLAM $(date +%T)"
-(cd "$SLAM_DIR" && conda activate "$SLAM_ENV" && python "$here/slam_export.py" --dataset "$run/clip.mp4" --out "$run/slam" > "$run/slam_run.txt" 2>&1) || { tail -20 "$run/slam_run.txt"; exit 1; }
+(cd "$SLAM_DIR" && conda activate "$SLAM_ENV" && python "$here/slam_export.py" --dataset "$run/clip.mp4" --out "$run/slam" ${FOCAL:+--focal $FOCAL} > "$run/slam_run.txt" 2>&1) || { tail -20 "$run/slam_run.txt"; exit 1; }
 tail -1 "$run/slam_run.txt"
 echo "[2/4] detect $(date +%T)"
 conda activate "$YOLO_ENV"
-(cd "$here" && python detect.py "$run") | tail -1
+py=python
+if [ -x "$here/.venv/bin/python" ]; then py="$here/.venv/bin/python"; export YOLO_CONFIG_DIR="$here/.venv/ultralytics-config"; fi
+(cd "$here" && $py detect.py "$run") | tail -1
 echo "[3/4] lift $(date +%T)"
-python "$here/lift.py" "$run" --fps "$fps" | tail -4
+$py "$here/lift.py" "$run" --fps "$fps" | tail -4
 echo "[4/4] browser video $(date +%T)"
 # A keyframe every 0.5 s: the page re-seeks the video to the replay clock.
 ffmpeg -loglevel error -y -i "$run/clip.mp4" -vf scale=1280:-2 -c:v libx264 -preset veryfast -crf 23 -g $((fps / 2)) -an -movflags +faststart "$run/clip-720p.mp4"

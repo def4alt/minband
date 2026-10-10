@@ -125,7 +125,9 @@ derives "started moving at 14:02:10" even if it only hears the record at 14:03.
 
 Single-linkage clustering on ground positions every tick:
 
-- link distance `d = max(15 m, 2 · ce)`; two moving tracks also need speeds within 1.5 m/s and
+- link distance `d = max(15 m, ce_link · ce)` (`ce_link` 2: two tracks within each other's error may be one
+  object seen twice; a tracker that merges its own duplicates, like `tools/recon3d`, runs it lower so a
+  parked row at long range stays single cars); two moving tracks also need speeds within 1.5 m/s and
   courses within 30°; static tracks cluster by distance only;
 - hysteresis: a group holds while members stay within `1.5 d`; a member outside for 3 s splits off;
 - id: the group keeps the id of its oldest member group; a split child that was never a group gets
