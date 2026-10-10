@@ -7,11 +7,16 @@ detect (ClikaTiledDetector) -> track (simple nearest-neighbor, scipy unavailable
    to port into the real BLE wire format, core/src/wire.rs's Message::Delta/Keyframe, not
    consume it as-is long term). One JSON line per processed frame, sent to
    127.0.0.1:<--track-port>, shape:
-   {"t": <wall ms>, "tick": <frame idx>, "tracks": [{"id": int, "cls": int,
+   {"t": <wall ms>, "tick": <frame idx>,
+   "pose": {"pos": [x, y, z], "quat": [x, y, z, w]},
+   "tracks": [{"id": int, "cls": int,
    "pos": [x, y, z], "vel": [vx, vy, vz], "conf": float, "age": int}, ...]}
    pos/vel are in the single MinBand world frame (shared/geom.py: right-handed, metres,
    +Y up, ground_y=0) -- y is always 0.0 here (ground-plane tracking), kept as a 3-vector
    so a future metric-depth upgrade can fill it in without changing the schema.
+   "pose" is the camera's own pose in that same frame (quaternion w-last, as on the wire);
+   server/src/edge-bridge.ts forwards it as a Message::Pose so the viewer can draw this
+   device's frustum and fly the operator's camera to it.
 
 2. Depth keyframe chunks: wire format FROZEN by the P4 plan, documented in full in
    proto/DEPTH.md. Sent to 127.0.0.1:<--depth-port>.
@@ -25,6 +30,7 @@ assignment (greedy is fine at the target counts this pipeline sees).
 """
 import argparse
 import json
+import math
 import socket
 import struct
 import sys
@@ -57,6 +63,7 @@ MAX_GROUND_RANGE_M = 200.0   # ray/ground hit farther than this = treat as horiz
                              # fall back to depth.
 DEPTH_NEAR_M, DEPTH_FAR_M = 3.0, 150.0  # heuristic relative-depth -> metres clamp (no metric
                                         # calibration available -- see _depth_fallback_pos).
+POSE_FLOW_W = 480        # width of the greyscale copy _PoseTracker runs optical flow on.
 
 # --- Depth keyframe wire format (frozen, see proto/DEPTH.md) ---------------------------
 DEPTH_KIND = 0x01
@@ -192,12 +199,94 @@ class _Tracker:
         return [tr for tr in self._tracks if tr.hits >= self.BIRTH_HITS]
 
 
+class _PoseTracker:
+    """Per-frame camera rotation, integrated from frame-to-frame optical flow.
+
+    The clip carries no pose log -- no .SRT or .CSV exists for it -- and
+    ``shared/pose_source.py``'s ``refine_with_track_py`` needs scipy, which this venv does not
+    have. That left ``static_adapter``'s seeded pose as the only thing wired up, and a constant
+    R meant the twin stood still while the footage panned. Rotation, unlike position, is
+    recoverable from the imagery alone: track corners between consecutive frames, fit a
+    similarity, and read the principal point's own displacement as yaw and pitch and the
+    in-plane angle as roll.
+
+    Position is NOT recoverable -- a monocular rotation estimate carries no scale -- so it stays
+    at the seeded height from ``_SEED_TABLE``.
+
+    ponytail: this integrates, so it drifts; there is no loop closure and no absolute reference.
+    Good for the couple of minutes a clip runs. Upgrade to a real VO/SLAM front-end if the drift
+    ever outgrows the 0.15 m voxel the reconstruction quantises to.
+    """
+
+    MIN_PTS = 12
+
+    def __init__(self, R_seed, hfov_deg, flow_w=POSE_FLOW_W):
+        self._R_seed = np.array(R_seed, dtype=np.float64)
+        self.R = self._R_seed.copy()
+        self._hfov_deg = hfov_deg
+        self._flow_w = flow_w
+        self._prev = None
+        self._f = None
+        self._c = None
+
+    def reset(self):
+        """Clip looped: the camera teleports back to frame 0, so drop the integrated rotation
+        rather than carrying that discontinuity forward as if it were real motion."""
+        self.R = self._R_seed.copy()
+        self._prev = None
+
+    def update(self, frame_bgr):
+        h, w = frame_bgr.shape[:2]
+        fw = min(self._flow_w, w)
+        fh = max(1, round(h * fw / w))
+        small = cv2.resize(frame_bgr, (fw, fh), interpolation=cv2.INTER_AREA) if fw != w else frame_bgr
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY) if small.ndim == 3 else small
+        if self._f is None:
+            K = geom.intrinsics(fw, fh, self._hfov_deg)
+            self._f, self._c = float(K[0, 0]), (float(K[0, 2]), float(K[1, 2]))
+        prev, self._prev = self._prev, gray
+        if prev is None:
+            return self.R
+        pts = cv2.goodFeaturesToTrack(prev, maxCorners=300, qualityLevel=0.01, minDistance=8)
+        if pts is None or len(pts) < self.MIN_PTS:
+            return self.R  # featureless frame (sky, blur): hold the last rotation
+        nxt, status, _ = cv2.calcOpticalFlowPyrLK(prev, gray, pts, None)
+        if nxt is None:
+            return self.R
+        ok = status.ravel() == 1
+        if int(ok.sum()) < self.MIN_PTS:
+            return self.R
+        M, _ = cv2.estimateAffinePartial2D(pts[ok], nxt[ok], method=cv2.RANSAC,
+                                           ransacReprojThreshold=2.0)
+        if M is None:
+            return self.R
+        self.R = self.R @ self._delta(M)
+        return self.R
+
+    def _delta(self, M):
+        """Similarity ``M`` (previous frame -> current) -> camera-frame rotation matrix.
+
+        Under a pure rotation ``dR`` a point moves as ``x1 = K dR^T K^-1 x0``, so for a small
+        ``dR`` the principal point's displacement is yaw and pitch and the in-plane angle is
+        roll. Axes are shared/geom.py's camera frame: +X right, +Y down, +Z forward, and
+        ``R`` is camera-to-world, so the delta composes on the right.
+        """
+        cx, cy = self._c
+        du = M[0, 0] * cx + M[0, 1] * cy + M[0, 2] - cx
+        dv = M[1, 0] * cx + M[1, 1] * cy + M[1, 2] - cy
+        theta = math.atan2(M[1, 0], M[0, 0])
+        omega = np.array([dv / self._f, -du / self._f, -theta], dtype=np.float64)
+        return cv2.Rodrigues(omega)[0]
+
+
 def _ground_project(K, R, p, u, v):
     hit = geom.to_ground(K, R, p, u, v)
     if hit is None:
         return None
     x, z = hit
-    if (x * x + z * z) ** 0.5 > MAX_GROUND_RANGE_M:
+    # Range from the camera's own nadir, not from the world origin: with --world-offset the two
+    # are no longer the same point, and measuring from the origin would reject every hit.
+    if ((x - p[0]) ** 2 + (z - p[2]) ** 2) ** 0.5 > MAX_GROUND_RANGE_M:
         return None
     return np.array([x, 0.0, z])
 
@@ -260,7 +349,14 @@ def run(args):
     depth_h = round(native_h * depth_w / native_w)
     depth_scale = (depth_w / det_w, depth_h / det_h)  # detect-space px -> depth-space px
 
-    _, _, _, R, p = next(static_adapter(args.pose_seed, det_w, det_h, 1, fps=fps_in, hfov=args.hfov))
+    # The seed fixes pitch and height; _PoseTracker then turns the footage's own motion into a
+    # per-frame rotation on top of it. Position stays seeded (no monocular scale).
+    _, _, _, R_seed, p = next(static_adapter(args.pose_seed, det_w, det_h, 1, fps=fps_in, hfov=args.hfov))
+    pose = _PoseTracker(R_seed, args.hfov)
+    R = pose.R
+    # Moving the camera moves everything it derives -- ground hits are rays cast from p, and the
+    # depth fallback is p + direction * range -- so this one line puts the whole leg elsewhere.
+    p = p + np.array([float(c) for c in args.world_offset.split(",")], dtype=np.float64)
 
     detect_stride = max(1, round(fps_in / args.detect_hz))
     depth_stride = max(1, round(fps_in / args.depth_hz))
@@ -268,7 +364,6 @@ def run(args):
     tracker = _Tracker()
     keyframer = DepthKeyframer()
     latest_depth = None  # most recent depth prediction, in depth_w x depth_h
-    quat = geom.matrix_to_quat(R)
 
     n_tracks_sent = n_depth_chunks_sent = n_keyframes = n_loops = 0
     frame_idx = 0
@@ -285,11 +380,14 @@ def run(args):
                 cap = cv2.VideoCapture(args.clip)
                 frame_idx = 0
                 n_loops += 1
+                pose.reset()
                 continue
             break
 
         t = time.time() - t_start
         boxes_norm = []
+        R = pose.update(frame)
+        quat = geom.matrix_to_quat(R)
 
         if frame_idx % detect_stride == 0:
             det_frame = cv2.resize(frame, (det_w, det_h), interpolation=cv2.INTER_AREA) \
@@ -306,6 +404,8 @@ def run(args):
             confirmed = tracker.step(world_dets, t)
             payload = {
                 "t": int(time.time() * 1000), "tick": frame_idx,
+                "pose": {"pos": [round(float(c), 3) for c in p],
+                         "quat": [round(float(c), 5) for c in quat]},
                 "tracks": [{"id": tr.id, "cls": tr.cls,
                             "pos": [round(float(c), 3) for c in tr.pos],
                             "vel": [round(float(c), 3) for c in tr.vel],
@@ -340,6 +440,39 @@ def run(args):
           f"depth_keyframes={n_keyframes} depth_chunks={n_depth_chunks_sent}", file=sys.stderr)
 
 
+def _selfcheck():
+    """_PoseTracker against a synthetic pan: slide a window right across a fixed texture, which
+    is what a camera panning right sees, and check the integrated rotation is a yaw of the
+    expected size and sign with no pitch or roll alongside it. Catches the failures that matter
+    -- a flipped sign, a swapped axis, an estimate that never accumulates."""
+    w, h, dx, steps, hfov = 480, 360, 3, 20, 85.0
+    rng = np.random.default_rng(7)
+    # Smoothed, not raw, noise: optical flow needs a signal it can differentiate; white noise
+    # aliases under the pyramid and tracks nothing.
+    big = cv2.GaussianBlur((rng.random((h, w + dx * steps + 20)) * 255).astype(np.uint8), (0, 0), 1.5)
+    frame = lambda i: cv2.cvtColor(big[:, i * dx:i * dx + w], cv2.COLOR_GRAY2BGR)
+
+    f = float(geom.intrinsics(w, h, hfov)[0, 0])
+    pose = _PoseTracker(np.eye(3), hfov, flow_w=w)
+    for i in range(steps + 1):
+        pose.update(frame(i))
+    rv = cv2.Rodrigues(pose.R)[0].ravel()  # seed is identity, so this IS the integrated delta
+    want = steps * dx / f
+    assert abs(rv[1] - want) < 0.05 * want, f'yaw {rv[1]:.4f} rad, expected ~{want:.4f}'
+    assert abs(rv[0]) < 0.01 and abs(rv[2]) < 0.01, f'pan leaked into pitch/roll: {rv}'
+
+    # A still camera must not drift, and reset() must forget the pan (the clip-loop case).
+    pose.reset()
+    assert np.allclose(pose.R, np.eye(3)), 'reset did not restore the seed'
+    for _ in range(5):
+        pose.update(frame(0))
+    assert float(np.linalg.norm(cv2.Rodrigues(pose.R)[0])) < 0.01, 'static scene produced rotation'
+
+    print('edge/edge.py _PoseTracker self-check: OK '
+          f'(yaw {math.degrees(rv[1]):.2f} deg over {steps} frames, expected {math.degrees(want):.2f})')
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--clip", default=DEFAULT_CLIP)
@@ -366,7 +499,17 @@ def main():
                      help="measured operating point, reports/CLIKA_SC1.md (~5.6 Hz @ 640px wide)")
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--drone-id", type=int, default=0)
+    ap.add_argument("--world-offset", default="0,0,0", metavar="X,Y,Z",
+                     help="metres to shift this leg's camera (and so everything it projects) by, "
+                          "in the MinBand world frame. Both this leg and a phone edge lock their "
+                          "own origin near (0,0,0), so without an offset they land on top of each "
+                          "other and server/src/fusion.ts can merge a phone-detected person with "
+                          "a clip-detected one. Give them separate places instead")
+    ap.add_argument("--selfcheck", action="store_true",
+                     help="run _PoseTracker's self-check and exit (no clip, no models, no sockets)")
     args = ap.parse_args()
+    if args.selfcheck:
+        return _selfcheck()
     run(args)
 
 

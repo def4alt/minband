@@ -33,11 +33,11 @@ const DEVICE_ID = Number(process.env.DEVICE_ID ?? 1);
 const TELEMETRY_URL = process.env.TELEMETRY_URL; // e.g. http://127.0.0.1:28765/telemetry
 const TELEMETRY_POLL_MS = 1000;
 
-// ponytail: no camera Pose is sent -- edge.py's track datagram carries no pose field at all (it
-// only emits ground-plane track positions, see its module docstring). The viewer's frustum for
-// this device simply won't render until a pose source is wired up; entity positions work fine
-// without it. Add a --camera-pos/--camera-quat passthrough (or have edge.py emit its
-// static_adapter's fixed (R, p) once) if the frustum is wanted later.
+// Camera Pose comes from edge.py's own track datagram (its `pose` field, edge/edge.py's
+// _PoseTracker). Offered at 2 Hz like the phone does; the core itself decides what actually goes
+// on the wire, at the budget's pose interval. Without it the viewer has no frustum for this
+// device -- scene.ts only shows one for a device whose snapshot carries a pose.
+const POSE_EVERY_TICKS = TICK_HZ / 2;
 
 if (!Number.isFinite(DEST_PORT)) { console.error(`edge-bridge: bad DEST "${process.env.DEST}", want host:port`); process.exit(2); }
 
@@ -62,6 +62,11 @@ setInterval(() => {
   const target = Math.floor((now - t0) / 1000 * TICK_HZ);
   while (tick <= target) {
     const out = unpack(edge.tick(JSON.stringify(feed.currentTracks(now)), tick));
+    if (tick % POSE_EVERY_TICKS === 0 && feed.pose) {
+      const { pos, quat } = feed.pose;
+      const dg = edge.pose(pos[0], pos[1], pos[2], quat[0], quat[1], quat[2], quat[3], true, tick);
+      if (dg.length) out.push(dg);
+    }
     for (const dg of out) { outSock.send(dg, DEST_PORT, DEST_HOST); sentBytes += dg.length; }
     tick++;
   }

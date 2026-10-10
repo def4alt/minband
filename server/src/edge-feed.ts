@@ -3,9 +3,11 @@
 import type { Track } from './scenes.js';
 
 /** edge.py's track datagram (one JSON object per UDP packet, see edge/edge.py's module
- * docstring): {"t", "tick", "tracks": [{"id", "cls", "pos":[x,y,z], "vel":[vx,vy,vz], "conf",
- * "age"}, ...]}. */
-export interface EdgeTrackMsg { t: number; tick: number; tracks: { id: number; cls: number; pos: number[]; vel: number[]; conf: number }[] }
+ * docstring): {"t", "tick", "pose": {"pos":[x,y,z], "quat":[x,y,z,w]}, "tracks": [{"id", "cls",
+ * "pos":[x,y,z], "vel":[vx,vy,vz], "conf", "age"}, ...]}. `pose` is the camera's own pose, and is
+ * optional only so an older edge.py still parses. */
+export interface EdgePose { pos: number[]; quat: number[] }
+export interface EdgeTrackMsg { t: number; tick: number; pose?: EdgePose; tracks: { id: number; cls: number; pos: number[]; vel: number[]; conf: number }[] }
 interface LiveTrack { track: Track; lastMs: number }
 
 /** Drop a track if edge.py hasn't refreshed it in this long (detector cadence is ~1-2 Hz per
@@ -14,6 +16,8 @@ export const STALE_MS = 4000;
 
 export class EdgeFeed {
   private live = new Map<number, LiveTrack>();
+  /** Latest camera pose reported by the edge, or null if it has never sent one. */
+  pose: EdgePose | null = null;
 
   /** Parses one of edge.py's track datagrams and merges its tracks into the live set, keyed by
    * id so a newer datagram always overwrites an older one for the same track. Malformed JSON is
@@ -21,6 +25,7 @@ export class EdgeFeed {
   ingest(raw: string, nowMs: number): void {
     let m: EdgeTrackMsg;
     try { m = JSON.parse(raw); } catch { return; }
+    if (m.pose?.pos?.length === 3 && m.pose.quat?.length === 4) this.pose = m.pose;
     for (const tr of m.tracks ?? []) {
       this.live.set(tr.id, {
         track: { id: tr.id, class: tr.cls, pos: tr.pos, vel: tr.vel, conf: Math.max(0, Math.min(255, Math.round(tr.conf))) },

@@ -11,8 +11,12 @@ import WebSocket from 'ws';
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SERVER_DIR = join(ROOT, 'server');
 const VIEWER_DIR = join(ROOT, 'viewer');
-const TSX = join(SERVER_DIR, 'node_modules', '.bin', 'tsx');
-const VITE = join(VIEWER_DIR, 'node_modules', '.bin', 'vite');
+// Run the real entry points under this node rather than npm's .bin shims: on Windows those are
+// .cmd files, which node refuses to spawn without a shell (CVE-2024-27980), and a shell would
+// re-parse a repo path that has spaces in it. This way needs neither.
+const NODE = process.execPath;
+const TSX = join(SERVER_DIR, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const VITE = join(VIEWER_DIR, 'node_modules', 'vite', 'bin', 'vite.js');
 
 const live = new Set<ChildProcess>();
 process.on('exit', () => { for (const p of live) p.kill('SIGKILL'); });
@@ -68,7 +72,7 @@ export interface ServerHandle { proc: Proc; udpPort: number; wsPort: number; api
 
 export async function startServer(env: Record<string, string> = {}): Promise<ServerHandle> {
   const udpPort = await freeUdpPort(), wsPort = await freeTcpPort();
-  const proc = new Proc('server', TSX, ['src/main.ts'], {
+  const proc = new Proc('server', NODE, [TSX, 'src/main.ts'], {
     cwd: SERVER_DIR,
     env: { MINBAND_UDP_PORT: String(udpPort), MINBAND_WS_PORT: String(wsPort), ...env },
   });
@@ -78,7 +82,7 @@ export async function startServer(env: Record<string, string> = {}): Promise<Ser
 }
 
 export function startSim(server: ServerHandle, env: Record<string, string> = {}): Proc {
-  return new Proc('sim', TSX, ['src/sim.ts'], {
+  return new Proc('sim', NODE, [TSX, 'src/sim.ts'], {
     cwd: SERVER_DIR,
     env: { MINBAND_HOST: '127.0.0.1', MINBAND_UDP_PORT: String(server.udpPort), MINBAND_WS_PORT: String(server.wsPort), ...env },
   });
@@ -86,7 +90,7 @@ export function startSim(server: ServerHandle, env: Record<string, string> = {})
 
 export async function startViewer(server: ServerHandle): Promise<{ proc: Proc; url: string; stop(): Promise<void> }> {
   const port = await freeTcpPort();
-  const proc = new Proc('viewer', VITE, ['--port', String(port), '--strictPort', '--host', '127.0.0.1'], {
+  const proc = new Proc('viewer', NODE, [VITE, '--port', String(port), '--strictPort', '--host', '127.0.0.1'], {
     cwd: VIEWER_DIR, env: { VITE_WS_URL: server.ws, VITE_API_URL: server.api },
   });
   const url = `http://127.0.0.1:${port}/`;

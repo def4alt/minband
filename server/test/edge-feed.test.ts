@@ -15,6 +15,21 @@ test('EdgeFeed.ingest: parses edge.py\'s track datagram shape, clamps/rounds con
   assert.equal(tracks[0].conf, 200); // rounded
 });
 
+test('EdgeFeed.ingest: keeps the latest camera pose, ignores a malformed one', () => {
+  const feed = new EdgeFeed();
+  assert.equal(feed.pose, null); // nothing reported yet -> no frustum for this device
+  const msg = (pose: unknown) => JSON.stringify({ t: 0, tick: 0, pose, tracks: [] });
+  feed.ingest(msg({ pos: [1, 2, 3], quat: [0, 0, 0, 1] }), 0);
+  assert.deepEqual(feed.pose, { pos: [1, 2, 3], quat: [0, 0, 0, 1] });
+  feed.ingest(msg({ pos: [4, 5, 6], quat: [0, 1, 0, 0] }), 1);
+  assert.deepEqual(feed.pose, { pos: [4, 5, 6], quat: [0, 1, 0, 0] });
+  // A short vector would reach edge.pose() as undefined coordinates: hold the last good one.
+  feed.ingest(msg({ pos: [7, 8], quat: [0, 0, 0, 1] }), 2);
+  assert.deepEqual(feed.pose, { pos: [4, 5, 6], quat: [0, 1, 0, 0] });
+  feed.ingest(JSON.stringify({ t: 0, tick: 0, tracks: [] }), 3); // older edge.py, no pose field
+  assert.deepEqual(feed.pose, { pos: [4, 5, 6], quat: [0, 1, 0, 0] });
+});
+
 test('EdgeFeed.ingest: out-of-range conf is clamped to 0..255', () => {
   const feed = new EdgeFeed();
   feed.ingest(JSON.stringify({ t: 0, tick: 0, tracks: [{ id: 1, cls: 0, pos: [0, 0, 0], vel: [0, 0, 0], conf: 999 }] }), 0);

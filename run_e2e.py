@@ -112,6 +112,10 @@ def main() -> int:
     ap.add_argument("--clip", default=None, help="absolute path; default is edge.py's own default (MEVA clip)")
     ap.add_argument("--cache-dir", default=None, help="absolute path; default is edge.py's own default")
     ap.add_argument("--venv-python", default=None, help="override the .venv interpreter edge.py runs under")
+    ap.add_argument("--world-offset", default="200,0,0", metavar="X,Y,Z",
+                     help="where to put the clip leg, so a phone edge joining on :7777 (which "
+                          "locks its own origin near 0,0,0) gets a place of its own instead of "
+                          "overlapping it. Use 0,0,0 for a single-leg run")
     ap.add_argument("--no-viewer", action="store_true", help="skip starting the vite dev server")
     args = ap.parse_args()
 
@@ -204,7 +208,8 @@ def main() -> int:
 
         # 6. edge.py: the producer. Everything downstream is already listening by now.
         edge_cmd = [str(venv_python), "edge.py", "--track-port", "7701", "--depth-port", "7791",
-                    "--duration", str(args.duration), "--loop"]
+                    "--duration", str(args.duration), "--loop",
+                    "--world-offset", args.world_offset]
         if args.clip:
             edge_cmd += ["--clip", args.clip]
         if args.cache_dir:

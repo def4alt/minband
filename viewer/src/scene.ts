@@ -180,6 +180,9 @@ function buildTerrain(): THREE.LineSegments {
 /** Room view: the camera, fog, far plane and zoom limit the room mode has always had. */
 const ROOM_POS = new THREE.Vector3(7.4, 3.9, 9.2), ROOM_TARGET = new THREE.Vector3(0, 0.7, 0);
 const ROOM_FOG = [20, 78] as const, ROOM_FAR = 300, ROOM_MAX_DIST = 60;
+/** How far ahead to look from a device that is pointed at or above the horizon, so its view still
+ * has something to orbit around. Devices pointed at the ground look at where they hit it. */
+const DEVICE_VIEW_FALLBACK_M = 30;
 /** Entered when the 90th-percentile distance of the entities from their centroid stays above
  * WIDE_ENTER_M for WIDE_ENTER_MS, left when it stays below WIDE_EXIT_M for WIDE_EXIT_MS. */
 const WIDE_ENTER_M = 15, WIDE_EXIT_M = 8, WIDE_ENTER_MS = 400, WIDE_EXIT_MS = 2500;
@@ -338,6 +341,9 @@ export class TwinScene {
   private settleUntil = 0;
   /** The room view to return to, saved when the wide mode starts. */
   private roomView: View | null = null;
+  /** Where the operator was before they clicked into a device's view, and so where Esc or a click
+   * on empty space puts them back. Null whenever no device view is active. */
+  private beforeDeviceView: View | null = null;
   private glide: { t0: number; from: View; to: View; done?: () => void } | null = null;
   /** Glyph magnification per kind and the dash scale: 1 in room mode, eased (`easeK` this frame). */
   private sigma = Object.fromEntries(KINDS.map(k => [k, 1])) as Record<Kind, number>;
@@ -389,9 +395,11 @@ export class TwinScene {
     requestAnimationFrame(this.loop);
   }
 
-  /** Hover (mouse) shows one label; a tap (touch or click without drag) pins it until the next tap. */
+  /** Hover (mouse) shows one label; a tap (touch or click without drag) pins it until the next tap.
+   * A tap on a device's frustum looks through that device; Esc, or a tap on empty space, comes back. */
   private bindPointer() {
     const el = this.renderer.domElement;
+    addEventListener('keydown', e => { if (e.key === 'Escape') this.exitDeviceView(); });
     let down: { x: number; y: number; t: number } | null = null;
     const local = (e: PointerEvent) => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     el.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') this.pointer = local(e); });
@@ -399,7 +407,12 @@ export class TwinScene {
     el.addEventListener('pointerdown', e => { down = { ...local(e), t: performance.now() }; });
     el.addEventListener('pointerup', e => {
       const p = local(e);
-      if (down && Math.hypot(p.x - down.x, p.y - down.y) < 6 && performance.now() - down.t < 400) this.pinned = this.pick(p);
+      if (down && Math.hypot(p.x - down.x, p.y - down.y) < 6 && performance.now() - down.t < 400) {
+        this.pinned = this.pick(p);
+        const f = [...this.frustums.values()].find(x => x === this.pinned);
+        if (f) this.enterDeviceView(f);
+        else if (!this.pinned) this.exitDeviceView();
+      }
       down = null;
     });
   }
@@ -419,8 +432,58 @@ export class TwinScene {
       const d = Math.min(dist(e.body, -half * 0.8), dist(e.body), dist(e.body, half * 0.8));
       if (d < bd) { bd = d; best = e; }
     }
-    for (const f of this.frustums.values()) if (f.group.visible) { const d = dist(f.group); if (d < bd) { bd = d; best = f; } }
+    // Refresh first: a frustum's pose is set straight from the snapshot, so between that and the
+    // next render its matrixWorld still holds the previous frame's -- and on the very first one,
+    // the identity. Picking the origin instead of the device is the bug that hides behind that.
+    for (const f of this.frustums.values()) if (f.group.visible) { f.group.updateMatrixWorld(); const d = dist(f.group); if (d < bd) { bd = d; best = f; } }
     return best;
+  }
+
+  /**
+   * Fly the operator to what a device sees: eye at the device, looking down its own axis. The
+   * frustum group carries the device's pose straight from the snapshot, and (three.js convention,
+   * the one frustumGeo draws along) a camera looks down its -Z.
+   */
+  private enterDeviceView(f: Frustum) {
+    // Only the first hop saves a return point, so hopping device to device and then clicking away
+    // still lands back where the operator started rather than on the other device.
+    this.beforeDeviceView ??= { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+    const pos = f.group.position.clone();
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(f.group.quaternion);
+    const ground = fwd.y < -1e-3 ? -pos.y / fwd.y : NaN; // where its axis meets y=0, if it does
+    const d = Math.min(Math.max(ground > 0 ? ground : DEVICE_VIEW_FALLBACK_M, this.controls.minDistance), this.controls.maxDistance);
+    this.glideTo({ pos, target: pos.clone().addScaledVector(fwd, d) }, true);
+  }
+
+  /** Back out of a device view to wherever the operator was. No-op if they are not in one. */
+  exitDeviceView(): boolean {
+    const back = this.beforeDeviceView;
+    if (!back) return false;
+    this.beforeDeviceView = null;
+    this.glideTo(back, true);
+    return true;
+  }
+
+  /** Keys of the devices with a visible frustum, in snapshot order. For e2e tests. */
+  deviceKeys(): string[] {
+    return [...this.frustums].filter(([, f]) => f.group.visible).map(([k]) => k);
+  }
+
+  /** A device's frustum: where it is on screen (CSS px in the scene container) and where it is in
+   * the world, read together so a caller can act on both before the device moves. For e2e tests. */
+  deviceAt(key: string): { x: number; y: number; pos: number[] } | null {
+    const f = this.frustums.get(key);
+    if (!f?.group.visible) return null;
+    // The group hangs straight off the scene, so its own position is already world space -- and
+    // unlike matrixWorld it is current, not whatever the last render left behind.
+    const p = f.group.position.clone();
+    const v = p.clone().project(this.camera);
+    return { x: (v.x * 0.5 + 0.5) * this.container.clientWidth, y: (-v.y * 0.5 + 0.5) * this.container.clientHeight, pos: p.toArray() };
+  }
+
+  /** Where the operator's camera is and what it orbits, as plain arrays. For e2e tests. */
+  view(): { pos: number[]; target: number[] } {
+    return { pos: this.camera.position.toArray(), target: this.controls.target.toArray() };
   }
 
   /** Where an entity's body is on screen (CSS px in the scene container), or null. For e2e tests. */
@@ -782,6 +845,9 @@ export class TwinScene {
   private setWide(on: boolean, glide: boolean) {
     this.wideOn = on;
     this.terrain.visible = !on;
+    // The mode flip re-frames the camera itself, so a saved device-view return point is stale:
+    // drop it rather than let Esc fight the framing this is about to do.
+    this.beforeDeviceView = null;
     if (on) {
       this.roomView ??= { pos: this.camera.position.clone(), target: this.controls.target.clone() };
       this.wideR = 0; this.rescale();

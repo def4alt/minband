@@ -77,6 +77,56 @@ test('blackout: the credits say coasting before stale, the key says dismount', a
   assert.deepEqual(errors, []);
 });
 
+test('clicking a device frustum looks through that device, Esc comes back', async () => {
+  const { page, errors } = await openPage(browser, viewer.url);
+  await page.waitForFunction(() => document.querySelector('#scene canvas') !== null, null, { timeout: 15_000 });
+
+  const SCENE = 'window.__minband.scene';
+  const before = await page.evaluate(`${SCENE}.view()`) as { pos: number[]; target: number[] };
+
+  // The sim's drone is always moving, so locating the frustum and clicking it have to happen in
+  // one JS turn -- a round trip to playwright's mouse is long enough for it to slide out of pick's
+  // 28 px radius. These are the very events bindPointer listens for.
+  const spot = await page.waitForFunction(() => {
+    const s = (window as any).__minband?.scene;
+    const key = s?.deviceKeys()[0];
+    const at = key ? s.deviceAt(key) : null;
+    const canvas = document.querySelector('#scene canvas') as HTMLCanvasElement;
+    // Measure against the canvas, which is what the scene's own pointer handler offsets by.
+    const r = canvas.getBoundingClientRect();
+    if (!at || at.x < 0 || at.y < 0 || at.x > r.width || at.y > r.height) return null;
+    const o = { clientX: r.left + at.x, clientY: r.top + at.y, bubbles: true, pointerType: 'mouse', pointerId: 1 };
+    canvas.dispatchEvent(new PointerEvent('pointerdown', o));
+    canvas.dispatchEvent(new PointerEvent('pointerup', o));
+    return { key, ...at };
+  }, null, { timeout: 20_000 }).then(h => h.jsonValue()) as { key: string; x: number; y: number; pos: number[] };
+
+  // The glide is driven by requestAnimationFrame, and software GL here runs single-digit fps, so
+  // wait for the camera to arrive rather than for a fixed stretch of wall clock.
+  const arrive = (at: number[], what: string) => page.waitForFunction(
+    (want: number[]) => {
+      const v = (window as any).__minband.scene.view();
+      return Math.hypot(v.pos[0] - want[0], v.pos[1] - want[1], v.pos[2] - want[2]) < 1.0;
+    }, at, { timeout: 30_000, polling: 100 },
+  ).catch(async () => {
+    const v = await page.evaluate(`${SCENE}.view()`) as { pos: number[] };
+    assert.fail(`${what}: camera stopped at ${JSON.stringify(v.pos)}, wanted ${JSON.stringify(at)}`);
+  });
+
+  // The eye should end up where the device was when it was clicked -- that is what "look through
+  // it" means. The view does not then follow the device, so compare against that same instant.
+  await arrive(spot.pos, `clicked device ${spot.key}`);
+  const looking = await page.evaluate(`${SCENE}.view()`) as { pos: number[]; target: number[] };
+  // and it should be aimed away from the eye, not parked on it
+  assert.ok(Math.hypot(...looking.target.map((c, i) => c - looking.pos[i])) > 1.0, 'target sits on top of the eye');
+
+  await page.keyboard.press('Escape');
+  await arrive(before.pos, 'Esc');
+
+  await page.close();
+  assert.deepEqual(errors, []);
+});
+
 test('the view keeps up with the 30 Hz feed at 1080p in STAGE (stale snapshots dropped, not queued)', async () => {
   // Slow frames (software GL here, a busy laptop on stage) used to queue every snapshot: with
   // video recording on, the credits lagged 9 s after 40 s and 34 s after 80 s.
