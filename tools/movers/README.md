@@ -138,8 +138,14 @@ tools/footage/.venv/Scripts/python tools/movers/phone_detect.py tools/footage/cl
     --out android/app/src/test/resources/replay/vtest-yolov8n-256.csv
 cd android && ./gradlew :app:testDebugUnitTest --tests "dev.minband.android.PhoneReplayTest"
 
-# 1b. The same replay on drone footage (a tools/footage run: detect, track, then this):
-tools/footage/.venv/Scripts/python tools/movers/footage_boxes.py runs/footage/<run> --out android/app/src/test/resources/replay/drone-meva.csv
+# 1b. The same replay on drone footage (a tools/footage run: detect, track, then this). --max-height
+#     drops the tile detector's junk boxes (people are under 3 % of a 4K frame from 28 m up).
+tools/footage/.venv/Scripts/python tools/movers/footage_boxes.py runs/footage/<run> --max-height 0.05 --out android/app/src/test/resources/replay/drone-meva.csv
+
+# 1c. The chain's verdicts painted back onto the drone clip (a 1080p mp4 to show people): the JVM
+#     replay exports one verdict per box, render_replay.py draws them (amber MOVING, grey static).
+cd android && MINBAND_REPLAY_EXPORT=$PWD/../runs/footage/<run>/verdicts.csv ./gradlew :app:testDebugUnitTest --tests "*PhoneReplayTest.droneClip*" --rerun; cd ..
+tools/footage/.venv/Scripts/python tools/movers/render_replay.py runs/footage/<run> --boxes android/app/src/test/resources/replay/drone-meva.csv --verdicts runs/footage/<run>/verdicts.csv --out runs/footage/<run>/movers-demo.mp4
 
 # 2. What the phone's tracker actually produced in a session: per id, lifetime, displacement, speed.
 adb pull /sdcard/Android/data/dev.minband.android/files/gt-<unix>.csv .

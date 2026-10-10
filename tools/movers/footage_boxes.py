@@ -28,6 +28,8 @@ def main() -> int:
     ap.add_argument("run", help="tools/footage run directory (detections.npy, detect.json, summary.json)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--classes", default="0", help="comma-separated COCO class ids to keep (default: person)")
+    ap.add_argument("--max-height", type=float, default=0.0,
+                    help="drop boxes taller than this fraction of the frame: the tile detector's junk (on the MEVA clip people are under 0.03 of a 4K frame at 28 m up; 0.05 removed 1564 boxes of 108-172 px that were a third of the movers)")
     args = ap.parse_args()
 
     dets = np.load(os.path.join(args.run, "detections.npy"))
@@ -45,10 +47,14 @@ def main() -> int:
         fh.write(f"# video={meta['video']} width={w} height={h} fps={fps:.3f} model={meta.get('model', '?')} "
                  f"cam_f={ground['f_px']:.1f} cam_pitch={ground['pitch_deg']:.2f} cam_height={ground['height_m']:.2f} source=footage\n")
         wr = csv.writer(fh)
-        wr.writerow(["frame", "t", "cls", "conf", "x", "y", "w", "h"])
+        # ox..oh: the same box in its own video frame (normalized), for drawing the replay's
+        # verdicts back onto the footage (`render_replay.py`); the JVM reader ignores them.
+        wr.writerow(["frame", "t", "cls", "conf", "x", "y", "w", "h", "ox", "oy", "ow", "oh"])
         for row in dets:
             frame, x1, y1, x2, y2, conf, cls = row
             if int(cls) not in keep:
+                continue
+            if args.max_height and (y2 - y1) / h > args.max_height:
                 continue
             H = homs.get(int(frame))
             if H is None:
@@ -63,7 +69,8 @@ def main() -> int:
             if bx1 - bx0 < 1e-3 or by1 - by0 < 1e-3:
                 continue
             fr = int(frame) - f0
-            wr.writerow([fr, f"{fr / fps:.3f}", int(cls), f"{conf:.3f}", f"{bx0:.4f}", f"{by0:.4f}", f"{bx1 - bx0:.4f}", f"{by1 - by0:.4f}"])
+            wr.writerow([fr, f"{fr / fps:.3f}", int(cls), f"{conf:.3f}", f"{bx0:.4f}", f"{by0:.4f}", f"{bx1 - bx0:.4f}", f"{by1 - by0:.4f}",
+                         f"{x1 / w:.4f}", f"{y1 / h:.4f}", f"{(x2 - x1) / w:.4f}", f"{(y2 - y1) / h:.4f}"])
             n += 1
     print(f"{n} boxes -> {args.out} (camera f {ground['f_px']:.0f} px, pitch {ground['pitch_deg']:.1f} deg, {ground['height_m']:.1f} m up)")
     return 0

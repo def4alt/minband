@@ -63,7 +63,13 @@ class PhoneReplayTest {
      * furniture: the ray to the box bottom meets the floor behind them). 0 is the clip's own
      * ray-to-floor lift (feet visible, ~0.1 m); 0.3 is the width prior at 1-3 m, as in a room.
      */
-    private fun replay(clip: Clip, stride: Int, config: Tracker.Config, noiseSigma: Float = 0f): Run {
+    /**
+     * `export`: when given, one line per box of every detection frame, `frame,i,id,moving`, with
+     * the verdict the phone's overlay would show for it (its track's MOVING at the next tick, or
+     * the near-a-mover rule for a box without a track), so `tools/movers/render_replay.py` can
+     * draw the chain's verdicts back onto the footage.
+     */
+    private fun replay(clip: Clip, stride: Int, config: Tracker.Config, noiseSigma: Float = 0f, export: java.io.PrintWriter? = null): Run {
         val rng = java.util.Random(7)
         val m = clip.meta
         // The clip's ground fit (vtest.avi: ~85 deg horizontal field of view, 42.2 deg down, 5.1 m up).
@@ -86,6 +92,9 @@ class PhoneReplayTest {
         val speeds = ArrayList<Float>()
         val maxSpeed = HashMap<Int, Float>()
         var detBoxes = 0; var detCalls = 0
+        class Pending(val frame: Int, val point: WorldPoint, val id: Int?)
+        val pending = ArrayList<Pending>()
+        export?.println("frame,i,id,moving")
         val tickDt = 1.0 / 30
         var t = 0.0
         val end = (lastFrame + 1) / m.fps
@@ -105,13 +114,26 @@ class PhoneReplayTest {
                     val across = (rng.nextGaussian() * noiseSigma / 3).toFloat()
                     p.copy(pos = p.pos + u * along + side * across, sigma = noiseSigma)
                 }
-                tracker.update(points, nextDet / m.fps)
+                val ids = tracker.update(points, nextDet / m.fps)
+                if (export != null) for ((p, id) in points.zip(ids)) pending.add(Pending(nextDet, p, id))
                 detBoxes += dets.size; detCalls += 1
                 if (!detFrames.hasNext()) { nextDet = Int.MAX_VALUE; break }
                 nextDet = detFrames.next()
             }
             val tracks = tracker.tracks(t)
             val mv = motion.update(tracks, t, eye)
+            if (export != null && pending.isNotEmpty()) {
+                // As Pipeline.overlay does: a box with a track carries its tag; one without shows it
+                // when its lifted point sits within NEAR_MOVER_M of a mover of its class.
+                val movers = tracks.filter { it.id in mv }
+                for (q in pending) {
+                    val moving = if (q.id != null) q.id in mv else movers.any { mo ->
+                        mo.classId == q.point.classId && run { val dx = mo.pos.x - q.point.pos.x; val dz = mo.pos.z - q.point.pos.z; dx * dx + dz * dz <= Pipeline.NEAR_MOVER_M * Pipeline.NEAR_MOVER_M }
+                    }
+                    export.println("${q.frame},${q.point.detectionIndex},${q.id ?: ""},${if (moving) 1 else 0}")
+                }
+                pending.clear()
+            }
             for (tr in tracks) {
                 confirmed.add(tr.id); firstSeen.putIfAbsent(tr.id, t); lastSeen[tr.id] = t
                 if (tr.id in mv) { moving.add(tr.id); speeds.add(tr.vel.length) }
@@ -139,8 +161,12 @@ class PhoneReplayTest {
     @Test fun droneClipWalkersAreMovers() {
         val drone = load("/replay/drone-meva.csv")
         org.junit.Assume.assumeTrue("no drone replay fixture (run tools/movers/footage_boxes.py)", drone != null)
-        val r = replay(drone!!, 1, Tracker.Config.SLOW_DETECTOR)
+        // MINBAND_REPLAY_EXPORT=<file>: the per-box verdicts, for tools/movers/render_replay.py.
+        val exportPath = System.getenv("MINBAND_REPLAY_EXPORT")?.takeIf { it.isNotBlank() }
+        val export = exportPath?.let { java.io.PrintWriter(java.io.File(it).bufferedWriter()) }
+        val r = try { replay(drone!!, 1, Tracker.Config.SLOW_DETECTOR, export = export) } finally { export?.close() }
         println("drone: $r")
+        if (exportPath != null) println("verdicts exported to $exportPath")
         // Unlabelled; the bounds come from `track.py track` on the same run (100 person tracks,
         // 38 walkers of >= 3 m at a median 0.68 m/s: a parking lot where most people stand or
         // amble) and from this chain's first pass (248 ids, 127 movers, 90 of them at a walking
