@@ -53,6 +53,13 @@ from detector import ClikaTiledDetector, check_device
 DEFAULT_CLIP = str(_REPO / "tools" / "footage" / "clips" / "2018-03-13.16-00-14.16-03-38.uav1.mp4")
 DEFAULT_CACHE = str(_REPO / "tools" / "footage" / "models" / "clika")  # absolute: detector.py's
 # own --cache-dir default is relative to cwd, a trap if edge.py is invoked from elsewhere.
+# shared/geom.py works in the OpenCV camera frame (+Z forward, +Y down), and so do the depth
+# chunks hub/recon.py reassembles -- both stay in it. The wire's Pose does not: the viewer reads
+# it into three.js cameras and frustumGeo(), which look down -Z with +Y up. That is also the
+# frame ARCore's camera.pose uses, so the phone leg already sends -Z and only this leg needs the
+# flip. Without it the clip leg renders pitched 80 deg *up* and its frustum points at the sky.
+CV_TO_GL = np.diag([1.0, -1.0, -1.0])
+
 DET_MODEL = "ustc-community/dfine-nano-coco"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 
@@ -328,11 +335,17 @@ def run(args):
     track_addr = (args.host, args.track_port)
     depth_addr = (args.host, args.depth_port)
 
-    det = ClikaTiledDetector(DET_MODEL, args.cache_dir, device=args.device, conf=args.conf,
-                              allow_cpu_fallback=args.allow_cpu_fallback)
-    depth_opts = LoadOptions(device=crt.Device.parse(args.device), cache_dir=args.cache_dir, offline=True)
-    depth_model = ModelRegistry.builtin().load_depth(DEPTH_MODEL, depth_opts)
-    check_device(args.device, depth_model.device, args.allow_cpu_fallback)
+    # Both models below need a ClikaRT licence seat; _PoseTracker needs nothing but OpenCV. They
+    # therefore fail independently, and a laptop whose hardware fingerprint moves between runs
+    # loses the seat without warning. --no-detect keeps the pose half of the wire alive so the
+    # viewer side stays testable on its own -- empty track lists, same datagram shape.
+    det = depth_model = None
+    if not args.no_detect:
+        det = ClikaTiledDetector(DET_MODEL, args.cache_dir, device=args.device, conf=args.conf,
+                                  allow_cpu_fallback=args.allow_cpu_fallback)
+        depth_opts = LoadOptions(device=crt.Device.parse(args.device), cache_dir=args.cache_dir, offline=True)
+        depth_model = ModelRegistry.builtin().load_depth(DEPTH_MODEL, depth_opts)
+        check_device(args.device, depth_model.device, args.allow_cpu_fallback)
 
     cap = cv2.VideoCapture(args.clip)
     if not cap.isOpened():
@@ -387,12 +400,15 @@ def run(args):
         t = time.time() - t_start
         boxes_norm = []
         R = pose.update(frame)
-        quat = geom.matrix_to_quat(R)
+        quat = geom.matrix_to_quat(R)                   # OpenCV frame: depth chunks, recon.py
+        quat_view = geom.matrix_to_quat(R @ CV_TO_GL)   # -Z frame: the wire Pose, like the phone
 
         if frame_idx % detect_stride == 0:
-            det_frame = cv2.resize(frame, (det_w, det_h), interpolation=cv2.INTER_AREA) \
-                if (det_w, det_h) != (native_w, native_h) else frame
-            dets = det(det_frame)  # Nx6: x1,y1,x2,y2,conf,cls in det_frame pixels
+            dets = []  # Nx6: x1,y1,x2,y2,conf,cls in det_frame pixels
+            if det is not None:
+                det_frame = cv2.resize(frame, (det_w, det_h), interpolation=cv2.INTER_AREA) \
+                    if (det_w, det_h) != (native_w, native_h) else frame
+                dets = det(det_frame)
             world_dets = []
             for x1, y1, x2, y2, conf, cls in dets:
                 boxes_norm.append((x1 / det_w, y1 / det_h, x2 / det_w, y2 / det_h))
@@ -405,7 +421,7 @@ def run(args):
             payload = {
                 "t": int(time.time() * 1000), "tick": frame_idx,
                 "pose": {"pos": [round(float(c), 3) for c in p],
-                         "quat": [round(float(c), 5) for c in quat]},
+                         "quat": [round(float(c), 5) for c in quat_view]},
                 "tracks": [{"id": tr.id, "cls": tr.cls,
                             "pos": [round(float(c), 3) for c in tr.pos],
                             "vel": [round(float(c), 3) for c in tr.vel],
@@ -414,7 +430,7 @@ def run(args):
             sock.sendto(json.dumps(payload).encode(), track_addr)
             n_tracks_sent += 1
 
-        if frame_idx % depth_stride == 0:
+        if depth_model is not None and frame_idx % depth_stride == 0:
             depth_frame = cv2.resize(frame, (depth_w, depth_h), interpolation=cv2.INTER_AREA)
             raw = depth_model.predict(crt.Tensor.from_data(np.ascontiguousarray(depth_frame[..., ::-1])))
             latest_depth = np.asarray(raw.to("cpu"), dtype=np.float32)
@@ -461,6 +477,13 @@ def _selfcheck():
     assert abs(rv[1] - want) < 0.05 * want, f'yaw {rv[1]:.4f} rad, expected ~{want:.4f}'
     assert abs(rv[0]) < 0.01 and abs(rv[2]) < 0.01, f'pan leaked into pitch/roll: {rv}'
 
+    # The wire's Pose must come out in the -Z frame: a UAV seed pitched 80 deg down has to render
+    # as looking *down*, not at the sky. This is the mismatch that made the overlay disagree with
+    # the clip, so it gets an assertion rather than a comment.
+    _, _, _, R_seed, _ = next(static_adapter("meva-uav-0307-1720", 1920, 1080, 1, fps=30.0, hfov=hfov))
+    view_dir = np.asarray(R_seed) @ CV_TO_GL @ np.array([0.0, 0.0, -1.0])
+    assert view_dir[1] < -0.9, f'wire pose looks up, not down: {view_dir}'
+
     # A still camera must not drift, and reset() must forget the pan (the clip-loop case).
     pose.reset()
     assert np.allclose(pose.R, np.eye(3)), 'reset did not restore the seed'
@@ -480,6 +503,9 @@ def main():
                      help="absolute path strongly recommended -- see detector.py's relative-path trap")
     ap.add_argument("--device", default="vulkan", choices=["vulkan", "cpu"])
     ap.add_argument("--allow-cpu-fallback", action="store_true")
+    ap.add_argument("--no-detect", action="store_true",
+                     help="skip the detector and depth model (no ClikaRT licence needed): still "
+                          "tracks camera pose and sends it, but every datagram has empty tracks")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--track-port", type=int, default=7701)
     ap.add_argument("--depth-port", type=int, default=7790)
